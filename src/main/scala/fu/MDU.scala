@@ -3,14 +3,14 @@ package fu
 import chisel3._
 import chisel3.util._
 
-object MDU {
+trait MDUOperation {
   val SZ_MDU_OP = 1
   val MDU_MUL = 0.U(SZ_MDU_OP.W)
   val MDU_DIV = 1.U(SZ_MDU_OP.W)
   // Some other operations
 }
 
-class MDUReq(width: Int = 32) extends Bundle {
+class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
   val op = Bits(SZ_MDU_OP.W)
   val in1 = Bits(width.W)
   val in2 = Bits(width.W)
