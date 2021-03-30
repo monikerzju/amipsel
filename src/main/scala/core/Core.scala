@@ -26,6 +26,7 @@ class BMFS extends Bundle with Config {
 // Frontend master backend slave
 class FMBS extends Bundle with Config with FrontToBack with MicroOpCtrl {
   val instn = Output(UInt(SZ_FB_INSTN.W))
+  val pcs = Output(Vec(frontendIssueN, UInt(len.W)))
   val inst_ops = Output(Vec(frontendIssueN, UInt(SZ_MICRO_OP.W)))
   // fifo is full maybe
   val please_wait = Input(Bool())
@@ -68,8 +69,8 @@ class MemReq extends Bundle with Config with MemAccessType {
 }
 
 class MemResp extends Bundle with Config with MemAccessType {
-  val rdata = Output(Vec(frontendIssueN, UInt(len.W)))    // 64-bit because of MEM_DWORD for dual-issue
-  val respn = Output(UInt(SZ_MEM_READ_RESP.W))  // if req is MEM_DWORD but cannot be responsed because of icache miss
+  val rdata = Output(Vec(frontendIssueN, UInt(len.W)))    // 64-bit because of MEM_DWORD for dual-issue, 1 cycle latency for BRAM
+  val respn = Output(UInt(SZ_MEM_READ_RESP.W))  // if req is MEM_DWORD but cannot be responsed because of icache miss, 0 cycle latency
 }
 
 // From the view of cache, req is input and resp is output
