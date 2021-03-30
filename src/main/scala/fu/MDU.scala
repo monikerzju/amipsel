@@ -1,6 +1,7 @@
 package fu
 
 import chisel3._
+import chisel3.util._
 
 object MDU {
   val SZ_MDU_OP = 1

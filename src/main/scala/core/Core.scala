@@ -2,6 +2,7 @@ package core
 
 import chisel3._
 import chisel3.util._
+import conf.Config
 
 // for a 2-insts slot (cache/frontbackend), if only 1 is filled, it will go to the lower (least significant) Config.${len} bits
 
