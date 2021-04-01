@@ -3,10 +3,12 @@ package fu
 import chisel3._
 import chisel3.util._
 
-trait MDUOperation {
-  val SZ_MDU_OP = 1
+trait MDUOperation extends AluOpType {
+  val SZ_MDU_OP = aluOpWidth // same with ALU
   val MDU_MUL = 0.U(SZ_MDU_OP.W)
   val MDU_DIV = 1.U(SZ_MDU_OP.W)
+  val MDU_MULU = 2.U(SZ_MDU_OP.W)
+  val MDU_DIVU = 3.U(SZ_MDU_OP.W)
   // Some other operations
 }
 
