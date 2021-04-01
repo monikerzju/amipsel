@@ -7,9 +7,12 @@ import fu.MDUOperation
 import ISA._
 
 trait MicroOpCtrl extends MDUOperation {
-  val T = true.B 
-  val F = false.B 
+  val AMN           = "b110".U(3.W) 
+  val ANN           = "b100".U(3.W) 
+  val NMN           = "b010".U(3.W)
+  val NNL           = "b001".U(3.W)
 
+  // Maybe replaced by CFI Type and Illegal
   val InstXXX       = 0.U(4.W)
   val RType         = 1.U(4.W)
   val RSType        = 2.U(4.W)
@@ -74,6 +77,7 @@ trait MicroOpCtrl extends MDUOperation {
   val Branch        = 2.U(3.W)
   val Jump          = 3.U(3.W)
   val Trap          = 4.U(3.W)
+  val Ret           = 5.U(3.W)
   val SZ_NEXT_PC    = PC4.getWidth
 
   val SZ_ISSUE_FU   = 0
@@ -88,7 +92,7 @@ trait MicroOpCtrl extends MDUOperation {
 class Mops extends Bundle with MicroOpCtrl {
   val inst_type     = UInt(SZ_INST_TYPE.W)
   val next_pc       = UInt(SZ_NEXT_PC.W)
-  val mdu           = Bool()
+  val alu_mdu_lsu   = UInt(3.W)
   val branch_type   = UInt(SZ_BR_TYPE.W)
   val src_a         = UInt(SZ_ALU_A.W)
   val src_b         = UInt(SZ_ALU_B.W)
@@ -119,81 +123,81 @@ class Dec extends Module with MicroOpCtrl {
 
   // Decode
   val control_signal = ListLookup(io.inst,
-                    List(Illegal ,  PC4     ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd  , MemXXX  ,  WBXXX     , IRS , IRT , IRD),
+                    List(Illegal ,  PC4     ,  ANN ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IRD),
     Array(         /*      Inst  |   PC     | use      | Branch   |   A     |   B     |  D      | alu     |  Mem    |     wb     | rs1 | rs2 |  rd */
-                   /*      Type  | Select   | mult     | Type     | use rs1 | use rs2 | write   | Type    | Type    |   Select   |     |     |     */
-                   /*  Structure | NextPC   | Mult/Div | Brch/Jmp | alusrcA | alusrcB | target  | alu OP  | B/H/W   | MultiIssue |     |     |     */
-      NOP        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      ADD        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      ADDI       -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
-      ADDU       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluAddu  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      ADDIU      -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAddu  , MemXXX  ,  WBALU     , IRS , IXX , IRT),
-      SUB        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSub   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SUBU       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSub   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SLT        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSlt   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SLTI       -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluSlt   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
-      SLTU       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSltu  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SLTIU      -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluSltu  , MemXXX  ,  WBALU     , IRS , IXX , IRT),
-      DIV        -> List(RType   ,  PC4     ,  T   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_DIV  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      DIVU       -> List(RType   ,  PC4     ,  T   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_DIVU , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      MULT       -> List(RType   ,  PC4     ,  T   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_MUL  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      MULTU      -> List(RType   ,  PC4     ,  T   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_MULU , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+                   /*      Type  | Select   | which    | Type     | use rs1 | use rs2 | write   | Type    | Type    |   Select   |     |     |     */
+                   /*  Structure | NextPC   | al md ls | Brch/Jmp | alusrcA | alusrcB | target  | alu OP  | B/H/W   | MultiIssue |     |     |     */
+      NOP        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      ADD        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      ADDI       -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      ADDU       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluAddu  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      ADDIU      -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAddu  , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      SUB        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSub   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SUBU       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSub   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SLT        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSlt   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SLTI       -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluSlt   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      SLTU       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSltu  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SLTIU      -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluSltu  , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      DIV        -> List(RType   ,  PC4     ,  NMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_DIV  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      DIVU       -> List(RType   ,  PC4     ,  NMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_DIVU , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      MULT       -> List(RType   ,  PC4     ,  NMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_MUL  , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      MULTU      -> List(RType   ,  PC4     ,  NMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , MDU_MULU , MemXXX  ,  WBALU     , IRS , IRT , IRD),
            
-      AND        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluAnd   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      ANDI       -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAnd   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
-      LUI        -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluLui   , MemXXX  ,  WBALU     , IXX , IXX , IRT),
-      NOR        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluNor   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      OR         -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluOr    , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      ORI        -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluOr    , MemXXX  ,  WBALU     , IRS , IXX , IRT),
-      XOR        -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluXor   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      XORI       -> List(IType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluXor   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      AND        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluAnd   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      ANDI       -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAnd   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      LUI        -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluLui   , MemXXX  ,  WBALU     , IXX , IXX , IRT),
+      NOR        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluNor   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      OR         -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluOr    , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      ORI        -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluOr    , MemXXX  ,  WBALU     , IRS , IXX , IRT),
+      XOR        -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluXor   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      XORI       -> List(IType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluXor   , MemXXX  ,  WBALU     , IRS , IXX , IRT),
            
-      SLLV       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSll   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SLL        -> List(RSType  ,  PC4     ,  F   ,      BrXXX   ,  AShamt ,  BReg   ,  DReg   , aluSll   , MemXXX  ,  WBALU     , IXX , IRT , IRD),
-      SRAV       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSra   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SRA        -> List(RSType  ,  PC4     ,  F   ,      BrXXX   ,  AShamt ,  BReg   ,  DReg   , aluSra   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
-      SRLV       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSrl   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
-      SRL        -> List(RSType  ,  PC4     ,  F   ,      BrXXX   ,  AShamt ,  BReg   ,  DReg   , aluSrl   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
+      SLLV       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSll   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SLL        -> List(RSType  ,  PC4     ,  AMN ,      BrXXX   ,  AShamt ,  BReg   ,  DReg   , aluSll   , MemXXX  ,  WBALU     , IXX , IRT , IRD),
+      SRAV       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSra   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SRA        -> List(RSType  ,  PC4     ,  AMN ,      BrXXX   ,  AShamt ,  BReg   ,  DReg   , aluSra   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
+      SRLV       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BReg   ,  DReg   , aluSrl   , MemXXX  ,  WBALU     , IRS , IRT , IRD),
+      SRL        -> List(RSType  ,  PC4     ,  AMN ,      BrXXX   ,  AShamt ,  BReg   ,  DReg   , aluSrl   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
            
-      BEQ        -> List(IBType  ,  Branch  ,  F   ,      BrEQ    ,  AReg   ,  BReg   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      BNE        -> List(IBType  ,  Branch  ,  F   ,      BrNE    ,  AReg   ,  BReg   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      BGEZ       -> List(IBType  ,  Branch  ,  F   ,      BrGE    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      BGTZ       -> List(IBType  ,  Branch  ,  F   ,      BrGT    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      BLEZ       -> List(IBType  ,  Branch  ,  F   ,      BrLE    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      BLTZ       -> List(IBType  ,  Branch  ,  F   ,      BrLT    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
-      BGEZAL     -> List(IBType  ,  Branch  ,  F   ,      BrGE    ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IRT , IRA),
-      BLTZAL     -> List(IBType  ,  Branch  ,  F   ,      BrLT    ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IRT , IRA),
+      BEQ        -> List(IBType  ,  Branch  ,  ANN ,      BrEQ    ,  AReg   ,  BReg   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BNE        -> List(IBType  ,  Branch  ,  ANN ,      BrNE    ,  AReg   ,  BReg   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BGEZ       -> List(IBType  ,  Branch  ,  ANN ,      BrGE    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BGTZ       -> List(IBType  ,  Branch  ,  ANN ,      BrGT    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BLEZ       -> List(IBType  ,  Branch  ,  ANN ,      BrLE    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BLTZ       -> List(IBType  ,  Branch  ,  ANN ,      BrLT    ,  AReg   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BGEZAL     -> List(IBType  ,  Branch  ,  ANN ,      BrGE    ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IRT , IRA),
+      BLTZAL     -> List(IBType  ,  Branch  ,  ANN ,      BrLT    ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IRS , IRT , IRA),
            
-      J          -> List(JType   ,  Jump    ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
-      JAL        -> List(JType   ,  Jump    ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBPC      , IXX , IXX , IRA),
-      JR         -> List(JRType  ,  PCReg   ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IXX , IRD),
-      JALR       -> List(JRType  ,  PCReg   ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBPC      , IRS , IXX , IRA),
+      J          -> List(JType   ,  Jump    ,  ANN ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
+      JAL        -> List(JType   ,  Jump    ,  ANN ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBPC      , IXX , IXX , IRA),
+      JR         -> List(JRType  ,  PCReg   ,  ANN ,      BrXXX   ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IRS , IXX , IRD),
+      JALR       -> List(JRType  ,  PCReg   ,  ANN ,      BrXXX   ,  AReg   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBPC      , IRS , IXX , IRA),
            
-      MFHI       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AHi    ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
-      MFLO       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  ALo    ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
-      MTHI       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IXX),
-      MTLO       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IXX),
+      MFHI       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AHi    ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
+      MFLO       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  ALo    ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBALU     , IXX , IXX , IRD),
+      MTHI       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IXX),
+      MTLO       -> List(RType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IXX),
            
-      BREAK      -> List(RTType  ,  Trap    ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
-      SYSCALL    -> List(RTType  ,  Trap    ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
+      BREAK      -> List(RTType  ,  Trap    ,  AMN ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
+      SYSCALL    -> List(RTType  ,  Trap    ,  AMN ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
            
-      LB         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemByte ,  WBMEM     , IRS , IXX , IRT),
-      LBU        -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemByteU,  WBMEM     , IRS , IXX , IRT),
-      LH         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemHalf ,  WBMEM     , IRS , IXX , IRT),
-      LHU        -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemHalfU,  WBMEM     , IRS , IXX , IRT),
-      LW         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemWord ,  WBMEM     , IRS , IXX , IRT),
-      SB         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd   , MemByte ,  WBXXX     , IRS , IRT , IXX),
-      SH         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd   , MemHalf ,  WBXXX     , IRS , IRT , IXX),
-      SW         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd   , MemWord ,  WBXXX     , IRS , IRT , IXX),
+      LB         -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemByte ,  WBMEM     , IRS , IXX , IRT),
+      LBU        -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemByteU,  WBMEM     , IRS , IXX , IRT),
+      LH         -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemHalf ,  WBMEM     , IRS , IXX , IRT),
+      LHU        -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemHalfU,  WBMEM     , IRS , IXX , IRT),
+      LW         -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemWord ,  WBMEM     , IRS , IXX , IRT),
+      SB         -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd   , MemByte ,  WBXXX     , IRS , IRT , IXX),
+      SH         -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd   , MemHalf ,  WBXXX     , IRS , IRT , IXX),
+      SW         -> List(IMType  ,  PC4     ,  NNL ,      BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd   , MemWord ,  WBXXX     , IRS , IRT , IXX),
            
-      ERET       -> List(SType   ,  PC4     ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
-      MFC0       -> List(SType   ,  PC4     ,  F   ,      BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBReg     , IRT , IXX , IRT),
-      MTC0       -> List(SType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd   , MemXXX  ,  WBReg     , IXX , IRT , IRD)
+      ERET       -> List(SType   ,  Ret     ,  AMN ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
+      MFC0       -> List(SType   ,  PC4     ,  AMN ,      BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBReg     , IRT , IXX , IRT),
+      MTC0       -> List(SType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd   , MemXXX  ,  WBReg     , IXX , IRT , IRD)
   )) 
  
   io.mops.inst_type     := control_signal(0)
   io.mops.next_pc       := control_signal(1)
-  io.mops.mdu           := control_signal(2)
+  io.mops.alu_mdu_lsu   := control_signal(2)
   io.mops.branch_type   := control_signal(3)
   io.mops.src_a         := control_signal(4)
   io.mops.src_b         := control_signal(5)
