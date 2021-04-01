@@ -30,7 +30,6 @@ trait MicroOpCtrl extends MDUOperation {
   val BrGT          = 4.U(4.W)
   val BrLE          = 5.U(4.W)
   val BrLT          = 6.U(4.W)
-  val Except        = 9.U(4.W)
   val SZ_BR_TYPE    = BrXXX.getWidth
 
   val AXXX          = 0.U(3.W)
@@ -120,7 +119,7 @@ class Dec extends Module with MicroOpCtrl {
 
   // Decode
   val control_signal = ListLookup(io.inst,
-                    List(Illegal ,  PC4     ,  F   ,  BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd  , MemXXX  ,  WBXXX     , IRS , IRT , IRD),
+                    List(Illegal ,  PC4     ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd  , MemXXX  ,  WBXXX     , IRS , IRT , IRD),
     Array(         /*      Inst  |   PC     | use      | Branch   |   A     |   B     |  D      | alu     |  Mem    |     wb     | rs1 | rs2 |  rd */
                    /*      Type  | Select   | mult     | Type     | use rs1 | use rs2 | write   | Type    | Type    |   Select   |     |     |     */
                    /*  Structure | NextPC   | Mult/Div | Brch/Jmp | alusrcA | alusrcB | target  | alu OP  | B/H/W   | MultiIssue |     |     |     */
@@ -175,8 +174,8 @@ class Dec extends Module with MicroOpCtrl {
       MTHI       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IXX),
       MTLO       -> List(RType   ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd   , MemXXX  ,  WBALU     , IRS , IXX , IXX),
            
-      BREAK      -> List(RTType  ,  PC4     ,  F   ,      Except  ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
-      SYSCALL    -> List(RTType  ,  PC4     ,  F   ,      Except  ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
+      BREAK      -> List(RTType  ,  Trap    ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
+      SYSCALL    -> List(RTType  ,  Trap    ,  F   ,      BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd   , MemXXX  ,  WBXXX     , IXX , IXX , IXX),
            
       LB         -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemByte ,  WBMEM     , IRS , IXX , IRT),
       LBU        -> List(IMType  ,  PC4     ,  F   ,      BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd   , MemByteU,  WBMEM     , IRS , IXX , IRT),
