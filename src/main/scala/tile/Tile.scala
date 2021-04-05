@@ -2,6 +2,7 @@ package tile
 
 import chisel3._
 import chisel3.stage._
+import fu._
 
 // tile(Yuan) = core + cache + uncache
 // core = datapath(Shen) + control(Shen) + coprocessor(Yuan)
@@ -17,7 +18,11 @@ class Tile extends Module {
   val io = IO(new TileIO)
 
 //   val core = Module(new Core)
+//  val frontend = Module(new Frontend)
+//  val backend = Module(new Backend)
+  val alu = Module(new ALU)
 //   val icache = Module(new ICache)
+
 //   val dcache = Module(new DCache)
 //   val xbar = Module(new XBar)
 }
