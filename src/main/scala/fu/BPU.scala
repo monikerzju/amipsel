@@ -1,3 +1,6 @@
+// TODO RAS and BS
+// DONE BTBv1
+
 package fu
 
 import chisel3._
@@ -58,6 +61,14 @@ class BHTUpdate(width: Int = 32, decodeFuN: Int = 2) extends Bundle {
   val exe = new BHTExeUpdate(width)
 }
 
+class RASReq() extends Bundle {
+
+}
+
+class RASResp() extends Bundle {
+
+}
+
 // req.nextline = pc + 8
 // resp.taken_vec(0) is for pc, (1) is for pc + 4, this signal also influence how many instructions to decode
 class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
@@ -67,7 +78,7 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
 }
 
 // DS-oriented programming
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0) extends Module {
   val io = IO(new BPUIO(width, issueN))
 
   val SN = 0
@@ -107,5 +118,10 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2) e
     when (io.update.dec.v_vec(i)) {
       history(io.update.dec.pc_ds(i)(offset + log2Ceil(depth), offset)) := SN.U
     }
+  }
+
+  // RAS is ds-oriented and done in ID stage
+  if (rasDepth > 0) {
+    val ras = new RAS(rasDepth, width)
   }
 }
