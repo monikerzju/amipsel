@@ -8,5 +8,4 @@ trait Config {
   val frontendIssueN: Int = 2   // 1 or 2
   val backendIssueN: Int = 3
   val withRealCache: Boolean = false
-  val aluOpWidth = 5
 }

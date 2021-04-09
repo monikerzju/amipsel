@@ -4,7 +4,8 @@ import chisel3._
 import chisel3.util._
 import conf.Config
 
-trait AluOpType extends Config {
+trait AluOpType{
+  val aluOpWidth = 5
   val aluAdd = 0.U(aluOpWidth.W)
   val aluAddu = 1.U(aluOpWidth.W)
   val aluSub = 2.U(aluOpWidth.W)

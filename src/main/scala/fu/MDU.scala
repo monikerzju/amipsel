@@ -25,11 +25,23 @@ class MDUResp(width: Int = 32) extends Bundle {
 }
 
 class MDUIO(width: Int = 32) extends Bundle {
-  val req = Flipped(Decoupled(new MDUReq(width)))
-  val resp = Decoupled(new MDUResp(width))
+  val req = Input(new MDUReq(width))
+  val resp = Output(new MDUResp(width))
   val kill = Input(Bool())
 }
 
-class MDU(width: Int = 32) extends Module {
+class MDU(width: Int = 32) extends Module with MDUOperation {
   val io = IO(new MDUIO(width))
+  val (lo, hi) = MuxLookup(
+    io.req.op,
+    (0.U(32.W), 0.U(32.W)),
+    Seq(
+      MDU_MUL -> (io.req.in1.asSInt() * io.req.in2.asSInt()(0, 31), io.req.in1.asSInt() * io.req.in2.asSInt()(32, 63)),
+      MDU_MULU -> (io.req.in1.asUInt() * io.req.in2.asUInt()(0, 31), io.req.in1.asUInt() * io.req.in2.asUInt()(32, 63)),
+      MDU_DIV -> (io.req.in1.asSInt() / io.req.in2.asSInt(), io.req.in1.asSInt() % io.req.in2.asSInt()),
+      MDU_DIVU -> (io.req.in1.asUInt() / io.req.in2.asUInt(), io.req.in1.asUInt() % io.req.in2.asUInt())
+    )
+  )
+  io.resp.lo := lo
+  io.resp.hi := hi
 }
