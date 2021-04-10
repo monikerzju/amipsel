@@ -43,7 +43,8 @@ class Backend extends Module with Config with InstType {
 
   // TODO: connect with frontend
   issueQueue.io.din := Vec(frontendIssueN, new InstInfo())
-
+  val wbFlush = io.fb.bmfs.redirect_kill
+  issueQueue.io.flush := wbFlush
   /**
    *  [---------- IS stage -----------]
    */
@@ -93,6 +94,14 @@ class Backend extends Module with Config with InstType {
     }
   }
 
+  val nop = new InstInfo
+  nop.fuDest := toALU
+  nop.regWrite := false.B
+  when(wbFlush) {
+    for(i <- 0 until backendIssueN) {
+      exInsts(i) := nop
+    }
+  }
 
   /**
    *  [---------- EX stage -----------]
@@ -268,6 +277,12 @@ class Backend extends Module with Config with InstType {
       brDelay(0) := Mux(exInsts(i).fuDest === toMDU, true.B, false.B)
       brDelay(1) := Mux(exInsts(i).fuDest === toLU, true.B, false.B)
       brDelay(2) := Mux(exInsts(i).fuDest === toSU, true.B, false.B)
+    }
+  }
+
+  when(wbFlush) {
+    for(i <- 0 until backendIssueN) {
+      wbInsts(i) := nop
     }
   }
 

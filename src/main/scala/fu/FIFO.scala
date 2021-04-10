@@ -10,6 +10,7 @@ class FIFOIO[T <: Data](size: Int, private val gen: T, readN: Int, enqN: Int) ex
   val deqStep = Input(UInt(3.W)) //TODO const should be altered
   val deqReq = Input(Bool())
   val din = Input(Vec(enqN, gen)) //TODO const should be altered
+  val flush = Input(Bool())
   val sufficient = Output(Bool())
   val items = Output(UInt(log2Ceil(readN).W)) // queue item num
 }
@@ -32,8 +33,8 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
   val enqPtr = counter(do_enq, io.enqStep)
   val deqPtr = counter(do_deq, io.deqStep)
   val ptr_match = enqPtr === deqPtr
-  val empty = ptr_match && !maybe_full
-  val full = ptr_match && maybe_full
+  val empty = ptr_match && !maybe_full | io.flush
+  val full = ptr_match && maybe_full && !io.flush
   do_enq := io.enqReq && io.sufficient
   do_deq := io.deqReq && !empty
   io.items := (deqPtr + size.U - enqPtr) % size.U
@@ -51,5 +52,10 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
 
   for(i <- 0 until 3) { //TODO const should be altered
     io.dout(i) := mem(deqPtr + i.U)
+  }
+
+  when(io.flush) {
+    enqPtr := 0.U
+    deqPtr := 0.U
   }
 }
