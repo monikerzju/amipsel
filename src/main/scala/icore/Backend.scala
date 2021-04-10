@@ -93,6 +93,7 @@ class Backend extends Module with Config with InstType {
     }
   }
 
+
   /**
    *  [---------- EX stage -----------]
    */
@@ -126,7 +127,7 @@ class Backend extends Module with Config with InstType {
     regFile.io.rs_addr_vec(2 * i) := exInsts(i).rs
     regFile.io.rs_addr_vec(2 * i + 1) := exInsts(i).rt
   }
-//  regFile.io.wen_vec := Vec(3, false.B)
+
   val rsData = Wire(Vec(3, 0.U(32.W)))
   val rtData = Wire(Vec(3, 0.U(32.W)))
   for(i <- 0 until 3) {
@@ -136,7 +137,10 @@ class Backend extends Module with Config with InstType {
 
   val sqSize = 10
   val storeQueue = Module(new Queue(new StoreInfo, sqSize))
-  // TODO: aluSrcB mux(rt.Reg, imm)
+
+  val reBranch = Bool()
+  // 0 - mdu 1 - lu 2 - su
+  val brDelay = Vec(3, Bool())
   for (i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       switch(exInsts(i).fuDest) {
@@ -150,16 +154,25 @@ class Backend extends Module with Config with InstType {
           wbResult(i) := alu.io.r
         }
         is(toMDU) {
-          // TODO
+          // TODO: deal with branch
+          when(!reBranch && !brDelay(0)) {
+
+          }
           mdu.io.req.in1 := rsData(i)
           mdu.io.req.in2 := rtData(i)
           mdu.io.req.op := exInsts(i).mduOp
         }
         is(toLU) {
           // TODO: connect with dcache
+          when(!reBranch && !brDelay(1)) {
+            // TODO: deal with branch
+          }
         }
         is(toSU) {
           // TODO
+          when(!reBranch && !brDelay(2)) {
+            // TODO: deal with branch
+          }
           storeQueue.io.enq.bits.addr := rsData(i) + Cat(Fill(16, exInsts(i).imm(15)),exInsts(i).imm) // sign-extended
           storeQueue.io.enq.bits.data := rtData(i)
           storeQueue.io.enq.ready := true.B
@@ -185,29 +198,62 @@ class Backend extends Module with Config with InstType {
       }
     }
   }
-
-  val pcRedirect = Reg(UInt(32.W))
-  val reBranch = RegInit(false.B)
+  val wbReBranch = RegInit(false.B)
+  val pcRedirect = Reg(UInt(len.W))
   // process branch
   for(i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       when(exInsts(i).isBranch) {
+        reBranch := false.B
+        wbReBranch := false.B
         switch(exInsts(i).bType) {
           is(0.U) { // beq
+            /*
             when(alu.io.zero === 1.U && alu.io.r =/= exInsts(i).pcNext) {
               pcRedirect := alu.io.r
-              reBranch := true.B
+              wbReBranch := true.B
             } .elsewhen(alu.io.zero === 0.U && exInsts(i).pcNext =/= exInsts(i).pc + 4.U) {
               pcRedirect := exInsts(i).pc + 4.U
+              wbReBranch := true.B
+            }
+             */
+            when(alu.io.zero === 1.U) {
+              pcRedirect := alu.io.r
+              wbReBranch := true.B
               reBranch := true.B
+
+              /* flush insts behind the br_inst
+              for (j <- i + 1 until backendIssueN) {
+                when(!dcacheStall) {
+                  switch(exInsts(j).fuDest) {
+                    is(toALU) {
+                      wbInsts(j).rd := 0.U
+                    }
+                    is(toLU) {
+                      // TODO:
+                    }
+                    is(toSU) {
+                      // TODO:
+                    }
+                  }
+                }
+              }
+               */
             }
           }
           is(1.U) { // bne
+            /*
             when(alu.io.zero === 0.U && alu.io.r =/= exInsts(i).pcNext) {
               pcRedirect := alu.io.r
-              reBranch := true.B
+              wbReBranch := true.B
             } .elsewhen(alu.io.zero === 1.U && exInsts(i).pcNext =/= exInsts(i).pc + 4.U) {
               pcRedirect := exInsts(i).pc + 4.U
+              wbReBranch := true.B
+            }
+             */
+            when(alu.io.zero === 0.U) {
+              pcRedirect := alu.io.r
+              wbReBranch := true.B
               reBranch := true.B
             }
           }
@@ -216,11 +262,43 @@ class Backend extends Module with Config with InstType {
     }
   }
 
+
+  for(i <- 1 until backendIssueN) {
+    when(i.U < exNum) {
+      brDelay(0) := Mux(exInsts(i).fuDest === toMDU, true.B, false.B)
+      brDelay(1) := Mux(exInsts(i).fuDest === toLU, true.B, false.B)
+      brDelay(2) := Mux(exInsts(i).fuDest === toSU, true.B, false.B)
+    }
+  }
+
   /**
    *  [---------- WB stage -----------]
    */
 
-  io.fb.bmfs.redirect_pc := RegNext(pcRedirect)
+
+  io.fb.bmfs.redirect_pc := pcRedirect
+  io.fb.bmfs.redirect_kill := true.B
+  // branch, wait for delay slot
+  val pcSlot = Reg(UInt(len.W))
+  val waitSlot = RegInit(false.B)
+  when(wbReBranch) {
+    for(i <- 0 until backendIssueN) {
+      when(i.U < wbNum) {
+        when(wbInsts(i).isBranch && i.U === wbNum - 1.U) {
+          pcSlot := pcRedirect
+          waitSlot := true.B
+          io.fb.bmfs.redirect_kill := false.B
+        }
+      }
+    }
+  }
+
+  when(waitSlot) {
+    waitSlot := false.B
+    io.fb.bmfs.redirect_pc := pcSlot
+    io.fb.bmfs.redirect_kill := true.B
+  }
+
   when(!dcacheStall) {
     wbInsts := exInsts
   }
@@ -243,5 +321,4 @@ class Backend extends Module with Config with InstType {
       regFile.io.rd_data_vec(i) := wbResult(i)
     }
   }
-
 }
