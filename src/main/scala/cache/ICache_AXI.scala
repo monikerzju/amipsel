@@ -8,9 +8,9 @@ features:
     - data delay 1 cycle
     - for word access only
 
-TODO:   [ ] output not serialized to cater for AXI bandwidth
+TODO:   [x] output serialized to cater for AXI bandwidth
         [ ] traits not compatible with icore defination
-        [ ] BRAM interface for data access
+        [x] BRAM interface for data access
         [ ] invalidate instructions 
         [ ] flush
         [ ] dual-issue
@@ -61,8 +61,17 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     // io.in.AXI.valid:=DontCare
     // io.in.AXI.bits:=DontCare
 
-    val data=Mem(nline,Vec(1<<(OffsetBits-2),UInt(len.W)))
-    // val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
+    // val data=Mem(nline,Vec(1<<(OffsetBits-2),UInt(len.W)))
+    val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
+    data.io.web:=DontCare
+    data.io.addrb:=DontCare
+    data.io.dinb:=DontCare
+    data.io.doutb:=DontCare
+    data.io.wea:=false.B
+    data.io.addra:=0.U
+    data.io.dina:=0.U
+    val line=VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W)))
+    val fillline=VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W)))
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 
@@ -100,15 +109,30 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
 
     io.out.cpu.valid:=io.in.cpu.valid && !out_of_service
     io.out.cpu.bits.respn:= !meta.io.hit
-    io.out.cpu.bits.rdata:=data(index_raw)(word_offset)
+    val rdata=RegInit(0.U(len.W))
+    io.out.cpu.bits.rdata:=rdata
+    // line:=data.io.douta
+    data.io.addra:=index_raw
+    // io.out.cpu.bits.rdata:=data(index_raw)(word_offset)
+
     // TODO: [ ] merge with the bram
-    when(!out_of_service && io.in.cpu.valid && !meta.io.hit){
-        pipe(next):=io.in.cpu.bits.addr                
-        next:=next+1.U
-        when(next===serving && !(io.in.AXI.valid && io.in.AXI.bits.last)){
-            out_of_service:=true.B
+    when(!out_of_service && io.in.cpu.valid){
+        when(meta.io.hit){
+            var i=0
+            for(i<- 0 until 1<<(OffsetBits-2)){
+                line(i):=data.io.douta(i*len+31,i*len)
+            }
+            rdata:=line(word_offset)
         }
-        que_addr:=true.B
+        .otherwise{
+            pipe(next):=io.in.cpu.bits.addr                
+            next:=next+1.U
+            when(next===serving && !(io.in.AXI.valid && io.in.AXI.bits.last)){
+                out_of_service:=true.B
+            }
+            que_addr:=true.B
+
+        }
     }
     when(que_addr && io.out.AXI.ready){
         ptr:=ptr+1.U
@@ -142,7 +166,8 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     when(que&&io.in.AXI.valid){
         // meta.io.aux_index:=index_fill
         meta_invalidate:=true.B
-        data(index_fill)(j):=io.in.AXI.bits.data
+        // data(index_fill)(j):=io.in.AXI.bits.data
+        fillline(j):=io.in.AXI.bits.data
         when(io.in.AXI.bits.last){
             j:=0.U;
             inform_cpu_data_valid()
@@ -153,6 +178,10 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
             when(serving===ptr && !(que_addr && io.out.AXI.ready)){
                 que:=false.B
             }
+            data.io.wea:=true.B
+            data.io.addra:=index_fill
+            data.io.dina:=fillline.asUInt
+            // data.io.dina:=Cat(line(i) for i<-0 until 1<<(OffsetBits-2))
         }
         .otherwise{
             j:=j+1.U
