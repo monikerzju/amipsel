@@ -28,7 +28,7 @@ class ALU extends Module with Config with AluOpType {
     val zero = Output(UInt(len.W))
   })
 
-  val shamt = io.b & "h0000001f".U
+  val shamt = io.b(4, 0)
   // cascade mux?
   // maybe choose "switch"
   io.r := MuxLookup(
@@ -45,7 +45,7 @@ class ALU extends Module with Config with AluOpType {
       aluNor -> ~(io.a | io.b),
       aluSll -> (io.a >> shamt),
       aluSrl -> (io.a << shamt),
-      aluSra -> (io.a.asSInt() >> shamt), // should be tested
+      aluSra -> (io.a.asSInt() >> shamt).asUInt(), // should be tested
       aluLui -> ("hdeadbeef".U)  // TODO
     )
   )
