@@ -13,7 +13,7 @@ TODO:   [x] output serialized to cater for AXI bandwidth
         [x] BRAM interface for data access
         [ ] invalidate instructions 
         [ ] flush
-        [ ] dual-issue
+        [x] dual-issue for icache
 
 NOTICE: - expect the valid signal early in the cycle, not withstandable the latency 
         - provides access for aligned address only
@@ -88,7 +88,7 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     val tag=RegNext(tag_raw)
     val index=RegNext(index_raw)
     val word_offset=RegNext(io.in.cpu.bits.addr(OffsetBits,2))
-
+    val word2=word_offset+1.U
 
     val pipe=VecInit(Seq.fill(MissTolerance)(0.U(len.W)))
     // more like a ring buffer
@@ -108,8 +108,9 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     io.in.AXI.ready:=que
 
     io.out.cpu.valid:=io.in.cpu.valid && !out_of_service
-    io.out.cpu.bits.respn:= !meta.io.hit
-    val rdata=RegInit(0.U(len.W))
+    val dual_issue=io.in.cpu.bits.mtype===3.U && word2=/=0.U
+    io.out.cpu.bits.respn:= Cat(dual_issue,!meta.io.hit)
+    val rdata=VecInit(Seq.fill(2)(0.U(len.W)))
     io.out.cpu.bits.rdata:=rdata
     // line:=data.io.douta
     data.io.addra:=index_raw
@@ -122,7 +123,8 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
             for(i<- 0 until 1<<(OffsetBits-2)){
                 line(i):=data.io.douta(i*len+31,i*len)
             }
-            rdata:=line(word_offset)
+            rdata(0):=line(word_offset)
+            rdata(1):=line(word2)
         }
         .otherwise{
             pipe(next):=io.in.cpu.bits.addr                
