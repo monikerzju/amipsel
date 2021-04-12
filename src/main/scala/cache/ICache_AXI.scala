@@ -31,36 +31,49 @@ import chisel3.util._
 import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
-class AXI4RA extends Bundle with Cache_Parameters with Config{
-    val addr=Output(UInt(len.W))
-}
-class AXI4RD extends Bundle with Cache_Parameters with Config{
-    val data=Output(UInt(len.W))
-    val last=Bool()
-} 
-class AXI4WA extends AXI4RA {}
-class AXI4WD extends AXI4RD {
-    val bready=Bool()
-    val bvalid=Bool()
-    val bresp=Bool()
-}
+import icore._
 class ICacheAXI extends Module with Cache_Parameters with Config{
     val io=IO(new Bundle{
-        val in=new Bundle{
-            val cpu=Flipped(Decoupled(new MemReq()))
-            val AXI=Flipped(Decoupled(new AXI4RD()))
-        }
-        val out=new Bundle{
-            val cpu=Decoupled(new MemResp())
-            val AXI=Decoupled(new AXI4RA())
-        }
+        val cpu=new MemIO()
+        val AXI=new AXI4Bundle()
+        // val in=new Bundle{
+        //     val cpu=Flipped(Decoupled(new MemReq()))
+        //     val AXI=Flipped(Decoupled(new AXI4RD()))
+        // }
+        // val out=new Bundle{
+        //     val cpu=Decoupled(new MemResp())
+        //     val AXI=Decoupled(new AXI4RA())
+        // }
     })
     val nline=1<<IndexBits
-    // io.in.cpu.bits:=DontCare
-    io.in.AXI.ready:=false.B
-    // io.in.AXI.valid:=DontCare
-    // io.in.AXI.bits:=DontCare
+    // io.cpu.req.bits:=DontCare
+    io.AXI.r.ready:=false.B
+    // io.AXI.r.valid:=DontCare
+    // io.AXI.r.bits:=DontCare
+    io.AXI.b:=DontCare
+    io.AXI.aw:=DontCare
+    io.AXI.w:=DontCare
 
+    io.AXI.ar.bits.burst := 0.U
+    io.AXI.ar.bits.id := 0.U
+    io.AXI.ar.bits.user := DontCare
+    io.AXI.ar.bits.lock := 0.U
+    io.AXI.ar.bits.cache := 0.U
+    io.AXI.ar.bits.prot := 0.U
+    io.AXI.ar.bits.qos := 0.U
+    io.AXI.ar.bits.len := 0.U // 1 word
+    io.AXI.ar.bits.size := "b010".U
+    // io.ar.bits.size := MuxLookup(
+    //   io.cpu.req.bits.mtype, "b011".U,
+    //   Seq(
+    //     memByte -> "b000".U,
+    //     memByteU -> "b000".U,
+    //     memHalf -> "b001".U,
+    //     memHalfU -> "b001".U,
+    //     memWord -> "b010".U,
+    //     memWordU -> "b010".U
+    //   )
+    // )
     // val data=Mem(nline,Vec(1<<(OffsetBits-2),UInt(len.W)))
     val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
     data.io.web:=DontCare
@@ -68,18 +81,19 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     data.io.dinb:=DontCare
     data.io.doutb:=DontCare
     data.io.wea:=false.B
-    data.io.addra:=0.U
-    data.io.dina:=0.U
-    val line=VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W)))
-    val fillline=VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W)))
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 
     
     val tag_raw=Wire(UInt(TagBits.W))
-    tag_raw:=io.in.cpu.bits.addr(31,32-TagBits)
+    tag_raw:=io.cpu.req.bits.addr(31,32-TagBits)
     val index_raw=Wire(UInt(IndexBits.W))
-    index_raw:=io.in.cpu.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
+    index_raw:=io.cpu.req.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
+    
+    val line=VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W)))
+    val fillline=VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W)))
+    data.io.addra:=index_raw
+    data.io.dina:=fillline.asUInt
     
     val meta=Module(new Meta(nline));
     meta.io.tags_in:=tag_raw
@@ -87,7 +101,7 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
 
     val tag=RegNext(tag_raw)
     val index=RegNext(index_raw)
-    val word_offset=RegNext(io.in.cpu.bits.addr(OffsetBits,2))
+    val word_offset=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word_offset+1.U
 
     val pipe=VecInit(Seq.fill(MissTolerance)(0.U(len.W)))
@@ -100,24 +114,24 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     val que_addr=RegInit(false.B)
     val out_of_service=RegInit(false.B)
 
-    io.out.AXI.valid:=que_addr
-    io.out.AXI.bits.addr:=pipe(ptr)
+    io.AXI.ar.valid:=que_addr
+    io.AXI.ar.bits.addr:=pipe(ptr)
 
-    io.in.cpu.ready:=io.out.cpu.valid
+    io.cpu.req.ready:=io.cpu.resp.valid
 
-    io.in.AXI.ready:=que
+    io.AXI.r.ready:=que
 
-    io.out.cpu.valid:=io.in.cpu.valid && !out_of_service
-    val dual_issue=io.in.cpu.bits.mtype===3.U && word2=/=0.U
-    io.out.cpu.bits.respn:= Cat(dual_issue,!meta.io.hit)
+    io.cpu.resp.valid:=io.cpu.req.valid && !out_of_service
+    val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
+    io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     val rdata=VecInit(Seq.fill(2)(0.U(len.W)))
-    io.out.cpu.bits.rdata:=rdata
+    io.cpu.resp.bits.rdata:=rdata
     // line:=data.io.douta
     data.io.addra:=index_raw
-    // io.out.cpu.bits.rdata:=data(index_raw)(word_offset)
+    // io.cpu.resp.bits.rdata:=data(index_raw)(word_offset)
 
     // TODO: [ ] merge with the bram
-    when(!out_of_service && io.in.cpu.valid){
+    when(!out_of_service && io.cpu.req.valid){
         when(meta.io.hit){
             var i=0
             for(i<- 0 until 1<<(OffsetBits-2)){
@@ -127,18 +141,18 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
             rdata(1):=line(word2)
         }
         .otherwise{
-            pipe(next):=io.in.cpu.bits.addr                
+            pipe(next):=io.cpu.req.bits.addr                
             next:=next+1.U
-            when(next===serving && !(io.in.AXI.valid && io.in.AXI.bits.last)){
+            when(next===serving && !(io.AXI.r.valid && io.AXI.r.bits.last)){
                 out_of_service:=true.B
             }
             que_addr:=true.B
 
         }
     }
-    when(que_addr && io.out.AXI.ready){
+    when(que_addr && io.AXI.ar.ready){
         ptr:=ptr+1.U
-        when(ptr===next && !(!out_of_service && io.in.cpu.valid && !meta.io.hit)){
+        when(ptr===next && !(!out_of_service && io.cpu.req.valid && !meta.io.hit)){
             que_addr:=false.B
             // FIXME: [x] concurency
             // can simultiniusly put and get, making it difficult to judge if it is full
@@ -165,24 +179,23 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     // val index_fill=Wire(pipe(serving)(31-TagBits,32-TagBits-IndexBits))
     meta.io.aux_index:=index_fill
     val j=RegInit(0.U((1<<(OffsetBits-2)).W))
-    when(que&&io.in.AXI.valid){
+    when(que&&io.AXI.r.valid){
         // meta.io.aux_index:=index_fill
         meta_invalidate:=true.B
-        // data(index_fill)(j):=io.in.AXI.bits.data
-        fillline(j):=io.in.AXI.bits.data
-        when(io.in.AXI.bits.last){
+        // data(index_fill)(j):=io.AXI.r.bits.data
+        fillline(j):=io.AXI.r.bits.data
+        when(io.AXI.r.bits.last){
             j:=0.U;
             inform_cpu_data_valid()
             serving:=serving+1.U
             out_of_service:=false.B
             meta_update:=true.B
             meta_aux_tag:=pipe(serving)(len-1,len-TagBits)
-            when(serving===ptr && !(que_addr && io.out.AXI.ready)){
+            when(serving===ptr && !(que_addr && io.AXI.ar.ready)){
                 que:=false.B
             }
             data.io.wea:=true.B
             data.io.addra:=index_fill
-            data.io.dina:=fillline.asUInt
             // data.io.dina:=Cat(line(i) for i<-0 until 1<<(OffsetBits-2))
         }
         .otherwise{
