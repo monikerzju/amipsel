@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import conf.Config
 
-trait AluOpType {
+trait AluOpType{
   val aluOpWidth = 5
   val aluAdd = 0.U(aluOpWidth.W)
   val aluAddu = 1.U(aluOpWidth.W)
@@ -23,12 +23,12 @@ trait AluOpType {
 class ALU extends Module with Config with AluOpType {
   val io = IO(new Bundle {
     val a, b = Input(UInt(len.W))
-    val aluOp = Input(UInt()) // maybe configured
+    val aluOp = Input(UInt(aluOpWidth.W)) // maybe configured
     val r = Output(UInt(len.W))
     val zero = Output(UInt(len.W))
   })
 
-  val shamt = io.b & "h0000001f".U
+  val shamt = io.b(4, 0)
   // cascade mux?
   // maybe choose "switch"
   io.r := MuxLookup(
@@ -45,7 +45,7 @@ class ALU extends Module with Config with AluOpType {
       aluNor -> ~(io.a | io.b),
       aluSll -> (io.a >> shamt),
       aluSrl -> (io.a << shamt),
-      aluSra -> (io.a.asSInt() >> shamt), // should be tested
+      aluSra -> (io.a.asSInt() >> shamt).asUInt(), // should be tested
       aluLui -> ("hdeadbeef".U)  // TODO
     )
   )
