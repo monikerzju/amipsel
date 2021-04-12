@@ -27,15 +27,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 // import icore._
 import conf._
-trait Cache_Parameters{
-    val TagBits=18
-    val IndexBits=8
-    val OffsetBits=6
-    val DataBits=512
-    val nBuf=4
-    // FIXME: not compatible with current interface
-    assert(TagBits+IndexBits+OffsetBits==32)
-}
+
 class AXI4IO_Req extends Bundle with Config{
     val addr = Output(UInt(len.W))
 //   val wdata = Output(UInt(len.W))
@@ -68,27 +60,27 @@ class AXI4IO extends Bundle {
     val req=Decoupled(new AXI4IO_Req)
     val resp=Flipped(Decoupled(new AXIResp))
 }
-class Meta(nline:Int) extends Module with Cache_Parameters{
-    val io=IO(new Bundle{
-        val index_in=Input(UInt(IndexBits.W))
-        val tags_in=Input(UInt(TagBits.W))
-        val update=Input(Bool())
-        val hit=Output(Bool())
-    })
-    io.index_in:=DontCare
-    io.tags_in:=DontCare
-    io.update:=DontCare
-    val reg_tag=RegNext(io.tags_in)
-    val reg_index=RegNext(io.index_in)
-    // val tags=VecInit(VecInit(nline,UInt(TagBits.W)),0.U)
-    val tags=VecInit(Seq.fill(nline)(0.U(TagBits.W)))
-    val valid=VecInit(Seq.fill(nline)(false.B))
-    io.hit:=(io.tags_in===tags(io.index_in)&&valid(io.index_in))
-    when(io.update){
-        tags(reg_index):=reg_tag
-        valid(reg_index):=true.B
-    }
-}
+// class Meta(nline:Int) extends Module with Cache_Parameters{
+//     val io=IO(new Bundle{
+//         val index_in=Input(UInt(IndexBits.W))
+//         val tags_in=Input(UInt(TagBits.W))
+//         val update=Input(Bool())
+//         val hit=Output(Bool())
+//     })
+//     io.index_in:=DontCare
+//     io.tags_in:=DontCare
+//     io.update:=DontCare
+//     val reg_tag=RegNext(io.tags_in)
+//     val reg_index=RegNext(io.index_in)
+//     // val tags=VecInit(VecInit(nline,UInt(TagBits.W)),0.U)
+//     val tags=VecInit(Seq.fill(nline)(0.U(TagBits.W)))
+//     val valid=VecInit(Seq.fill(nline)(false.B))
+//     io.hit:=(io.tags_in===tags(io.index_in)&&valid(io.index_in))
+//     when(io.update){
+//         tags(reg_index):=reg_tag
+//         valid(reg_index):=true.B
+//     }
+// }
 class ICache1WayDummy(nline:Int) extends Module with Cache_Parameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()

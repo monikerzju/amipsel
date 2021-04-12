@@ -28,8 +28,8 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   val pc_gen = Module(new PCGen(len, startAddr, 4 * frontendIssueN))
   val decs = Array.fill(frontendIssueN)(Module(new Dec).io)
   val decode_pc_low = RegInit(UInt(len.W), startAddr.U)
-  val decode_instn = RegInit(UInt(SZ_FB_INSTN.W), 0.U)
-  val decode_reg_line = RegInit(Vec(frontendIssueN, 0.U(len.W)))
+  val decode_instn = RegInit(UInt(frontendIssueN.W), 0.U)
+  val decode_reg_line = Array.fill(frontendIssueN)(RegInit(0.U(len.W)))
   val last_wait = RegNext(io.fb.bmfs.please_wait)
 
   // Signals define
@@ -48,14 +48,14 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   pc_gen.io.redirect_pc := io.fb.bmfs.redirect_pc  // TODO
 
   io.icache.req.valid := true.B // maybe situation will change by adding BPU
-  io.icache.req.ready := true.B 
+  io.icache.resp.ready := true.B 
   io.icache.req.bits.addr := pc_gen.io.pc_o
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen := false.B
   if (frontendIssueN == 1) {
-    io.icache.req.bits.mtype :=  MEM_WORD
+    io.icache.req.bits.mtype :=  MEM_WORD.U
   } else {
-    io.icache.req.bits.mtype :=  MEM_DWORD
+    io.icache.req.bits.mtype :=  MEM_DWORD.U
   }
   io.icache.req.bits.flush := false.B
   io.icache.req.bits.invalidate := false.B
@@ -73,7 +73,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   for (i <- 0 until frontendIssueN) {
     decs(i).inst := Mux(wtg, decode_reg_line(i), io.icache.resp.bits.rdata(i))
     io.fb.fmbs.pcs(i) := decode_pc_low + (i.U << 2.U)
-    io.fb.fmbs.inst_ops(i) := decs(i).mops
+    io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
 
 }

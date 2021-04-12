@@ -3,6 +3,7 @@ package tile
 import chisel3._
 import chisel3.stage._
 import fu._
+import icore._
 
 // tile(Yuan) = core + cache + uncache
 // core = datapath(Shen) + control(Shen) + coprocessor(Yuan)
@@ -34,6 +35,6 @@ object Main {
 
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new Tile)))
+      Seq(ChiselGeneratorAnnotation(() => new Core)))
   }
 }

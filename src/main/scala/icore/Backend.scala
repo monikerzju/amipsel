@@ -22,10 +22,10 @@ class InstInfo extends Bundle with InstType with AluOpType with MDUOperation {
 
 trait InstType {
   val typeLen = 3
-  val toALU = 0.U(typeLen.W)
-  val toMDU = 1.U(typeLen.W)
-  val toLU = 2.U(typeLen.W)
-  val toSU = 3.U(typeLen.W)
+  val toALU = 0
+  val toMDU = 1
+  val toLU = 2
+  val toSU = 3
 }
 
 class StoreInfo extends Bundle with Config {
@@ -57,7 +57,7 @@ class Backend extends Module with Config with InstType {
   }
   // TODO: associate the three types with frontend
   /* TODO try with ENUM? */
-  // val toALU :: toMDU :: toLSU :: Nil = Enum(3)
+  // val toALU.U(typeLen.W) :: toMDU.U(typeLen.W) :: toLSU :: Nil = Enum(3)
   val exInsts = RegInit(VecInit(Seq.fill(backendIssueN)(new InstInfo()))) // ?
   val exNum = RegInit(0.U(3.W))
   issueQueue.io.deqStep := exNum
@@ -95,7 +95,7 @@ class Backend extends Module with Config with InstType {
   }
 
   val nop = new InstInfo
-  nop.fuDest := toALU
+  nop.fuDest := toALU.U(typeLen.W)
   nop.regWrite := false.B
   when(wbFlush) {
     for(i <- 0 until backendIssueN) {
@@ -153,7 +153,7 @@ class Backend extends Module with Config with InstType {
   for (i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       switch(exInsts(i).fuDest) {
-        is(toALU) {
+        is(toALU.U(typeLen.W)) {
           // TODO: mux ?
           alu.io.a := MuxLookup(aluSrcA, rsData(i),
             Seq(0.U -> rsData(i), 1.U -> exInsts(i).pc, 2.U -> wbResult(fwdSrcAIndex)))
@@ -162,7 +162,7 @@ class Backend extends Module with Config with InstType {
           alu.io.aluOp := exInsts(i).aluOp
           wbResult(i) := alu.io.r
         }
-        is(toMDU) {
+        is(toMDU.U(typeLen.W)) {
           // TODO: deal with branch
           when(!reBranch && !brDelay(0)) {
 
@@ -171,13 +171,13 @@ class Backend extends Module with Config with InstType {
           mdu.io.req.in2 := rtData(i)
           mdu.io.req.op := exInsts(i).mduOp
         }
-        is(toLU) {
+        is(toLU.U(typeLen.W)) {
           // TODO: connect with dcache
           when(!reBranch && !brDelay(1)) {
             // TODO: deal with branch
           }
         }
-        is(toSU) {
+        is(toSU.U(typeLen.W)) {
           // TODO
           when(!reBranch && !brDelay(2)) {
             // TODO: deal with branch
@@ -235,13 +235,13 @@ class Backend extends Module with Config with InstType {
               for (j <- i + 1 until backendIssueN) {
                 when(!dcacheStall) {
                   switch(exInsts(j).fuDest) {
-                    is(toALU) {
+                    is(toALU.U(typeLen.W)) {
                       wbInsts(j).rd := 0.U
                     }
-                    is(toLU) {
+                    is(toLU.U(typeLen.W)) {
                       // TODO:
                     }
-                    is(toSU) {
+                    is(toSU.U(typeLen.W)) {
                       // TODO:
                     }
                   }
@@ -274,9 +274,9 @@ class Backend extends Module with Config with InstType {
 
   for(i <- 1 until backendIssueN) {
     when(i.U < exNum) {
-      brDelay(0) := Mux(exInsts(i).fuDest === toMDU, true.B, false.B)
-      brDelay(1) := Mux(exInsts(i).fuDest === toLU, true.B, false.B)
-      brDelay(2) := Mux(exInsts(i).fuDest === toSU, true.B, false.B)
+      brDelay(0) := Mux(exInsts(i).fuDest === toMDU.U(typeLen.W), true.B, false.B)
+      brDelay(1) := Mux(exInsts(i).fuDest === toLU.U(typeLen.W), true.B, false.B)
+      brDelay(2) := Mux(exInsts(i).fuDest === toSU.U(typeLen.W), true.B, false.B)
     }
   }
 
@@ -329,7 +329,7 @@ class Backend extends Module with Config with InstType {
   val dataFromDcache = 0.U(32.W) // TODO: connect with dcache
   for(i <- 0 until backendIssueN) {
     when(i.U < wbNum) {
-      when(wbInsts(i).fuDest === toLU) {
+      when(wbInsts(i).fuDest === toLU.U(typeLen.W)) {
         regFile.io.rd_data_vec(i) := dataFromDcache
       }
     } .otherwise {

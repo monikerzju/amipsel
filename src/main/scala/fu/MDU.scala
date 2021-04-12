@@ -5,10 +5,10 @@ import chisel3.util._
 
 trait MDUOperation extends AluOpType {
   val SZ_MDU_OP = aluOpWidth // same with ALU
-  val MDU_MUL = 0.U(SZ_MDU_OP.W)
-  val MDU_DIV = 1.U(SZ_MDU_OP.W)
-  val MDU_MULU = 2.U(SZ_MDU_OP.W)
-  val MDU_DIVU = 3.U(SZ_MDU_OP.W)
+  val MDU_MUL = 0
+  val MDU_DIV = 1
+  val MDU_MULU = 2
+  val MDU_DIVU = 3
   // Some other operations
 }
 
@@ -50,10 +50,10 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     io.req.op,
     0.U(32.W),
     Seq(
-      MDU_MUL -> (io.req.in1.asSInt() * io.req.in2.asSInt())(31, 0),
-      MDU_MULU -> (io.req.in1.asUInt() * io.req.in2.asUInt())(31, 0),
-      MDU_DIV -> (io.req.in1.asSInt() / io.req.in2.asSInt()),
-      MDU_DIVU -> (io.req.in1.asUInt() / io.req.in2.asUInt())
+      MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(31, 0),
+      MDU_MULU.U -> (io.req.in1.asUInt() * io.req.in2.asUInt())(31, 0),
+      MDU_DIV.U -> (io.req.in1.asSInt() / io.req.in2.asSInt()),
+      MDU_DIVU.U -> (io.req.in1.asUInt() / io.req.in2.asUInt())
     )
   )
 
@@ -61,10 +61,10 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     io.req.op,
     0.U(32.W),
     Seq(
-      MDU_MUL -> (io.req.in1.asSInt() * io.req.in2.asSInt())(63, 32),
-      MDU_MULU -> (io.req.in1.asUInt() * io.req.in2.asUInt())(63, 32),
-      MDU_DIV -> (io.req.in1.asSInt() % io.req.in2.asSInt()),
-      MDU_DIVU -> (io.req.in1.asUInt() % io.req.in2.asUInt())
+      MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(63, 32),
+      MDU_MULU.U -> (io.req.in1.asUInt() * io.req.in2.asUInt())(63, 32),
+      MDU_DIV.U -> (io.req.in1.asSInt() % io.req.in2.asSInt()),
+      MDU_DIVU.U -> (io.req.in1.asUInt() % io.req.in2.asUInt())
     )
   )
 
