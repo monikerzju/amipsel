@@ -36,13 +36,13 @@ class StoreInfo extends Bundle with Config {
 class Backend extends Module with Config with InstType {
   val io = IO(new BackendIO)
   val queueSize = 20
-  val dcacheStall = Bool()
+  val dcacheStall = Wire(Bool())
   val issueQueue = Module(new FIFO(queueSize, new InstInfo(), backendIssueN, frontendIssueN))
   issueQueue.io.enqStep := frontendIssueN.U
   issueQueue.io.enqReq := true.B
 
   // TODO: connect with frontend
-  issueQueue.io.din := Vec(frontendIssueN, new InstInfo())
+  issueQueue.io.din := Wire(Vec(frontendIssueN, new InstInfo()))
   val wbFlush = io.fb.bmfs.redirect_kill
   issueQueue.io.flush := wbFlush
   /**
@@ -58,7 +58,27 @@ class Backend extends Module with Config with InstType {
   // TODO: associate the three types with frontend
   /* TODO try with ENUM? */
   // val toALU.U(typeLen.W) :: toMDU.U(typeLen.W) :: toLSU :: Nil = Enum(3)
-  val exInsts = RegInit(VecInit(Seq.fill(backendIssueN)(new InstInfo()))) // ?
+  // val exInsts = RegInit(VecInit(Seq.fill(backendIssueN)(new InstInfo()))) // ?
+  val exInsts = RegInit(
+    VecInit(
+      Seq.fill(backendIssueN)({
+        val instInfo = Wire(new InstInfo)
+        instInfo.rs := 0.U
+        instInfo.rt := 0.U
+        instInfo.rd := 0.U
+        instInfo.aluOp := 0.U
+        instInfo.mduOp := 0.U
+        instInfo.imm := 0.U
+        instInfo.fuDest := toALU.U
+        instInfo.regWrite := false.B
+        instInfo.pc := 0.U
+        instInfo.pcNext := 0.U
+        instInfo.bType := 0.U
+        instInfo.isBranch := false.B
+        instInfo
+      })
+    )
+  )
   val exNum = RegInit(0.U(3.W))
   issueQueue.io.deqStep := exNum
   when(!dcacheStall) {
@@ -94,7 +114,7 @@ class Backend extends Module with Config with InstType {
     }
   }
 
-  val nop = new InstInfo
+  val nop = Wire(new InstInfo)
   nop.fuDest := toALU.U(typeLen.W)
   nop.regWrite := false.B
   when(wbFlush) {
@@ -112,8 +132,28 @@ class Backend extends Module with Config with InstType {
 
   val mdu = Module(new MDU())
   val wbResult = RegInit(VecInit(Seq.fill(3)(0.U(len.W))))
-  val wbInsts = RegInit(VecInit(Seq.fill(backendIssueN)(new InstInfo()))) // ?
+//  val wbInsts = RegInit(VecInit(Seq.fill(backendIssueN)(new InstInfo()))) // ?
 
+  val wbInsts = RegInit(
+    VecInit(
+      Seq.fill(backendIssueN)({
+        val instInfo = Wire(new InstInfo)
+        instInfo.rs := 0.U
+        instInfo.rt := 0.U
+        instInfo.rd := 0.U
+        instInfo.aluOp := 0.U
+        instInfo.mduOp := 0.U
+        instInfo.imm := 0.U
+        instInfo.fuDest := toALU.U
+        instInfo.regWrite := false.B
+        instInfo.pc := 0.U
+        instInfo.pcNext := 0.U
+        instInfo.bType := 0.U
+        instInfo.isBranch := false.B
+        instInfo
+      })
+    )
+  )
   // wbInsts := RegNext(exInsts) // ?
 
 
@@ -137,19 +177,19 @@ class Backend extends Module with Config with InstType {
     regFile.io.rs_addr_vec(2 * i + 1) := exInsts(i).rt
   }
 
-  val rsData = Wire(Vec(3, 0.U(32.W)))
-  val rtData = Wire(Vec(3, 0.U(32.W)))
+  val rsData = Wire(Vec(3, UInt(32.W)))
+  val rtData = Wire(Vec(3, UInt(32.W)))
   for(i <- 0 until 3) {
     rsData(i) := regFile.io.rs_data_vec(2 * i)
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
 
   val sqSize = 10
-  val storeQueue = Module(new Queue(new StoreInfo, sqSize))
+//  val storeQueue = Module(new Queue(new StoreInfo, sqSize))
 
-  val reBranch = Bool()
+  val reBranch = Wire(Bool())
   // 0 - mdu 1 - lu 2 - su
-  val brDelay = Vec(3, Bool())
+  val brDelay = Wire(Vec(3, Bool()))
   for (i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       switch(exInsts(i).fuDest) {
@@ -182,9 +222,11 @@ class Backend extends Module with Config with InstType {
           when(!reBranch && !brDelay(2)) {
             // TODO: deal with branch
           }
+          /*
           storeQueue.io.enq.bits.addr := rsData(i) + Cat(Fill(16, exInsts(i).imm(15)),exInsts(i).imm) // sign-extended
           storeQueue.io.enq.bits.data := rtData(i)
           storeQueue.io.enq.ready := true.B
+           */
         }
       }
     }
