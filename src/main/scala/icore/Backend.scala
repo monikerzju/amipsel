@@ -4,6 +4,8 @@ import chisel3._
 import chisel3.util._
 import conf.Config
 import fu._
+import isa._
+import chisel3.experimental.BundleLiterals._
 
 class InstInfo extends Bundle with InstType with AluOpType with MDUOperation {
   val rs = UInt(5.W)
@@ -36,13 +38,28 @@ class StoreInfo extends Bundle with Config {
 class Backend extends Module with Config with InstType {
   val io = IO(new BackendIO)
   val queueSize = 20
-  val dcacheStall = Wire(Bool())
+  val dcacheStall = WireDefault(false.B)
   val issueQueue = Module(new FIFO(queueSize, new InstInfo(), backendIssueN, frontendIssueN))
   issueQueue.io.enqStep := frontendIssueN.U
   issueQueue.io.enqReq := true.B
 
   // TODO: connect with frontend
-  issueQueue.io.din := Wire(Vec(frontendIssueN, new InstInfo()))
+  for(i <- 0 until frontendIssueN) {
+    // TODO: check all
+    val mops = io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
+    issueQueue.io.din(i).rs := mops.rs1
+    issueQueue.io.din(i).rt := mops.rs2
+    issueQueue.io.din(i).rd := mops.rd
+    issueQueue.io.din(i).aluOp := mops.alu_op
+    issueQueue.io.din(i).mduOp := mops.alu_op
+    issueQueue.io.din(i).imm := 0.U //TODO: add imm
+    issueQueue.io.din(i).fuDest := mops.alu_mdu_lsu
+    issueQueue.io.din(i).regWrite := mops.write_dest === MicroOpCtrl.DXXX
+    issueQueue.io.din(i).pc := mops.next_pc
+    issueQueue.io.din(i).pcNext := mops.next_pc
+    issueQueue.io.din(i).bType := mops.branch_type
+    issueQueue.io.din(i).isBranch := mops.branch_type === MicroOpCtrl.BrXXX
+  }
   val wbFlush = io.fb.bmfs.redirect_kill
   issueQueue.io.flush := wbFlush
   /**
@@ -114,7 +131,23 @@ class Backend extends Module with Config with InstType {
     }
   }
 
-  val nop = Wire(new InstInfo)
+//  val nop = Wire(new InstInfo)
+  val nop = WireInit(
+    (new InstInfo).Lit(
+      _.rs -> 0.U,
+      _.rt -> 0.U,
+      _.rd -> 0.U,
+      _.aluOp -> 0.U,
+      _.mduOp -> 0.U,
+      _.imm -> 0.U,
+      _.fuDest -> toALU.U,
+      _.regWrite -> false.B,
+      _.pc -> 0.U,
+      _.pcNext -> 0.U,
+      _.bType -> 0.U,
+      _.isBranch -> false.B
+    )
+  )
   nop.fuDest := toALU.U(typeLen.W)
   nop.regWrite := false.B
   when(wbFlush) {
@@ -189,7 +222,17 @@ class Backend extends Module with Config with InstType {
 
   val reBranch = Wire(Bool())
   // 0 - mdu 1 - lu 2 - su
-  val brDelay = Wire(Vec(3, Bool()))
+  val brDelay = WireDefault(VecInit(Seq.fill(3)(false.B)))
+  // initialize alu
+  alu.io.a := 0.U
+  alu.io.b := 0.U
+  alu.io.aluOp := nop.aluOp
+
+  // initialize mdu
+  mdu.io.req.in1 := 0.U
+  mdu.io.req.in2 := 0.U
+  mdu.io.req.op := nop.mduOp
+
   for (i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       switch(exInsts(i).fuDest) {
@@ -253,9 +296,9 @@ class Backend extends Module with Config with InstType {
   val pcRedirect = Reg(UInt(len.W))
   // process branch
   for(i <- 0 until backendIssueN) {
+    reBranch := false.B
     when(i.U < exNum) {
       when(exInsts(i).isBranch) {
-        reBranch := false.B
         wbReBranch := false.B
         switch(exInsts(i).bType) {
           is(0.U) { // beq
@@ -373,6 +416,8 @@ class Backend extends Module with Config with InstType {
     when(i.U < wbNum) {
       when(wbInsts(i).fuDest === toLU.U(typeLen.W)) {
         regFile.io.rd_data_vec(i) := dataFromDcache
+      } .otherwise {
+        regFile.io.rd_data_vec(i) := wbResult(i)
       }
     } .otherwise {
       regFile.io.rd_data_vec(i) := wbResult(i)

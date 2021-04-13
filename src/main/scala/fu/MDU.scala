@@ -27,7 +27,7 @@ class MDUResp(width: Int = 32) extends Bundle {
 class MDUIO(width: Int = 32) extends Bundle {
   val req = new MDUReq(width)
   val resp = new MDUResp(width)
-  val kill = Input(Bool())
+//  val kill = Input(Bool())
 }
 
 class MDU(width: Int = 32) extends Module with MDUOperation {
