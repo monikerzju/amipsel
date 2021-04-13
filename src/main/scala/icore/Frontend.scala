@@ -11,6 +11,7 @@ class PCGenIO(va_width: Int = 32) extends Bundle {
   val redirect = Input(Bool())
   val redirect_pc = Input(UInt(va_width.W))
   val pc_o = Output(UInt(va_width.W))
+  override def cloneType = (new PCGenIO(va_width)).asInstanceOf[this.type]
 }
 
 class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int = 4) extends Module {

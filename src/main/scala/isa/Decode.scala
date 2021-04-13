@@ -20,6 +20,7 @@ class Mops extends Bundle {
   val rs1           = UInt(SZ_REG_ADDR.W)
   val rs2           = UInt(SZ_REG_ADDR.W)
   val rd            = UInt(SZ_REG_ADDR.W)  
+  val imm           = UInt(16.W)
 }
 
 class DecIO extends Bundle with Config {
@@ -125,4 +126,5 @@ class Dec extends Module {
   io.mops.rs1           := control_signal(10)
   io.mops.rs2           := control_signal(11)
   io.mops.rd            := control_signal(12)
+  io.mops.imm           := IMM
 }

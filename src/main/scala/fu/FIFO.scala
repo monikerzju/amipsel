@@ -13,6 +13,7 @@ class FIFOIO[T <: Data](size: Int, private val gen: T, readN: Int, enqN: Int) ex
   val flush = Input(Bool())
   val sufficient = Output(Bool())
   val items = Output(UInt(log2Ceil(readN).W)) // queue item num
+  override def cloneType = (new FIFOIO(size, gen, readN, enqN)).asInstanceOf[this.type]
 }
 
 class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {

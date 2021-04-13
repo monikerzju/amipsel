@@ -28,6 +28,7 @@ class MDUIO(width: Int = 32) extends Bundle {
   val req = new MDUReq(width)
   val resp = new MDUResp(width)
 //  val kill = Input(Bool())
+  override def cloneType = (new MDUIO(width)).asInstanceOf[this.type]
 }
 
 class MDU(width: Int = 32) extends Module with MDUOperation {
@@ -70,4 +71,6 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
 
   io.resp.lo := lo
   io.resp.hi := hi
+
+  io.resp.except := (io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U) && io.req.in2.asUInt === 0.U
 }

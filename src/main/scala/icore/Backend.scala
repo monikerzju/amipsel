@@ -44,6 +44,7 @@ class Backend extends Module with Config with InstType {
   issueQueue.io.enqReq := true.B
 
   // TODO: connect with frontend
+  io.fb.fmbs.please_wait := !issueQueue.io.sufficient
   for(i <- 0 until frontendIssueN) {
     // TODO: check all
     val mops = io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
@@ -52,7 +53,7 @@ class Backend extends Module with Config with InstType {
     issueQueue.io.din(i).rd := mops.rd
     issueQueue.io.din(i).aluOp := mops.alu_op
     issueQueue.io.din(i).mduOp := mops.alu_op
-    issueQueue.io.din(i).imm := 0.U //TODO: add imm
+    issueQueue.io.din(i).imm := mops.imm
     issueQueue.io.din(i).fuDest := mops.alu_mdu_lsu
     issueQueue.io.din(i).regWrite := mops.write_dest === MicroOpCtrl.DXXX
     issueQueue.io.din(i).pc := mops.next_pc

@@ -97,6 +97,6 @@ class Core extends Module with Config {
   fe.io.fb <> be.io.fb
   be.io.interrupt := io.interrupt.map((i: Bool) => RegNext(i))
 
-  // io.icache <> fe.io.icache
-  // io.dcache <> be.io.dcache
+  io.icache <> fe.io.icache
+  io.dcache <> be.io.dcache
 }
