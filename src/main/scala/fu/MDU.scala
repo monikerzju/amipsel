@@ -13,21 +13,21 @@ trait MDUOperation extends AluOpType {
 }
 
 class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
-  val op = Bits(SZ_MDU_OP.W)
-  val in1 = Bits(width.W)
-  val in2 = Bits(width.W)
+  val op = Input(Bits(SZ_MDU_OP.W))
+  val in1 = Input(Bits(width.W))
+  val in2 = Input(Bits(width.W))
 }
 
 class MDUResp(width: Int = 32) extends Bundle {
-  val hi = Bits(width.W)
-  val lo = Bits(width.W)
-  val except = Bits(1.W)
+  val hi = Output(Bits(width.W))
+  val lo = Output(Bits(width.W))
+  val except = Output(Bits(1.W))
 }
 
 class MDUIO(width: Int = 32) extends Bundle {
-  val req = Input(new MDUReq(width))
-  val resp = Output(new MDUResp(width))
-  val kill = Input(Bool())
+  val req = new MDUReq(width)
+  val resp = new MDUResp(width)
+//  val kill = Input(Bool())
 }
 
 class MDU(width: Int = 32) extends Module with MDUOperation {
@@ -50,9 +50,9 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     io.req.op,
     0.U(32.W),
     Seq(
-      MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(31, 0),
+      MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(31, 0).asUInt(),
       MDU_MULU.U -> (io.req.in1.asUInt() * io.req.in2.asUInt())(31, 0),
-      MDU_DIV.U -> (io.req.in1.asSInt() / io.req.in2.asSInt()),
+      MDU_DIV.U -> (io.req.in1.asSInt() / io.req.in2.asSInt()).asUInt(),
       MDU_DIVU.U -> (io.req.in1.asUInt() / io.req.in2.asUInt())
     )
   )
@@ -61,9 +61,9 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     io.req.op,
     0.U(32.W),
     Seq(
-      MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(63, 32),
+      MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(63, 32).asUInt(),
       MDU_MULU.U -> (io.req.in1.asUInt() * io.req.in2.asUInt())(63, 32),
-      MDU_DIV.U -> (io.req.in1.asSInt() % io.req.in2.asSInt()),
+      MDU_DIV.U -> (io.req.in1.asSInt() % io.req.in2.asSInt()).asUInt(),
       MDU_DIVU.U -> (io.req.in1.asUInt() % io.req.in2.asUInt())
     )
   )
