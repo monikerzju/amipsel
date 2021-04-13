@@ -57,7 +57,12 @@ class MemIO extends Bundle with Config {
 //     val bvalid=Bool()
 //     val bresp=Bool()
 // }
-
+class BufBundle extends Bundle with Config with Cache_Parameters{
+  val addr=UInt(len.W)
+  val data=Vec((1<<OffsetBits-2),UInt(len.W))
+  val written=Bool()
+  val valid=Bool()
+}
 trait AXI4Parameters {
   // These are all fixed by the AXI4 standard:
   val lenBits = 8
