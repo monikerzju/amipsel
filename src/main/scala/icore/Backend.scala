@@ -39,6 +39,7 @@ class Backend extends Module with Config with InstType {
   val io = IO(new BackendIO)
   val queueSize = 20
   val dcacheStall = WireDefault(false.B)
+  dcacheStall := !io.dcache.resp.valid
   val issueQueue = Module(new FIFO(queueSize, new InstInfo(), backendIssueN, frontendIssueN))
   issueQueue.io.enqStep := frontendIssueN.U
   issueQueue.io.enqReq := true.B
@@ -63,6 +64,7 @@ class Backend extends Module with Config with InstType {
   }
   val wbFlush = io.fb.bmfs.redirect_kill
   issueQueue.io.flush := wbFlush
+  io.fb.fmbs.please_wait := !issueQueue.io.sufficient
   /**
    *  [---------- IS stage -----------]
    */
@@ -219,7 +221,6 @@ class Backend extends Module with Config with InstType {
   }
 
   val sqSize = 10
-//  val storeQueue = Module(new Queue(new StoreInfo, sqSize))
 
   val reBranch = Wire(Bool())
   // 0 - mdu 1 - lu 2 - su
@@ -260,21 +261,18 @@ class Backend extends Module with Config with InstType {
           when(!reBranch && !brDelay(1)) {
             // TODO: deal with branch
           }
+          
         }
         is(toSU.U(typeLen.W)) {
           // TODO
           when(!reBranch && !brDelay(2)) {
             // TODO: deal with branch
           }
-          /*
-          storeQueue.io.enq.bits.addr := rsData(i) + Cat(Fill(16, exInsts(i).imm(15)),exInsts(i).imm) // sign-extended
-          storeQueue.io.enq.bits.data := rtData(i)
-          storeQueue.io.enq.ready := true.B
-           */
         }
       }
     }
   }
+
   // forwarding here?
   // assume I-type Inst replace rt with rd, and update rt = 0
   for(i <- 0 until backendIssueN) {
@@ -412,7 +410,9 @@ class Backend extends Module with Config with InstType {
   }
   regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd)) // ?
   // handle load-inst separately
-  val dataFromDcache = 0.U(32.W) // TODO: connect with dcache
+  val dataFromDcache = Wire(UInt(32.W))
+  dataFromDcache := io.dcache.resp.bits.rdata(0) // connect one port
+
   for(i <- 0 until backendIssueN) {
     when(i.U < wbNum) {
       when(wbInsts(i).fuDest === toLU.U(typeLen.W)) {
