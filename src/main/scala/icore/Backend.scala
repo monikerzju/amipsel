@@ -35,7 +35,7 @@ class StoreInfo extends Bundle with Config {
   val data = UInt(len.W)
 }
 
-class Backend extends Module with Config with InstType {
+class Backend extends Module with Config with InstType with MemAccessType {
   val io = IO(new BackendIO)
   val queueSize = 20
   val dcacheStall = WireDefault(false.B)
@@ -235,6 +235,16 @@ class Backend extends Module with Config with InstType {
   mdu.io.req.in2 := 0.U
   mdu.io.req.op := nop.mduOp
 
+  // initialize lu
+  io.dcache.req.bits.addr := 0.U
+  io.dcache.req.bits.wdata := 0.U
+  io.dcache.req.bits.wen := false.B
+  io.dcache.req.bits.flush := false.B
+  io.dcache.req.bits.invalidate := false.B
+  io.dcache.req.bits.mtype := MEM_WORD.U
+  io.dcache.req.valid := false.B
+
+
   for (i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       switch(exInsts(i).fuDest) {
@@ -260,8 +270,10 @@ class Backend extends Module with Config with InstType {
           // TODO: connect with dcache
           when(!reBranch && !brDelay(1)) {
             // TODO: deal with branch
+            io.dcache.req.bits.addr := (exInsts(i).rs.asSInt() + exInsts(i).imm.asSInt()).asUInt() // TODO: sign-extended
+            // TODO: ? load or store type ?
           }
-          
+
         }
         is(toSU.U(typeLen.W)) {
           // TODO
@@ -412,6 +424,7 @@ class Backend extends Module with Config with InstType {
   // handle load-inst separately
   val dataFromDcache = Wire(UInt(32.W))
   dataFromDcache := io.dcache.resp.bits.rdata(0) // connect one port
+  io.dcache.resp.ready := true.B
 
   for(i <- 0 until backendIssueN) {
     when(i.U < wbNum) {
