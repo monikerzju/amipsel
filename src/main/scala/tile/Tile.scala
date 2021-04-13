@@ -1,5 +1,5 @@
 package tile
-
+import cache._
 import chisel3._
 import chisel3.stage._
 
@@ -29,6 +29,6 @@ object Main {
 
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new Tile)))
+      Seq(ChiselGeneratorAnnotation(() => new  ICacheAXI)))
   }
 }

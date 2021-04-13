@@ -89,3 +89,38 @@ class Meta(nline:Int) extends Module with Cache_Parameters{
         valid(io.aux_index):=false.B
     }
 }
+
+class Meta_Data(nline:Int) extends Module with Cache_Parameters{
+
+    val io=IO(new Bundle{
+        val index_in=Input(UInt(IndexBits.W))
+        val tags_in=Input(UInt(TagBits.W))
+        val update=Input(Bool())
+        val invalidate=Input(Bool())
+        val aux_index=Input(UInt(IndexBits.W))
+        val aux_tag=Input(UInt(TagBits.W))
+        val write=Input(Bool())
+        val hit=Output(Bool())
+        val dirty=Output(Bool())
+        // for dual-port non-blocking access; 
+    })
+    // io.index_in:=DontCare
+    // io.tags_in:=DontCare
+    // io.update:=DontCare
+    val reg_tag=RegNext(io.tags_in)
+    val reg_index=RegNext(io.aux_index)
+    // val tags=VecInit(VecInit(nline,UInt(TagBits.W)),0.U)
+    val tags=VecInit(Seq.fill(nline)(0.U(TagBits.W)))
+    val valid=VecInit(Seq.fill(nline)(false.B))
+    val dirty=VecInit(Seq.fill(nline)(false.B))
+    io.hit:= !(io.aux_index===io.index_in&&io.invalidate)&&(io.tags_in===tags(io.index_in)&&valid(io.index_in))
+    // combinational loop
+    // io.hit:= (io.tags_in===tags(io.index_in)&&valid(io.index_in))
+    when(io.update){
+        // when(dirty(io.aux_index)){}
+        tags(io.aux_index):=reg_tag
+        valid(io.aux_index):=true.B
+    }.elsewhen(io.invalidate){
+        valid(io.aux_index):=false.B
+    }
+}
