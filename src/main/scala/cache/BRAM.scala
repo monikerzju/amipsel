@@ -24,7 +24,7 @@ class DPBRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
 class dual_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map("DATA_WIDTH" -> DATA_WIDTH,
                                                                                         "DEPTH" -> DEPTH,
                                                                                         "LATENCY" -> LATENCY)) with HasBlackBoxInline {
-  val io = IO(new BRAMWrapperIO(DATA_WIDTH, DEPTH))
+  val io = IO(new DPBRAMWrapperIO(DATA_WIDTH, DEPTH))
 
   setInline("dual_port_ram.v",
   s"""

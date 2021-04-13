@@ -6,7 +6,7 @@ package fu
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
-import cache.BRAMSyncReadMem 
+import cache.DPBRAMSyncReadMem 
 
 class RAS(depth: Int = 8, width: Int = 32) {
   val count = RegInit(0.U(log2Up(depth + 1).W))
@@ -85,7 +85,7 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
   val history = RegInit(VecInit(Seq.fill(depth)(SN.U(2.W))))  // half a regfile's size
-  val buffer = Module(new BRAMSyncReadMem(depth, width, 1))
+  val buffer = Module(new DPBRAMSyncReadMem(depth, width, 1))
 
   // 0 for low addr, 1 for high addr
   for (i <- 0 until issueN) {
