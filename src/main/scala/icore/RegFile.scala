@@ -11,6 +11,7 @@ class RegFileIO(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3)
   val wen_vec     = Input(Vec(nwrite, Bool()))
   val rd_addr_vec = Input(Vec(nwrite, UInt(log2Ceil(nregs).W)))
   val rd_data_vec = Input(Vec(nwrite, UInt(len.W)))
+  override def cloneType = (new RegFileIO(nregs, len, nread, nwrite)).asInstanceOf[this.type]
 }
 
 class RegFile(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3) extends Module {
