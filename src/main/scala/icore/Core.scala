@@ -50,7 +50,7 @@ class BackendIO extends Bundle with Config with CauseExcCode {
 }
 
 trait MemAccessType {
-  val SZ_MEM_READ_RESP = 1
+  val SZ_MEM_READ_RESP = 2
   val SZ_MEM_TYPE = 2
   val MEM_BYTE = 0
   val MEM_HALF = 1

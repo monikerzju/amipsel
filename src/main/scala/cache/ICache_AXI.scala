@@ -31,7 +31,7 @@ import chisel3.util._
 import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
-// import icore._
+import icore._
 class ICacheAXI extends Module with Cache_Parameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
