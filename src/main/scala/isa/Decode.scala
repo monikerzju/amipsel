@@ -6,8 +6,8 @@ import conf.Config
 import ISA._
 import MicroOpCtrl._
 
-class Mops extends Bundle {
-  val inst_type     = UInt(SZ_INST_TYPE.W)
+class Mops extends Bundle with Config {
+//  val inst_type     = UInt(SZ_INST_TYPE.W)
   val next_pc       = UInt(SZ_NEXT_PC.W)
   val alu_mdu_lsu   = UInt(3.W)
   val branch_type   = UInt(SZ_BR_TYPE.W)
@@ -21,9 +21,11 @@ class Mops extends Bundle {
   val rs2           = UInt(SZ_REG_ADDR.W)
   val rd            = UInt(SZ_REG_ADDR.W)  
   val imm           = UInt(16.W)
+  val pc            = UInt(len.W)
 }
 
 class DecIO extends Bundle with Config {
+  val pc   = Input(UInt(len.W))
   val inst = Input(UInt(len.W))
   val mops = Output(new Mops)
 }
@@ -113,7 +115,7 @@ class Dec extends Module {
       MTC0       -> List(SType   ,  PC4     ,  AMN ,      BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IXX , IRT , IRD)
   )) 
  
-  io.mops.inst_type     := control_signal(0)
+//  io.mops.inst_type     := control_signal(0)
   io.mops.next_pc       := control_signal(1)
   io.mops.alu_mdu_lsu   := control_signal(2)
   io.mops.branch_type   := control_signal(3)
@@ -127,4 +129,5 @@ class Dec extends Module {
   io.mops.rs2           := control_signal(11)
   io.mops.rd            := control_signal(12)
   io.mops.imm           := IMM
+  io.mops.pc            := io.pc
 }

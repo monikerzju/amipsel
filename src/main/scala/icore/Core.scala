@@ -26,7 +26,6 @@ class BMFS extends Bundle with Config {
 // Frontend master backend slave
 class FMBS extends Bundle with Config {
   val instn = Output(UInt(log2Ceil(frontendIssueN).W))
-  val pcs = Output(Vec(frontendIssueN, UInt(len.W)))
   val inst_ops = Output(Vec(frontendIssueN, UInt(SZ_MICRO_OP.W)))
   // fifo is full maybe
   val please_wait = Input(Bool())

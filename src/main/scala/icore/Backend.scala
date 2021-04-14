@@ -40,69 +40,61 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val queueSize = 20
   val dcacheStall = WireDefault(false.B)
   dcacheStall := !io.dcache.resp.valid
-  val issueQueue = Module(new FIFO(queueSize, new InstInfo(), backendIssueN, frontendIssueN))
+  val issueQueue = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   issueQueue.io.enqStep := frontendIssueN.U
   issueQueue.io.enqReq := true.B
 
   // TODO: connect with frontend
   io.fb.fmbs.please_wait := !issueQueue.io.sufficient
+
   for(i <- 0 until frontendIssueN) {
-    // TODO: check all
+    // TODO: check
     val mops = io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
-    issueQueue.io.din(i).rs := mops.rs1
-    issueQueue.io.din(i).rt := mops.rs2
-    issueQueue.io.din(i).rd := mops.rd
-    issueQueue.io.din(i).aluOp := mops.alu_op
-    issueQueue.io.din(i).mduOp := mops.alu_op
-    issueQueue.io.din(i).imm := mops.imm
-    issueQueue.io.din(i).fuDest := mops.alu_mdu_lsu
-    issueQueue.io.din(i).regWrite := mops.write_dest === MicroOpCtrl.DXXX
-    issueQueue.io.din(i).pc := mops.next_pc
-    issueQueue.io.din(i).pcNext := mops.next_pc
-    issueQueue.io.din(i).bType := mops.branch_type
-    issueQueue.io.din(i).isBranch := mops.branch_type === MicroOpCtrl.BrXXX
+    issueQueue.io.din(i) := mops
   }
+
   val wbFlush = io.fb.bmfs.redirect_kill
   issueQueue.io.flush := wbFlush
   io.fb.fmbs.please_wait := !issueQueue.io.sufficient
+
   /**
    *  [---------- IS stage -----------]
    */
-  def isDataHazard(inst1: InstInfo, inst2: InstInfo): Bool = {
-    inst1.rd === inst2.rs || inst1.rd === inst2.rt
+  def isDataHazard(inst1: Mops, inst2: Mops): Bool = {
+    inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2
   }
 
-  def isCompatible(inst1: InstInfo, inst2: InstInfo): Bool = {
-    !isDataHazard(inst1, inst2) && inst1.fuDest =/= inst2.fuDest
+  def isCompatible(inst1: Mops, inst2: Mops): Bool = {
+    !isDataHazard(inst1, inst2) && inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu //TODO: 4 fu
   }
 
   val exInsts = RegInit(
     VecInit(
       Seq.fill(4)({
-        val instInfo = Wire(new InstInfo)
-        instInfo.rs := 0.U
-        instInfo.rt := 0.U
+        val instInfo = Wire(new Mops)
+        instInfo.rs1 := 0.U
+        instInfo.rs2 := 0.U
         instInfo.rd := 0.U
-        instInfo.aluOp := 0.U
-        instInfo.mduOp := 0.U
+        instInfo.alu_op := 0.U
         instInfo.imm := 0.U
-        instInfo.fuDest := toALU.U
-        instInfo.regWrite := false.B
+        instInfo.alu_mdu_lsu := toALU.U
+        instInfo.write_dest := MicroOpCtrl.DXXX
+        instInfo.next_pc := MicroOpCtrl.PC4
+        instInfo.src_a := MicroOpCtrl.AXXX
+        instInfo.src_b := MicroOpCtrl.BXXX
+        instInfo.branch_type := MicroOpCtrl.BrXXX
+        instInfo.mem_width := MicroOpCtrl.MemXXX
+        instInfo.write_src := MicroOpCtrl.WBALU
         instInfo.pc := 0.U
-        instInfo.pcNext := 0.U
-        instInfo.bType := 0.U
-        instInfo.isBranch := false.B
         instInfo
       })
     )
   )
 
-
-
   val exNum = RegInit(0.U(3.W))
   issueQueue.io.deqStep := exNum
   issueQueue.io.deqReq := !dcacheStall
-  val issueInsts = Wire(Vec(3, new InstInfo))
+  val issueInsts = Wire(Vec(3, new Mops))
   issueInsts(0) := issueQueue.io.dout(0)
   issueInsts(1) := issueQueue.io.dout(1)
   issueInsts(2) := issueQueue.io.dout(2)
@@ -112,16 +104,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
   when(!dcacheStall) {
     for(i <- 0 until backendIssueN) {
       when(i.U < issueQueue.io.items) {
-//        exInsts(0) := issueQueue.io.dout(0)
-
         issueValid(0) := true.B
         exNum := 1.U
         switch(i.U) {
           is(1.U) {
             when(isCompatible(issueQueue.io.dout(0), issueQueue.io.dout(1))
             ) { // do not have data hazard and structural hazard
-//              exInsts(1) := issueQueue.io.dout(1)
-
               issueValid(1) := true.B
               exNum := 2.U
             }
@@ -131,8 +119,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
               (!isCompatible(issueQueue.io.dout(0), issueQueue.io.dout(1)) ||
                 isCompatible(issueQueue.io.dout(1), issueQueue.io.dout(2)))
             ) { // do not have data hazard and structural hazard
-//              exInsts(2) := issueQueue.io.dout(2)
-
               issueValid(2) := true.B
               exNum := 3.U
             }
@@ -142,21 +128,23 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
 
-//  val nop = Wire(new InstInfo)
+//  val nop = Wire(new Mops)
   val nop = WireInit(
-    (new InstInfo).Lit(
-      _.rs -> 0.U,
-      _.rt -> 0.U,
+    (new Mops).Lit(
+      _.rs1 -> 0.U,
+      _.rs2 -> 0.U,
       _.rd -> 0.U,
-      _.aluOp -> 0.U,
-      _.mduOp -> 0.U,
+      _.alu_op -> 0.U,
       _.imm -> 0.U,
-      _.fuDest -> toALU.U,
-      _.regWrite -> false.B,
-      _.pc -> 0.U,
-      _.pcNext -> 0.U,
-      _.bType -> 0.U,
-      _.isBranch -> false.B
+      _.alu_mdu_lsu -> toALU.U,
+      _.write_dest -> MicroOpCtrl.DXXX,
+      _.next_pc -> MicroOpCtrl.PC4,
+      _.src_a -> MicroOpCtrl.AXXX,
+      _.src_b -> MicroOpCtrl.BXXX,
+      _.branch_type -> MicroOpCtrl.BrXXX,
+      _.mem_width -> MicroOpCtrl.MemXXX,
+      _.write_src -> MicroOpCtrl.WBALU,
+      _.pc -> 0.U
     )
   )
 
@@ -171,7 +159,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val exInstsOrder = Reg(Vec(4, UInt(2.W)))
   for(i <- 0 until backendIssueN) {
     when(issueValid(i)) {
-      switch(issueInsts(i).fuDest) {
+      switch(issueInsts(i).alu_mdu_lsu) {
+        // TODO:
         is(toALU.U) {
           exInsts(0) := issueInsts(i)
           exInstsOrder(0) := i.U
@@ -215,19 +204,21 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbInsts = RegInit(
     VecInit(
       Seq.fill(4)({
-        val instInfo = Wire(new InstInfo)
-        instInfo.rs := 0.U
-        instInfo.rt := 0.U
+        val instInfo = Wire(new Mops)
+        instInfo.rs1 := 0.U
+        instInfo.rs2 := 0.U
         instInfo.rd := 0.U
-        instInfo.aluOp := 0.U
-        instInfo.mduOp := 0.U
+        instInfo.alu_op := 0.U
         instInfo.imm := 0.U
-        instInfo.fuDest := toALU.U
-        instInfo.regWrite := false.B
+        instInfo.alu_mdu_lsu := toALU.U
+        instInfo.write_dest := MicroOpCtrl.DXXX
+        instInfo.next_pc := MicroOpCtrl.PC4
+        instInfo.src_a := MicroOpCtrl.AXXX
+        instInfo.src_b := MicroOpCtrl.BXXX
+        instInfo.branch_type := MicroOpCtrl.BrXXX
+        instInfo.mem_width := MicroOpCtrl.MemXXX
+        instInfo.write_src := MicroOpCtrl.WBALU
         instInfo.pc := 0.U
-        instInfo.pcNext := 0.U
-        instInfo.bType := 0.U
-        instInfo.isBranch := false.B
         instInfo
       })
     )
@@ -252,8 +243,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
    */
 
   for(i <- 0 until 4) {
-    regFile.io.rs_addr_vec(2 * i) := exInsts(i).rs
-    regFile.io.rs_addr_vec(2 * i + 1) := exInsts(i).rt
+    regFile.io.rs_addr_vec(2 * i) := exInsts(i).rs1
+    regFile.io.rs_addr_vec(2 * i + 1) := exInsts(i).rs2
   }
 
   val rsData = Wire(Vec(4, UInt(32.W)))
@@ -269,14 +260,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // initialize alu
   alu.io.a := 0.U
   alu.io.b := 0.U
-  alu.io.aluOp := nop.aluOp
+  alu.io.aluOp := nop.alu_op
 
   // initialize mdu
   val hi = RegInit(0.U(len.W))
   val lo = RegInit(0.U(len.W))
   mdu.io.req.in1 := 0.U
   mdu.io.req.in2 := 0.U
-  mdu.io.req.op := nop.mduOp
+  mdu.io.req.op := nop.alu_op
   hi := Mux(exInstsValid(1), mdu.io.resp.hi, hi)
   lo := Mux(exInstsValid(1), mdu.io.resp.lo, lo)
 
@@ -294,17 +285,17 @@ class Backend extends Module with Config with InstType with MemAccessType {
     Seq(0.U -> rsData(0), 1.U -> exInsts(0).pc, 2.U -> wbResult(fwdSrcAIndex)))
   alu.io.b := MuxLookup(aluSrcB, rtData(1),
     Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm, 2.U -> wbResult(fwdSrcBIndex)))
-  alu.io.aluOp := exInsts(0).aluOp
+  alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
   // TODO: mdu
 
   // mdu execution
   mdu.io.req.in1 := rsData(1)
   mdu.io.req.in2 := rtData(1)
-  mdu.io.req.op := exInsts(1).mduOp
+  mdu.io.req.op := exInsts(1).alu_op
 
   // lu execution
-  io.dcache.req.bits.addr := (exInsts(2).rs.asSInt() + exInsts(2).imm.asSInt()).asUInt() // TODO: sign-extended
+  io.dcache.req.bits.addr := exInsts(2).rs1 + Cat(Fill(16, exInsts(2).imm), exInsts(2).imm)
   when(!reBranch) {
     // TODO: deal with branch
     // TODO: ? load or store type ?
@@ -314,36 +305,16 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // assume I-type Inst replace rt with rd, and update rt = 0
   // TODO: forward mdu and lsu
   for(i <- 0 until 3) {
-    when(wbInsts(i).regWrite && wbInsts(i).rd =/= 0.U) {
-      when(wbInsts(i).rd === exInsts(0).rs) {
+    when(wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
+      when(wbInsts(i).rd === exInsts(0).rs1) {
         aluSrcA := 2.U
       }
-      when(wbInsts(i).rd === exInsts(0).rt) {
+      when(wbInsts(i).rd === exInsts(0).rs2) {
         aluSrcB := 2.U
       }
     }
   }
 
-
-  /*
-  for(i <- 0 until backendIssueN) {
-    when(i.U < exNum) {
-      for(j <- 0 until backendIssueN) {
-        when(j.U < wbNum) {
-          when(wbInsts(j).regWrite && wbInsts(j).rd =/= 0.U) {
-            when(wbInsts(j).rd === exInsts(i).rs) {
-              aluSrcA := 2.U
-            }
-            when(wbInsts(j).rd === exInsts(i).rt) {
-              aluSrcB := 2.U
-            }
-          }
-        }
-      }
-    }
-  }
-
-   */
 
 
   val wbReBranch = RegInit(false.B)
@@ -352,14 +323,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   reBranch := false.B
   pcRedirect := exInsts(0).pc + Cat(Fill(16, exInsts(0).imm), exInsts(0).imm) + 4.U
-  when(exInsts(0).isBranch) {
-    switch(exInsts(0).bType) {
-      is(0.U) { // beq
+  when(exInsts(0).next_pc === MicroOpCtrl.Branch) {
+    switch(exInsts(0).branch_type) {
+      is(MicroOpCtrl.BrEQ) { // beq
         when(alu.io.zero === 1.U) {
           reBranch := true.B
         }
       }
-      is(1.U) { // bne
+      is(MicroOpCtrl.BrNE) { // bne
         when(alu.io.zero === 0.U) {
           reBranch := true.B
         }
@@ -461,7 +432,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
 
   for(i <- 0 until 3) {
-    regFile.io.wen_vec(i) := Mux(wbInstsValid(i), wbInsts(i).regWrite, false.B)
+    regFile.io.wen_vec(i) := Mux(wbInstsValid(i), wbInsts(i).write_dest === MicroOpCtrl.DReg, false.B)
   }
 
 
