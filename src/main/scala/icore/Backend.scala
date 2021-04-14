@@ -237,7 +237,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val fwdSrcAIndex = WireInit(0.U)
   val aluSrcB = WireDefault(0.U(2.W))
   val fwdSrcBIndex = WireInit(0.U)
-  val regFile = Module(new RegFile(nread = 8, nwrite = 4)) // 8 read port, 4 write port
+  val regFile = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
 
   /*
     read port
@@ -292,6 +292,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm, 2.U -> wbResult(fwdSrcBIndex)))
   alu.io.aluOp := exInsts(0).aluOp
   wbResult(0) := alu.io.r
+  // TODO: mdu
 
   // mdu execution
   mdu.io.req.in1 := rsData(1)
@@ -500,15 +501,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
     wbInsts := exInsts
   }
 
-  for(i <- 0 until 4) {
-    when(wbInstsValid(i)) {
-      regFile.io.wen_vec(i) := wbInsts(i).regWrite
-    } .otherwise {
-      regFile.io.wen_vec(i) := false.B
-    }
+  for(i <- 0 until 3) {
+    regFile.io.wen_vec(i) := Mux(wbInstsValid(i), wbInsts(i).regWrite, false.B)
   }
 
-  regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd, wbInsts(3).rd)) // ?
+
+  regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd)) // ?
   // handle load-inst separately
   val dataFromDcache = Wire(UInt(32.W))
   dataFromDcache := io.dcache.resp.bits.rdata(0) // connect one port
@@ -517,7 +515,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   regFile.io.rd_data_vec(0) := wbResult(0)
   regFile.io.rd_data_vec(1) := wbResult(1)
   regFile.io.rd_data_vec(2) := dataFromDcache
-  regFile.io.rd_data_vec(3) := wbResult(3)
+
   /*
   for(i <- 0 until backendIssueN) {
     when(i.U < wbNum) {
