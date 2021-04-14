@@ -8,7 +8,7 @@ trait Config {
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"
   var frontendIssueN: Int = 2   // 1 or 2
-  var backendIssueN: Int = 3
+  var backendIssueN: Int = 3    // 3
   // Cache
   var withRealCache: Boolean = false
   // BPU
@@ -21,4 +21,7 @@ trait Config {
   var withBS: Boolean = false 
   var BSEntryN: Int = 3
   var BSWayN: Int = 2
+  // Assertions ---- Dont Change!!!
+  assert(frontendIssueN == 1 || frontendIssueN == 2)
+  assert(backendIssueN == 3)
 }
