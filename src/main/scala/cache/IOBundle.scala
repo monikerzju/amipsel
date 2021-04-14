@@ -26,6 +26,25 @@ trait Cache_Parameters_4Way{
     assert(TagBits+IndexBits+OffsetBits==32)
     val MissTolerance=4
 }
+class CacheReq(bit_cacheline: Int = 128, width: Int = 32) extends Bundle {
+  val valid = Input(Bool())
+  val wen   = Input(Bool())
+  val addr  = Input(UInt(width.W))
+  val data  = Input(UInt(bit_cacheline.W))
+}
+
+class CacheResp(bit_cacheline: Int = 128) extends Bundle {
+  val valid = Output(Bool())
+  val data  = Output(UInt(bit_cacheline.W))
+}
+
+// From the view of Cache
+class CacheIO(bit_cacheline: Int = 128, width: Int = 32) extends Bundle {
+  val req = Flipped(new CacheReq(bit_cacheline, width))
+  val resp = Flipped(new CacheResp(bit_cacheline))
+}
+
+
 // class MemResp extends Bundle with Config {
 //   val rdata = Output(Vec(2, UInt(len.W)))    // 64-bit because of MEM_DWORD for dual-issue, 1 cycle latency for BRAM
 //   val respn = Output(UInt(2.W))  // if req is MEM_DWORD but cannot be responsed because of icache miss, 0 cycle latency

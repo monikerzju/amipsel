@@ -66,7 +66,7 @@ class DCacheAXIDummy extends Module with Cache_Parameters with Config{
     io.AXI.ar.bits.qos := 0.U
     io.AXI.ar.bits.len := 0.U // 1 word
     io.AXI.ar.bits.size := "b010".U
-    val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
+    val data=Module(new DPBRAMSyncReadMem(nline,1<<(OffsetBits+3)))
     data.io.web:=false.B
     data.io.doutb:=DontCare
     data.io.wea:=false.B
@@ -232,7 +232,7 @@ class DCacheAXIDummy extends Module with Cache_Parameters with Config{
         // miss tolerance=1
         // valid all of a sudden
     }
-    meta.io.invalidate:=true.B
+    meta.io.invalidate:=false.B
     meta.io.update:=false.B
     val index_refill=ring_buf(ptr_rd)(31-TagBits,32-TagBits-IndexBits)
     meta.io.aux_index:=index_refill

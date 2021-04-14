@@ -53,11 +53,7 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     io.AXI.ar.bits.len := 0.U // 1 word
     io.AXI.ar.bits.size := "b010".U
     val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
-    data.io.web:=DontCare
-    data.io.addrb:=DontCare
-    data.io.dinb:=DontCare
-    data.io.doutb:=DontCare
-    data.io.wea:=false.B
+    data.io.we:=false.B
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 
@@ -68,10 +64,10 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
     val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
     val index=RegNext(index_raw)
-    data.io.addra:=index_raw
-    data.io.dina:=fillline.asUInt
+    data.io.addr:=index_raw
+    data.io.din:=fillline.asUInt
     var i=0
-    for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
+    for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
     val meta=Module(new Meta(nline));
     meta.io.tags_in:=tag_raw
@@ -135,13 +131,13 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
         // miss tolerance=1
         // valid all of a sudden
     }
-    meta.io.invalidate:=true.B
+    meta.io.invalidate:=false.B
     meta.io.update:=false.B
     val index_refill=ring_buf(ptr_rd)(31-TagBits,32-TagBits-IndexBits)
     meta.io.aux_index:=index_refill
     meta.io.aux_tag:=0.U
-    val que_wea=Reg(Bool())
-    que_wea:=false.B
+    val que_we=Reg(Bool())
+    que_we:=false.B
     val j=RegInit(0.U((OffsetBits-3).W))
     when(que_rd&&io.AXI.r.valid){
         meta.io.invalidate:=true.B
@@ -157,14 +153,14 @@ class ICacheAXI extends Module with Cache_Parameters with Config{
             when(ptr_rd+1.U===ptr_ra && !inc_ptr_ra){
                 que_rd:=false.B
             }
-            que_wea:=true.B
+            que_we:=true.B
         }
         .otherwise{
             j:=j+1.U
         }
     }
-    when(que_wea){
-        data.io.wea:=true.B
-        data.io.addra:=index_refill
+    when(que_we){
+        data.io.we:=true.B
+        data.io.addr:=index_refill
     }
 }
