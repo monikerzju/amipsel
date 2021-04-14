@@ -166,20 +166,25 @@ class Backend extends Module with Config with InstType with MemAccessType {
     exInsts(2) -> LU
     exInsts(3) -> SU
    */
+  val exInstsOrder = Reg(Vec(4, UInt(2.W)))
   for(i <- 0 until backendIssueN) {
     when(issueValid(i)) {
       switch(issueInsts(i).fuDest) {
         is(toALU.U) {
           exInsts(0) := issueInsts(i)
+          exInstsOrder(0) := i.U
         }
         is(toMDU.U) {
           exInsts(1) := issueInsts(i)
+          exInstsOrder(1) := i.U
         }
         is(toLU.U) {
           exInsts(2) := issueInsts(i)
+          exInstsOrder(2) := i.U
         }
         is(toSU.U) {
           exInsts(3) := issueInsts(i)
+          exInstsOrder(3) := i.U
         }
       }
     }
@@ -197,6 +202,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   /**
    *  [---------- EX stage -----------]
    */
+
   val alu = Module(new ALU)
   val wbNum = RegNext(exNum) // ?
   // TODO: MDU and LSU
@@ -444,14 +450,26 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
 
+  val wbInstsOrder = RegNext(exInstsOrder)
   /**
    *  [---------- WB stage -----------]
    */
+
+  val wbInstsValid = RegNext(exInstsValid)
   io.fb.bmfs.redirect_pc := pcRedirect
   io.fb.bmfs.redirect_kill := true.B
   // branch, wait for delay slot
   val pcSlot = Reg(UInt(len.W))
   val waitSlot = RegInit(false.B)
+
+  when(wbReBranch) {
+    when(wbInstsValid(0) && wbInstsOrder(0) === wbNum - 1.U) {
+      pcSlot := pcRedirect
+      waitSlot := true.B
+      io.fb.bmfs.redirect_kill := false.B
+    }
+  }
+  /*
   when(wbReBranch) {
     for(i <- 0 until backendIssueN) {
       when(i.U < wbNum) {
@@ -464,6 +482,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
 
+   */
+
   when(waitSlot) {
     waitSlot := false.B
     io.fb.bmfs.redirect_pc := pcSlot
@@ -473,19 +493,26 @@ class Backend extends Module with Config with InstType with MemAccessType {
   when(!dcacheStall) {
     wbInsts := exInsts
   }
-  for(i <- 0 until backendIssueN) {
-    when(i.U < wbNum) {
+
+  for(i <- 0 until 4) {
+    when(wbInstsValid(i)) {
       regFile.io.wen_vec(i) := wbInsts(i).regWrite
     } .otherwise {
       regFile.io.wen_vec(i) := false.B
     }
   }
-  regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd)) // ?
+
+  regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd, wbInsts(3).rd)) // ?
   // handle load-inst separately
   val dataFromDcache = Wire(UInt(32.W))
   dataFromDcache := io.dcache.resp.bits.rdata(0) // connect one port
   io.dcache.resp.ready := true.B
 
+  regFile.io.rd_data_vec(0) := wbResult(0)
+  regFile.io.rd_data_vec(1) := wbResult(1)
+  regFile.io.rd_data_vec(2) := dataFromDcache
+  regFile.io.rd_data_vec(3) := wbResult(3)
+  /*
   for(i <- 0 until backendIssueN) {
     when(i.U < wbNum) {
       when(wbInsts(i).fuDest === toLU.U(typeLen.W)) {
@@ -497,4 +524,5 @@ class Backend extends Module with Config with InstType with MemAccessType {
       regFile.io.rd_data_vec(i) := wbResult(i)
     }
   }
+   */
 }
