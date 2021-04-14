@@ -75,13 +75,10 @@ class Backend extends Module with Config with InstType with MemAccessType {
   def isCompatible(inst1: InstInfo, inst2: InstInfo): Bool = {
     !isDataHazard(inst1, inst2) && inst1.fuDest =/= inst2.fuDest
   }
-  // TODO: associate the three types with frontend
-  /* TODO try with ENUM? */
-  // val toALU.U(typeLen.W) :: toMDU.U(typeLen.W) :: toLSU :: Nil = Enum(3)
-  // val exInsts = RegInit(VecInit(Seq.fill(backendIssueN)(new InstInfo()))) // ?
+
   val exInsts = RegInit(
     VecInit(
-      Seq.fill(backendIssueN)({
+      Seq.fill(4)({
         val instInfo = Wire(new InstInfo)
         instInfo.rs := 0.U
         instInfo.rt := 0.U
@@ -99,6 +96,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
       })
     )
   )
+
+  val issueInsts = Wire(Vec(3, new InstInfo))
   val exNum = RegInit(0.U(3.W))
   issueQueue.io.deqStep := exNum
   when(!dcacheStall) {
@@ -107,16 +106,21 @@ class Backend extends Module with Config with InstType with MemAccessType {
     issueQueue.io.deqReq := false.B
   }
   // decide the true issue num
+  val issueValid = WireDefault(VecInit(Seq.fill(4)(false.B)))
   when(!dcacheStall) {
     for(i <- 0 until backendIssueN) {
       when(i.U < issueQueue.io.items) {
-        exInsts(0) := issueQueue.io.dout(0)
+//        exInsts(0) := issueQueue.io.dout(0)
+        issueInsts(0) := issueQueue.io.dout(0)
+        issueValid(0) := true.B
         exNum := 1.U
         switch(i.U) {
           is(1.U) {
             when(isCompatible(issueQueue.io.dout(0), issueQueue.io.dout(1))
             ) { // do not have data hazard and structural hazard
-              exInsts(1) := issueQueue.io.dout(1)
+//              exInsts(1) := issueQueue.io.dout(1)
+              issueInsts(1) := issueQueue.io.dout(1)
+              issueValid(1) := true.B
               exNum := 2.U
             }
           }
@@ -125,7 +129,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
               (!isCompatible(issueQueue.io.dout(0), issueQueue.io.dout(1)) ||
                 isCompatible(issueQueue.io.dout(1), issueQueue.io.dout(2)))
             ) { // do not have data hazard and structural hazard
-              exInsts(2) := issueQueue.io.dout(2)
+//              exInsts(2) := issueQueue.io.dout(2)
+              issueInsts(2) := issueQueue.io.dout(2)
+              issueValid(2) := true.B
               exNum := 3.U
             }
           }
@@ -151,13 +157,40 @@ class Backend extends Module with Config with InstType with MemAccessType {
       _.isBranch -> false.B
     )
   )
-  nop.fuDest := toALU.U(typeLen.W)
-  nop.regWrite := false.B
+
+  // judge the inst type and issue inst into specific inst position
+  // which associates with corresponding fu
+  /*
+    exInsts(0) -> ALU
+    exInsts(1) -> MDU
+    exInsts(2) -> LU
+    exInsts(3) -> SU
+   */
+  for(i <- 0 until backendIssueN) {
+    when(issueValid(i)) {
+      switch(issueInsts(i).fuDest) {
+        is(toALU.U) {
+          exInsts(0) := issueInsts(i)
+        }
+        is(toMDU.U) {
+          exInsts(1) := issueInsts(i)
+        }
+        is(toLU.U) {
+          exInsts(2) := issueInsts(i)
+        }
+        is(toSU.U) {
+          exInsts(3) := issueInsts(i)
+        }
+      }
+    }
+  }
+
   when(wbFlush) {
     for(i <- 0 until backendIssueN) {
       exInsts(i) := nop
     }
   }
+
 
   /**
    *  [---------- EX stage -----------]
@@ -190,8 +223,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
       })
     )
   )
-  // wbInsts := RegNext(exInsts) // ?
-
 
   val aluSrcA = WireDefault(0.U(2.W))
   val fwdSrcAIndex = WireInit(0.U)
@@ -366,7 +397,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
       }
     }
   }
-
 
   for(i <- 1 until backendIssueN) {
     when(i.U < exNum) {
