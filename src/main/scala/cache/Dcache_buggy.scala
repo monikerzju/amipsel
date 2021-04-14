@@ -119,9 +119,10 @@ class DCacheAXIDummy extends Module with Cache_Parameters with Config{
 
     io.AXI.r.ready:=que_rd
 
-    io.cpu.resp.valid:=io.cpu.req.valid && !out_of_service
+    io.cpu.resp.valid:=io.cpu.req.valid && !out_of_service && meta.io.hit
     val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
-    io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
+    // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
+    io.cpu.resp.bits.respn:= dual_issue
     io.cpu.resp.bits.rdata(0):=line(word1)
     io.cpu.resp.bits.rdata(1):=line(word2)
     val checking= !out_of_service && io.cpu.req.valid && !out_of_service2
@@ -233,12 +234,6 @@ class DCacheAXIDummy extends Module with Cache_Parameters with Config{
     }
     meta.io.invalidate:=true.B
     meta.io.update:=false.B
-    // FIXME: [x] refill process needs to tend to valid bit
-    // val index_refill=ring_buf(ptr_rd)(IndexBits+TagBits-1,TagBits)
-    // ERROR: if written like above, it causes a combinational loop
-    // val index_refill=RegInit(0.U(IndexBits.W))
-    // FIXME: [ ] possible error here
-    // val index_refill=Wire(ring_buf(ptr_rd)(31-TagBits,32-TagBits-IndexBits))
     val index_refill=ring_buf(ptr_rd)(31-TagBits,32-TagBits-IndexBits)
     meta.io.aux_index:=index_refill
     meta.io.aux_tag:=0.U
