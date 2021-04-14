@@ -272,9 +272,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
   alu.io.aluOp := nop.aluOp
 
   // initialize mdu
+  val hi = RegInit(0.U(len.W))
+  val lo = RegInit(0.U(len.W))
   mdu.io.req.in1 := 0.U
   mdu.io.req.in2 := 0.U
   mdu.io.req.op := nop.mduOp
+  hi := Mux(exInstsValid(1), mdu.io.resp.hi, hi)
+  lo := Mux(exInstsValid(1), mdu.io.resp.lo, lo)
 
   // initialize lu
   io.dcache.req.bits.addr := 0.U
@@ -283,7 +287,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
   io.dcache.req.bits.mtype := MEM_WORD.U
-  io.dcache.req.valid := false.B
+  io.dcache.req.valid := exInstsValid(2)
 
   // alu execution
   alu.io.a := MuxLookup(aluSrcA, rsData(0),
@@ -306,69 +310,22 @@ class Backend extends Module with Config with InstType with MemAccessType {
     // TODO: ? load or store type ?
   }
 
-  /*
-  for (i <- 0 until backendIssueN) {
-    when(i.U < exNum) {
-      switch(exInsts(i).fuDest) {
-        is(toALU.U(typeLen.W)) {
-          // TODO: mux ?
-          alu.io.a := MuxLookup(aluSrcA, rsData(i),
-            Seq(0.U -> rsData(i), 1.U -> exInsts(i).pc, 2.U -> wbResult(fwdSrcAIndex)))
-          alu.io.b := MuxLookup(aluSrcB, rtData(i),
-            Seq(0.U -> rtData(i), 1.U -> exInsts(i).imm, 2.U -> wbResult(fwdSrcBIndex)))
-          alu.io.aluOp := exInsts(i).aluOp
-          wbResult(i) := alu.io.r
-        }
-        is(toMDU.U(typeLen.W)) {
-          // TODO: deal with branch
-          when(!reBranch && !brDelay(0)) {
-
-          }
-          mdu.io.req.in1 := rsData(i)
-          mdu.io.req.in2 := rtData(i)
-          mdu.io.req.op := exInsts(i).mduOp
-        }
-        is(toLU.U(typeLen.W)) {
-          // TODO: connect with dcache
-          when(!reBranch && !brDelay(1)) {
-            // TODO: deal with branch
-            io.dcache.req.bits.addr := (exInsts(i).rs.asSInt() + exInsts(i).imm.asSInt()).asUInt() // TODO: sign-extended
-            // TODO: ? load or store type ?
-          }
-
-        }
-        is(toSU.U(typeLen.W)) {
-          // TODO
-          when(!reBranch && !brDelay(2)) {
-            // TODO: deal with branch
-          }
-        }
-      }
-    }
-  }
-  */
-
   // forwarding here?
   // assume I-type Inst replace rt with rd, and update rt = 0
   // TODO: forward mdu and lsu
-  /*
-  for(i <- 0 until 4) {
-    for (j <- 0 until 4 if i != 3 && i != 1) {
-      when(wbInsts(j).regWrite && wbInsts(j).rd =/= 0.U) {
-        when(wbInsts(j).rd === exInsts(i).rs) {
-          aluSrcA := 2.U
-          // TODO:
-        }
-        when(wbInsts(j).rd === exInsts(i).rt) {
-          aluSrcB := 2.U
-          // TODO:
-        }
+  for(i <- 0 until 3) {
+    when(wbInsts(i).regWrite && wbInsts(i).rd =/= 0.U) {
+      when(wbInsts(i).rd === exInsts(0).rs) {
+        aluSrcA := 2.U
+      }
+      when(wbInsts(i).rd === exInsts(0).rt) {
+        aluSrcB := 2.U
       }
     }
   }
 
-   */
 
+  /*
   for(i <- 0 until backendIssueN) {
     when(i.U < exNum) {
       for(j <- 0 until backendIssueN) {
@@ -385,6 +342,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
       }
     }
   }
+
+   */
 
 
   val wbReBranch = RegInit(false.B)
