@@ -7,20 +7,20 @@ import fu._
 import isa._
 import chisel3.experimental.BundleLiterals._
 
-class InstInfo extends Bundle with InstType with AluOpType with MDUOperation {
-  val rs = UInt(5.W)
-  val rt = UInt(5.W)
-  val rd = UInt(5.W)
-  val aluOp = UInt(aluOpWidth.W)
-  val mduOp = UInt(SZ_MDU_OP.W)
-  val imm = UInt(32.W)
-  val fuDest = UInt(typeLen.W)
-  val regWrite = Bool()
-  val pc = UInt(32.W)
-  val pcNext = UInt(32.W)
-  val bType = UInt(32.W)
-  val isBranch = Bool()
-}
+// class InstInfo extends Bundle with InstType with AluOpType with MDUOperation {
+//   val rs = UInt(5.W)
+//   val rt = UInt(5.W)
+//   val rd = UInt(5.W)
+//   val aluOp = UInt(aluOpWidth.W)
+//   val mduOp = UInt(SZ_MDU_OP.W)
+//   val imm = UInt(32.W)
+//   val fuDest = UInt(typeLen.W)
+//   val regWrite = Bool()
+//   val pc = UInt(32.W)
+//   val pcNext = UInt(32.W)
+//   val bType = UInt(32.W)
+//   val isBranch = Bool()
+// }
 
 trait InstType {
   val typeLen = 3
@@ -28,6 +28,7 @@ trait InstType {
   val toMDU = 1
   val toLU = 2
   val toSU = 3
+  val toAMU = 4
 }
 
 class StoreInfo extends Bundle with Config {
