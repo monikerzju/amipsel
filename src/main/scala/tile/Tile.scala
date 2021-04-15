@@ -43,7 +43,7 @@ class Tile extends Module with Config with CacheParameters {
   val icache = Module(new ICacheSimple)
 
   // TODO FIX DCACHE = ICACHE
-  val dcache = Module(new ICacheSimple)
+  val dcache = Module(new DCacheSimple)
   val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 1, "Seq", len))
 
   core.io.interrupt := io.intr
@@ -74,6 +74,6 @@ object GenC {
 
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new  ICacheAXI)))
+      Seq(ChiselGeneratorAnnotation(() => new  Core)))
   }
 }

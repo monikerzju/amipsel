@@ -19,6 +19,7 @@ class DPBRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
   val dinb = Input(UInt(width.W))
   val douta = Output(UInt(width.W))
   val doutb = Output(UInt(width.W))
+  override def cloneType = (new DPBRAMWrapperIO(width, depth)).asInstanceOf[this.type]
 }
 
 class dual_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map("DATA_WIDTH" -> DATA_WIDTH,
@@ -119,6 +120,7 @@ class DPBRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
   val dinb  = Input(UInt(DATA_WIDTH.W))
   val douta = Output(UInt(DATA_WIDTH.W))
   val doutb = Output(UInt(DATA_WIDTH.W))
+  override def cloneType = (new DPBRAMSyncReadMemIO(DATA_WIDTH, DEPTH)).asInstanceOf[this.type]
 }
 
 class DPBRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends Module {
