@@ -157,10 +157,10 @@ class single_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends Bla
 
   setInline("single_port_ram.v",
   s"""
-    module single_port_ram (
+    module single_port_ram # (
       parameter DATA_WIDTH = 32,
     	parameter DEPTH      = 1024,
-    	parameter LATENCY    = 1,
+    	parameter LATENCY    = 1
     )(
     	input  clk,
     	input  rst,
