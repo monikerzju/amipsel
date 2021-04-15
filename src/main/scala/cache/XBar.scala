@@ -122,7 +122,7 @@ class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1
 class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", len: Int = 32) extends Module {
   val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
-  assert(bit_cacheline <= 512) 
+  assert(bit_cacheline <= 256) 
   assert(policy == "Seq" || policy == "RR")
 
   val rs_idle :: rs_wait_ready :: rs_receive :: rs_finish :: Nil = Enum(4)

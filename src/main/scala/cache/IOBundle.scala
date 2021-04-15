@@ -8,9 +8,9 @@ import icore._
 
 trait CacheParameters{
     val TagBits=18
-    val IndexBits=8
-    val OffsetBits=6
-    val DataBits=512
+    val IndexBits=9
+    val OffsetBits=5
+    val DataBits=256
     val nBuf=4
     // FIXME: not compatible with current interface
     assert(TagBits+IndexBits+OffsetBits==32)
@@ -18,9 +18,9 @@ trait CacheParameters{
 }
 trait CacheParameters_4Way{
     val TagBits=20
-    val IndexBits=6
-    val OffsetBits=6
-    val DataBits=512
+    val IndexBits=7
+    val OffsetBits=5
+    val DataBits=256
     val nBuf=4
     // FIXME: not compatible with current interface
     assert(TagBits+IndexBits+OffsetBits==32)
