@@ -17,9 +17,7 @@ class PCGenIO(va_width: Int = 32) extends Bundle {
 class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int = 4) extends Module {
   val io = IO(new PCGenIO(va_width))
   val pc = RegInit(UInt(va_width.W), start_va.U)
-  when(!io.please_wait) {
-    pc := Mux(io.redirect, io.redirect_pc, pc + increment.U)
-  }
+  pc := Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, pc + increment.U))
   io.pc_o := pc
 }
 
@@ -38,8 +36,13 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   val wtg = last_wait && !io.fb.bmfs.please_wait
   val gtw = !last_wait && io.fb.bmfs.please_wait
 
+  // Replay PC
+  val replay = RegNext(icache_stall_req_a)
+  val repc = RegInit(startAddr.U(len.W))
+  repc := Mux(icache_stall_req_a, repc, pc_gen.io.pc_o)
+
   // Some of the output signals for backend and icache
-  io.fb.bmfs.please_wait := icache_stall_req_a
+  io.fb.bmfs.please_wait := false.B
 
   // [---------- IF Stage ----------]
   // redirect_pc prio: bmfs.redirect > icache only fetch one
@@ -50,7 +53,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
 
   io.icache.req.valid := true.B // maybe situation will change by adding BPU
   io.icache.resp.ready := true.B 
-  io.icache.req.bits.addr := pc_gen.io.pc_o
+  io.icache.req.bits.addr := Mux(replay, repc, pc_gen.io.pc_o)
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen := false.B
   if (frontendIssueN == 1) {
