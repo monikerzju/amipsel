@@ -43,7 +43,7 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
 
   when(do_enq) {
     for(i <- 0 until enqN) {
-      mem(enqPtr + i.U) := io.din(i)
+      mem((enqPtr + i.U) % size.U) := io.din(i)
     }
   }
 
@@ -51,8 +51,8 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
     maybe_full := do_enq
   }
 
-  for(i <- 0 until 3) { //TODO const should be altered
-    io.dout(i) := mem(deqPtr + i.U)
+  for(i <- 0 until readN) {
+    io.dout(i) := mem((deqPtr + i.U) % size.U)
   }
 
   when(io.flush) {
