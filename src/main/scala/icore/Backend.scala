@@ -272,14 +272,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
   hi := Mux(exInstsValid(1), mdu.io.resp.hi, hi)
   lo := Mux(exInstsValid(1), mdu.io.resp.lo, lo)
 
-  // initialize lu
-  io.dcache.req.bits.addr := 0.U
-  io.dcache.req.bits.wdata := 0.U
-  io.dcache.req.bits.wen := false.B
+  // initialize lsu
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
   io.dcache.req.bits.mtype := MEM_WORD.U
-  io.dcache.req.valid := exInstsValid(2)
+
 
   // alu execution
   alu.io.a := MuxLookup(aluSrcA, rsData(0),
@@ -296,11 +293,65 @@ class Backend extends Module with Config with InstType with MemAccessType {
   mdu.io.req.op := exInsts(1).alu_op
 
   // lu execution
-  io.dcache.req.bits.addr := exInsts(2).rs1 + Cat(Fill(16, exInsts(2).imm), exInsts(2).imm)
-  when(!reBranch) {
-    // TODO: deal with branch
-    // TODO: ? load or store type ?
+  val sqSize = 5
+  class StoreInfo extends MemReq {
+    val rd = Output(UInt(5.W))
   }
+  val storeQueue = Module(new FIFO(sqSize, new StoreInfo, sqSize, 1))
+  io.dcache.req.valid := !reBranch && (exInstsValid(2) | exInstsValid(3))
+  val isDataInSQ = Reg(Bool())
+  val dataLoadInSQIndex = WireDefault(0.U(log2Ceil(sqSize).W))
+  val dataLoadInSQ = RegInit(0.U(32.W))
+  for(i <- 0 until sqSize) {
+    when(storeQueue.io.dout(i).rd === exInsts(2).rd) {
+      isDataInSQ := true.B
+      dataLoadInSQIndex := i.U
+    }
+  }
+  dataLoadInSQ := storeQueue.io.dout(dataLoadInSQIndex).wdata
+
+  // su execution
+  val canStore = Wire(Bool())
+  canStore := !exInstsValid(2) && storeQueue.io.items > 0.U //TODO: maybe changed
+  storeQueue.io.enqStep := 1.U
+  storeQueue.io.deqStep := 1.U
+  storeQueue.io.enqReq := exInstsValid(3)
+  storeQueue.io.deqReq := canStore
+  val storeAddr = Wire(UInt(32.W))
+  storeAddr :=  exInsts(3).rs1 + Cat(Fill(16, exInsts(3).imm), exInsts(3).imm)
+  storeQueue.io.din(0) := {
+    val storeInfo = Wire(new StoreInfo)
+    storeInfo.addr := storeAddr
+    storeInfo.wdata := rtData(3)
+    storeInfo.wen := (exInsts(3).write_dest === MicroOpCtrl.DMem)
+    storeInfo.mtype := MEM_WORD.U
+    storeInfo.flush := false.B
+    storeInfo.invalidate := false.B
+    storeInfo.rd := exInsts(3).rd
+    storeInfo
+  }
+  /*
+  storeQueue.io.din(0) := (new StoreInfo).Lit(
+    _.addr -> storeAddr,
+    _.wdata -> rtData(3),
+    _.wen -> (exInsts(3).write_dest === MicroOpCtrl.DMem),
+    _.mtype -> MEM_WORD.U,
+    _.flush -> false.B,
+    _.invalidate -> false.B,
+    _.rd -> exInsts(3).rd
+  )
+
+   */
+  storeQueue.io.flush := false.B
+  io.dcache.req.bits.wen := canStore
+  io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
+  io.dcache.req.bits.addr := Mux( // load first, then store
+    exInstsValid(2),
+    exInsts(2).rs1 + Cat(Fill(16, exInsts(2).imm), exInsts(2).imm),
+    storeQueue.io.dout(0).addr
+  )
+
+
 
   // forwarding here?
   // assume I-type Inst replace rt with rd, and update rt = 0
@@ -445,7 +496,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   regFile.io.rd_data_vec(0) := wbResult(0)
   regFile.io.rd_data_vec(1) := wbResult(1)
-  regFile.io.rd_data_vec(2) := dataFromDcache
+  regFile.io.rd_data_vec(2) := Mux(isDataInSQ, dataLoadInSQ, dataFromDcache)
 
   /*
   for(i <- 0 until backendIssueN) {
