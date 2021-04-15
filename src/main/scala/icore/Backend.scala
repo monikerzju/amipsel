@@ -6,6 +6,7 @@ import conf.Config
 import fu._
 import isa._
 import chisel3.experimental.BundleLiterals._
+import chisel3.util.experimental.BoringUtils
 
 // class InstInfo extends Bundle with InstType with AluOpType with MDUOperation {
 //   val rs = UInt(5.W)
@@ -460,4 +461,90 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
    */
+
+  if (diffTestV) {
+    val debug_pc   = Wire(Vec(backendIssueN, UInt(len.W)))
+    val debug_wen  = Wire(Vec(backendIssueN, Bool()))
+    val debug_data = Wire(Vec(backendIssueN, UInt(len.W)))
+    val debug_nreg = Wire(Vec(backendIssueN, UInt(5.W)))
+
+    when (wbInstsOrder(0) < wbInstsOrder(1) && wbInstsOrder(0) < wbInstsOrder(2)) {
+      debug_pc(0) := wbInsts(0).pc
+      debug_wen(0) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+      debug_data(0) := wbResult(0) 
+      debug_nreg(0) := wbInsts(0).rd
+      when (wbInstsOrder(1) < wbInstsOrder(2)) {
+        debug_pc(1) := wbInsts(1).pc
+        debug_wen(1) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
+        debug_data(1) := wbResult(1) 
+        debug_nreg(1) := wbInsts(1).rd
+        debug_pc(2) := wbInsts(2).pc
+        debug_wen(2) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
+        debug_data(2) := dataFromDcache
+        debug_nreg(2) := wbInsts(2).rd
+      }.otherwise {
+        debug_pc(2) := wbInsts(1).pc
+        debug_wen(2) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
+        debug_data(2) := wbResult(1) 
+        debug_nreg(2) := wbInsts(1).rd
+        debug_pc(1) := wbInsts(2).pc
+        debug_wen(1) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
+        debug_data(1) := dataFromDcache
+        debug_nreg(1) := wbInsts(2).rd
+      }
+    }.elsewhen (wbInstsOrder(1) < wbInstsOrder(0) && wbInstsOrder(1) < wbInstsOrder(2)) {
+      debug_pc(0) := wbInsts(1).pc
+      debug_wen(0) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
+      debug_data(0) := wbResult(1) 
+      debug_nreg(0) := wbInsts(1).rd
+      when (wbInstsOrder(0) < wbInstsOrder(2)) {
+        debug_pc(1) := wbInsts(0).pc
+        debug_wen(1) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+        debug_data(1) := wbResult(0) 
+        debug_nreg(1) := wbInsts(0).rd
+        debug_pc(2) := wbInsts(2).pc
+        debug_wen(2) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
+        debug_data(2) := dataFromDcache
+        debug_nreg(2) := wbInsts(2).rd
+      }.otherwise {
+        debug_pc(2) := wbInsts(0).pc
+        debug_wen(2) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+        debug_data(2) := wbResult(0) 
+        debug_nreg(2) := wbInsts(0).rd
+        debug_pc(1) := wbInsts(2).pc
+        debug_wen(1) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
+        debug_data(1) := dataFromDcache
+        debug_nreg(1) := wbInsts(2).rd
+      }
+    }.otherwise {
+      debug_pc(0) := wbInsts(2).pc
+      debug_wen(0) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
+      debug_data(0) := dataFromDcache 
+      debug_nreg(0) := wbInsts(2).rd
+      when (wbInstsOrder(0) < wbInstsOrder(1)) {
+        debug_pc(1) := wbInsts(0).pc
+        debug_wen(1) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+        debug_data(1) := wbResult(0) 
+        debug_nreg(1) := wbInsts(0).rd
+        debug_pc(2) := wbInsts(1).pc
+        debug_wen(2) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
+        debug_data(2) := wbResult(1)
+        debug_nreg(2) := wbInsts(1).rd
+      }.otherwise {
+        debug_pc(2) := wbInsts(0).pc
+        debug_wen(2) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+        debug_data(2) := wbResult(0) 
+        debug_nreg(2) := wbInsts(0).rd
+        debug_pc(1) := wbInsts(1).pc
+        debug_wen(1) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
+        debug_data(1) := wbResult(1)
+        debug_nreg(1) := wbInsts(1).rd
+      }
+    }
+
+    BoringUtils.addSource(debug_pc,   "dt_pc"    )
+    BoringUtils.addSource(debug_wen,  "dt_wen"   )
+    BoringUtils.addSource(debug_data, "dt_data"  )
+    BoringUtils.addSource(debug_nreg, "dt_nreg"  )
+  }
 }

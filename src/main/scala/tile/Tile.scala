@@ -8,20 +8,36 @@ import cache._
 import conf.Config
 import cache.CacheParameters
 import fu.CauseExcCode
+import chisel3.util.experimental.BoringUtils
 
-// tile(Yuan) = core + cache + uncache
-// core = datapath(Shen) + control(Shen) + coprocessor(Yuan)
-// cache = icache(Shi) + dcache(Shi)
+class DiffTestVIO extends Bundle with Config {
+  val wb_pc   = Output(Vec(backendIssueN, UInt(len.W)))
+  val wb_wen  = Output(Vec(backendIssueN, Bool()))
+  val wb_data = Output(Vec(backendIssueN, UInt(len.W)))
+  val wb_nreg = Output(Vec(backendIssueN, UInt(5.W)))
+}
 
 // AXI3 Protocol according to Loongson
 // Interrupt(s)
 class TileIO extends Bundle with Config with CauseExcCode {
   val axi3 = new AXI3(1, len)
   val intr = Input(Vec(SZ_HARD_INT, Bool()))
+  val debug = if (diffTestV) new DiffTestVIO else null
 }
 
 class Tile extends Module with Config with CacheParameters {
   val io = IO(new TileIO)
+
+  if (diffTestV) {
+    val debug = WireInit(0.U.asTypeOf(new DiffTestVIO))
+
+    BoringUtils.addSink(debug.wb_pc,   "dt_pc"   )
+    BoringUtils.addSink(debug.wb_wen,  "dt_wen"  )
+    BoringUtils.addSink(debug.wb_data, "dt_data" )
+    BoringUtils.addSink(debug.wb_nreg, "dt_nreg" )
+
+    io.debug := debug
+  }
 
   val core = Module(new Core)
   val icache = Module(new ICacheSimple)
