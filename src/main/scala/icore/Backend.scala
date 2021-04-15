@@ -275,7 +275,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // initialize lsu
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
-  io.dcache.req.bits.mtype := MEM_WORD.U
+
 
 
   // alu execution
@@ -324,24 +324,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
     storeInfo.addr := storeAddr
     storeInfo.wdata := rtData(3)
     storeInfo.wen := (exInsts(3).write_dest === MicroOpCtrl.DMem)
-    storeInfo.mtype := MEM_WORD.U
+    storeInfo.mtype := exInsts(3).mem_width
     storeInfo.flush := false.B
     storeInfo.invalidate := false.B
     storeInfo.rd := exInsts(3).rd
     storeInfo
   }
-  /*
-  storeQueue.io.din(0) := (new StoreInfo).Lit(
-    _.addr -> storeAddr,
-    _.wdata -> rtData(3),
-    _.wen -> (exInsts(3).write_dest === MicroOpCtrl.DMem),
-    _.mtype -> MEM_WORD.U,
-    _.flush -> false.B,
-    _.invalidate -> false.B,
-    _.rd -> exInsts(3).rd
-  )
 
-   */
+  io.dcache.req.bits.mtype := Mux(exInstsValid(2), exInsts(2).mem_width, storeQueue.io.dout(0).mtype)
   storeQueue.io.flush := false.B
   io.dcache.req.bits.wen := canStore
   io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
@@ -461,24 +451,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
 
 
-  /*
-  when(wbReBranch) {
-    for(i <- 0 until backendIssueN) {
-      when(i.U < wbNum) {
-        when(wbInsts(i).isBranch && i.U === wbNum - 1.U) {
-          pcSlot := pcRedirect
-          waitSlot := true.B
-          io.fb.bmfs.redirect_kill := false.B
-        }
-      }
-    }
-  }
-
-   */
-
-
-
-
   when(!dcacheStall) {
     wbInsts := exInsts
   }
@@ -487,28 +459,31 @@ class Backend extends Module with Config with InstType with MemAccessType {
     regFile.io.wen_vec(i) := Mux(wbInstsValid(i), wbInsts(i).write_dest === MicroOpCtrl.DReg, false.B)
   }
 
-
   regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd)) // ?
   // handle load-inst separately
   val dataFromDcache = Wire(UInt(32.W))
   dataFromDcache := io.dcache.resp.bits.rdata(0) // connect one port
   io.dcache.resp.ready := true.B
+  val dataFromDcacheExtend = Wire(UInt(32.W))
+  // load mask
+  dataFromDcacheExtend := dataFromDcache
+  switch(wbInsts(3).mem_width) {
+    is(MicroOpCtrl.MemByte) {
+      dataFromDcacheExtend := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0))
+    }
+    is(MicroOpCtrl.MemByteU) {
+      dataFromDcacheExtend := Cat(Fill(24, 0.U), dataFromDcache(7, 0))
+    }
+    is(MicroOpCtrl.MemHalf) {
+      dataFromDcacheExtend := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0))
+    }
+    is(MicroOpCtrl.MemHalfU) {
+      dataFromDcacheExtend := Cat(Fill(16, 0.U), dataFromDcache(15, 0))
+    }
+  }
 
   regFile.io.rd_data_vec(0) := wbResult(0)
   regFile.io.rd_data_vec(1) := wbResult(1)
-  regFile.io.rd_data_vec(2) := Mux(isDataInSQ, dataLoadInSQ, dataFromDcache)
+  regFile.io.rd_data_vec(2) := Mux(isDataInSQ, dataLoadInSQ, dataFromDcacheExtend)
 
-  /*
-  for(i <- 0 until backendIssueN) {
-    when(i.U < wbNum) {
-      when(wbInsts(i).fuDest === toLU.U(typeLen.W)) {
-        regFile.io.rd_data_vec(i) := dataFromDcache
-      } .otherwise {
-        regFile.io.rd_data_vec(i) := wbResult(i)
-      }
-    } .otherwise {
-      regFile.io.rd_data_vec(i) := wbResult(i)
-    }
-  }
-   */
 }
