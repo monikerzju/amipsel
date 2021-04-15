@@ -57,7 +57,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
     val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
     val index=RegNext(index_raw)
     data.io.addr:=index_raw
-    data.io.din:=fillline.asUInt
+    data.io.din:=io.bar.resp.data
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
@@ -69,15 +69,15 @@ class ICacheSimple extends Module with CacheParameters with Config{
     meta.io.tags_in:=tag_raw
     meta.io.index_in:=index_raw
     meta.io.update:=false.B
-    // meta.io.aux_index:=index_refill
-    // meta.io.aux_tag:=tag_refill
+    meta.io.aux_index:=index_refill
+    meta.io.aux_tag:=tag_refill
     // meta.io.invalidate:=false.B
     
     val out_of_service=RegInit(false.B)
 
     io.cpu.req.ready:=io.cpu.resp.valid
 
-    io.cpu.resp.valid:=io.cpu.req.valid && !out_of_service && meta.io.hit
+    io.cpu.resp.valid:=io.bar.resp.valid||(!out_of_service && meta.io.hit)
     val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     io.cpu.resp.bits.respn:= dual_issue
@@ -100,11 +100,9 @@ class ICacheSimple extends Module with CacheParameters with Config{
     }
     .elsewhen(out_of_service&&io.bar.resp.valid){
         out_of_service:=false.B
-        for(i<- 0 until 1<<(OffsetBits-2)){fillline(i):=data.io.dout(i*len+31,i*len)}
+        for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
         io.cpu.resp.valid:=true.B
         meta.io.update:=true.B
-        meta.io.tags_in:=tag_refill
-        meta.io.index_in:=index_refill
         data.io.addr:=index_refill
         data.io.we:=true.B
         // inform_cpu_data_valid()
