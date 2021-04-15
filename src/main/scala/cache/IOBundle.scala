@@ -7,20 +7,20 @@ import chisel3.experimental.BundleLiterals._
 import icore._
 
 trait CacheParameters{
-    val TagBits=18
+    val TagBits=19
     val IndexBits=8
-    val OffsetBits=6
-    val DataBits=512
+    val OffsetBits=5
+    val DataBits=256
     val nBuf=4
     // FIXME: not compatible with current interface
     assert(TagBits+IndexBits+OffsetBits==32)
     val MissTolerance=4
 }
 trait CacheParameters_4Way{
-    val TagBits=20
+    val TagBits=21
     val IndexBits=6
-    val OffsetBits=6
-    val DataBits=512
+    val OffsetBits=5
+    val DataBits=256
     val nBuf=4
     // FIXME: not compatible with current interface
     assert(TagBits+IndexBits+OffsetBits==32)
