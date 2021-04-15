@@ -32,7 +32,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class DCacheSimple extends Module with CacheParameters with Config{
+class DCacheSimple extends Module with CacheParameters_4Way with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
@@ -61,7 +61,7 @@ class DCacheSimple extends Module with CacheParameters with Config{
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
 
-    val meta=Module(new MetaDataSimple(nline));
+    val meta=Module(new MetaData_4Way(nline));
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word1+1.U

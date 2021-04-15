@@ -37,7 +37,7 @@ class ICacheSimple extends Module with CacheParameters_4Way with Config{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
     })
-    val nline=1<<IndexBits/4
+    val nline=1<<IndexBits
     val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
     
     data.io.we:=false.B
