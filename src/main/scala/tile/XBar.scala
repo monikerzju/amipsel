@@ -81,15 +81,50 @@ class RBuff(bit_cacheline: Int = 128) {
   }
 }
 
+class CacheArbiter(nclient: Int  = 2, policy: String = "Seq") extends Module {
+  val io = IO(new Bundle {
+    val chosen = Output(UInt(log2Ceil(nclient).W))
+    val en     = Output(Bool())
+    val valid  = Input(Vec(nclient, Bool()))
+    val lock   = Input(Bool())
+  })
+
+  val chosen = RegInit((nclient - 1).asUInt)
+  val active = WireDefault(io.valid(nclient - 1))
+  val sel = WireDefault((nclient - 1).asUInt)
+
+  for (i <- nclient-2 to 0 by -1) {
+    when (io.valid(i)) {
+      sel := i.asUInt
+      active := true.B
+    }
+  }  
+
+  io.chosen := Mux(io.lock, chosen, sel)
+  io.en := active
+  chosen := io.chosen
+}
+
 class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1) extends Bundle {
   val cache = Vec(nclient, Flipped(new CacheIO(bit_cacheline)))
   val axi3  = new AXI3(id_width)
 }
 
-class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, policy: String = "RR") extends Module {
-  val io = IO(new AXI3ServerIO(nclient))
+class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq") extends Module {
+  val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
-  assert(bit_cacheline <= 256)  
+  assert(bit_cacheline <= 256) 
+  assert(policy == "Seq" || policy == "RR")
+
+  val w_arbiter = Module(new CacheArbiter(nclient, policy))
+  val r_arbiter = Module(new CacheArbiter(nclient, policy))
+  for (i <- 0 until nclient) {
+    w_arbiter.io.valid(i) := io.cache(i).req.valid && io.cache(i).req.wen
+    r_arbiter.io.valid(i) := io.cache(i).req.valid && !io.cache(i).req.wen
+  }
+  w_arbiter.io.lock := wstate =/= ws_idle
+  r_arbiter.io.lock := rstate =/= rs_idle
+ 
   val INCR: String = "b01"
 
   val rbuff = new RBuff(bit_cacheline)
@@ -106,15 +141,15 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, policy: String = "R
   rstate := next_rstate
   wstate := next_wstate
 
-  val rsel = RegInit((nclient - 1).U(log2Ceil(nclient).W))
-  val wsel = RegInit((nclient - 1).U(log2Ceil(nclient).W))
+  val rsel = r_arbiter.io.chosen
+  val wsel = w_arbiter.io.chosen
 
-  val ren = WireDefault(false.B)
-  val wen = WireDefault(false.B)
+  val ren = r_arbiter.io.en
+  val wen = w_arbiter.io.en
   
   for (i <- 0 until nclient) {
-    io.cache(i.U).resp.valid := Mux(i.U === rsel, rstate === rs_finish, Mux(i.U === wsel, wstate === ws_wait_valid, false.B))
-    io.cache(i.U).resp.data  := rbuff.getl()
+    io.cache(i).resp.valid := Mux(i.U === rsel, rstate === rs_finish, Mux(i.U === wsel, wstate === ws_wait_valid, false.B))
+    io.cache(i).resp.data  := rbuff.getl()
   }
 
   // Selector
