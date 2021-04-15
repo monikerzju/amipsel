@@ -8,17 +8,20 @@ class CacheReq(bit_cacheline: Int = 128, width: Int = 32) extends Bundle {
   val wen   = Input(Bool())
   val addr  = Input(UInt(width.W))
   val data  = Input(UInt(bit_cacheline.W))
+  override def cloneType = (new CacheReq(bit_cacheline, width)).asInstanceOf[this.type]
 }
 
 class CacheResp(bit_cacheline: Int = 128) extends Bundle {
   val valid = Output(Bool())
   val data  = Output(UInt(bit_cacheline.W))
+  override def cloneType = (new CacheResp(bit_cacheline)).asInstanceOf[this.type]
 }
 
 // From the view of Cache
 class CacheIO(bit_cacheline: Int = 128, width: Int = 32) extends Bundle {
   val req   = Flipped(new CacheReq(bit_cacheline, width))
   val resp  = Flipped(new CacheResp(bit_cacheline))
+  override def cloneType = (new CacheIO(bit_cacheline, width)).asInstanceOf[this.type]
 }
 
 class AChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
@@ -30,6 +33,7 @@ class AChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
   val lock  = Output(UInt(1.W))
   val cache = Output(UInt(4.W))
   val prot  = Output(UInt(3.W))
+  override def cloneType = (new AChannel(id_width, width)).asInstanceOf[this.type]
 }
 
 class RChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
@@ -37,6 +41,7 @@ class RChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
   val data  = Output(UInt(width.W))
   val resp  = Output(UInt(2.W))
   val last  = Output(UInt(1.W))
+  override def cloneType = (new RChannel(id_width, width)).asInstanceOf[this.type]
 }
 
 class WChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
@@ -44,11 +49,13 @@ class WChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
   val data  = Output(UInt(width.W))
   val strb  = Output(UInt(4.W))
   val last  = Output(UInt(1.W))
+  override def cloneType = (new WChannel(id_width, width)).asInstanceOf[this.type]
 }
 
 class BChannel(id_width: Int = 1) extends Bundle {
   val id    = Output(UInt(id_width.W))
   val resp  = Output(UInt(2.W))
+  override def cloneType = (new BChannel(id_width)).asInstanceOf[this.type]
 }
 
 // From the AXI3 Server's view
@@ -58,6 +65,7 @@ class AXI3(id_width: Int = 1, width: Int = 32) extends Bundle {
   val aw = Decoupled(new AChannel(id_width, width))
   val w  = Decoupled(new WChannel(id_width, width))
   val b  = Flipped(Decoupled(new BChannel(id_width)))
+  override def cloneType = (new AXI3(id_width, width)).asInstanceOf[this.type]
 }
 
 class RBuff(bit_cacheline: Int = 128) {
@@ -105,16 +113,24 @@ class CacheArbiter(nclient: Int  = 2, policy: String = "Seq") extends Module {
   chosen := io.chosen
 }
 
-class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1) extends Bundle {
+class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, len: Int = 32) extends Bundle {
   val cache = Vec(nclient, Flipped(new CacheIO(bit_cacheline)))
-  val axi3  = new AXI3(id_width)
+  val axi3  = new AXI3(id_width, len)
+  override def cloneType = (new AXI3ServerIO(nclient, bit_cacheline, id_width, len)).asInstanceOf[this.type]
 }
 
-class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq") extends Module {
+class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", len: Int = 32) extends Module {
   val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
-  assert(bit_cacheline <= 256) 
+  assert(bit_cacheline <= 512) 
   assert(policy == "Seq" || policy == "RR")
+
+  val rs_idle :: rs_wait_ready :: rs_receive :: rs_finish :: Nil = Enum(4)
+  val ws_idle :: ws_wait_ready :: ws_write :: ws_wait_valid :: Nil = Enum(4)
+  val rstate = RegInit(rs_idle)
+  val next_rstate = WireDefault(rstate)
+  val wstate = RegInit(ws_idle)
+  val next_wstate = WireDefault(wstate)
 
   val w_arbiter = Module(new CacheArbiter(nclient, policy))
   val r_arbiter = Module(new CacheArbiter(nclient, policy))
@@ -127,22 +143,14 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
  
   val INCR: String = "b01"
 
+  val rsel = r_arbiter.io.chosen
+  val wsel = w_arbiter.io.chosen
   val rbuff = new RBuff(bit_cacheline)
   val wptr = RegInit(0.U(log2Ceil(bit_cacheline / 8).W))
   val wbuff = RegNext(io.cache(wsel).req.data)
 
-  val rs_idle :: rs_wait_ready :: rs_receive :: rs_finish :: Nil = Enum(4)
-  val ws_idle :: ws_wait_ready :: ws_write :: ws_wait_valid :: Nil = Enum(4)
-
-  val rstate = RegInit(rs_idle)
-  val wstate = RegInit(ws_idle)
-  val next_rstate = WireDefault(rstate)
-  val next_wstate = WireDefault(wstate)
   rstate := next_rstate
   wstate := next_wstate
-
-  val rsel = r_arbiter.io.chosen
-  val wsel = w_arbiter.io.chosen
 
   val ren = r_arbiter.io.en
   val wen = w_arbiter.io.en

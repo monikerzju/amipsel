@@ -147,6 +147,7 @@ class BRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
   val addr = Input(UInt(log2Ceil(depth).W))
   val din = Input(UInt(width.W))
   val dout = Output(UInt(width.W))
+  override def cloneType = (new BRAMWrapperIO(width,depth)).asInstanceOf[this.type]
 }
 
 class single_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map("DATA_WIDTH" -> DATA_WIDTH,
@@ -213,6 +214,7 @@ class BRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
   val addr  = Input(UInt(log2Ceil(DEPTH).W))
   val din   = Input(UInt(DATA_WIDTH.W))
   val dout  = Output(UInt(DATA_WIDTH.W))
+  override def cloneType = (new BRAMSyncReadMemIO(DATA_WIDTH, DEPTH)).asInstanceOf[this.type]
 }
 
 class BRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends Module {

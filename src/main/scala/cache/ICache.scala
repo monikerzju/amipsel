@@ -33,7 +33,7 @@ import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
 
-class ICacheSimple extends Module with Cache_Parameters with Config{
+class ICacheSimple extends Module with CacheParameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3),32)
@@ -72,6 +72,7 @@ class ICacheSimple extends Module with Cache_Parameters with Config{
     meta.io.update:=false.B
     meta.io.aux_index:=index_refill
     meta.io.aux_tag:=tag_refill
+    meta.io.invalidate:=false.B
 
 
     val out_of_service=RegInit(false.B)
@@ -102,7 +103,7 @@ class ICacheSimple extends Module with Cache_Parameters with Config{
     .elsewhen(out_of_service&&io.bar.resp.valid){
         out_of_service:=false.B
         for(i<- 0 until 1<<(OffsetBits-2)){fillline(i):=data.io.dout(i*len+31,i*len)}
-        io.cpu.req.valid:=true.B
+        io.cpu.resp.valid:=true.B
         meta.io.update:=true.B
         data.io.addr:=index_refill
         data.io.we:=true.B

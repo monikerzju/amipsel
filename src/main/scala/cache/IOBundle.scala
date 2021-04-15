@@ -6,7 +6,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import icore._
 
-trait Cache_Parameters{
+trait CacheParameters{
     val TagBits=18
     val IndexBits=8
     val OffsetBits=6
@@ -16,7 +16,7 @@ trait Cache_Parameters{
     assert(TagBits+IndexBits+OffsetBits==32)
     val MissTolerance=4
 }
-trait Cache_Parameters_4Way{
+trait CacheParameters_4Way{
     val TagBits=20
     val IndexBits=6
     val OffsetBits=6
