@@ -32,7 +32,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class DCacheSimple extends Module with CacheParameters_4Way with Config{
+class DCacheSimple extends Module with CacheParameters_4Way with MemAccessType with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
@@ -74,7 +74,16 @@ class DCacheSimple extends Module with CacheParameters_4Way with Config{
     meta.io.write:=io.cpu.req.bits.wen
     val writeline=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     writeline:=line
-    val mask="hffffffff".U
+    val mask=Wire(UInt(32.W))
+    mask:="hffffffff".U
+    switch(io.cpu.req.bits.mtype){
+        is(MEM_HALF.U){
+            mask:="h0000ffff".U
+        }
+        is(MEM_BYTE.U){
+            mask:="h000000ff".U
+        }
+    }
     val reg_wen=RegNext(io.cpu.req.bits.wen && io.cpu.req.valid)
     val wdata=RegNext(io.cpu.req.bits.wdata)
     val wd=(mask & wdata) | (~mask & line(word1))
