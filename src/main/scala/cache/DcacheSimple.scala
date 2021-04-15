@@ -32,7 +32,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class ICacheSimple extends Module with CacheParameters with Config{
+class DCacheSimple extends Module with CacheParameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
@@ -61,7 +61,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
-    val meta=Module(new MetaSimple(nline));
+    val meta=Module(new MetaDataSimple(nline));
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word1+1.U
@@ -83,28 +83,49 @@ class ICacheSimple extends Module with CacheParameters with Config{
     io.cpu.resp.bits.respn:= dual_issue
     io.cpu.resp.bits.rdata(0):=line(word1)
     io.cpu.resp.bits.rdata(1):=line(word2)
-    val checking= !out_of_service && io.cpu.req.valid
-    when(checking){
-        when(meta.io.hit){
-            // nothing to be done, data on the way
+    val s_normal::s_evict::s_refill::Nil=Enum(3)
+    val state=RegInit(s_normal)
+    switch(state){
+        is(s_normal){
+            when(io.cpu.req.valid){
+                when(meta.io.hit){
+                    // nothing to be done, data on the way
+                }
+                .otherwise{
+                    tag_refill:=tag_raw
+                    index_refill:=index_raw
+                    io.bar.req.valid:=true.B
+                    when(meta.io.dirty){
+                        state:=s_evict
+                        io.bar.req.addr:=Cat(Seq(meta.io.tag,index_raw,0.U(OffsetBits.W)))
+                        // FIXME: align? 
+                        io.bar.req.wen:=true.B
+                    }
+                    .otherwise{
+                        // out_of_service:=true.B
+                        state:=s_refill
+                    }
+                }
+            }
         }
-        .otherwise{
-            out_of_service:=true.B
-            io.bar.req.valid:=true.B
-            io.bar.req.addr:=io.cpu.req.bits.addr
-            tag_refill:=tag_raw
-            index_refill:=index_raw
-            // meta.io.invalidate:=true.B
-            // meta.io.aux_index:=index_raw
+        is(s_refill){
+            when(io.bar.resp.valid){
+                out_of_service:=false.B
+                for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
+                io.cpu.resp.valid:=true.B
+                meta.io.update:=true.B
+                data.io.addr:=index_refill
+                data.io.we:=true.B
+            }
         }
-    }
-    .elsewhen(out_of_service&&io.bar.resp.valid){
-        out_of_service:=false.B
-        for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
-        io.cpu.resp.valid:=true.B
-        meta.io.update:=true.B
-        data.io.addr:=index_refill
-        data.io.we:=true.B
-        // inform_cpu_data_valid()
+        is(s_evict){
+            when(io.bar.resp.valid){
+                state:=s_normal
+                out_of_service:=true.B
+                io.bar.req.valid:=true.B
+                io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
+                io.bar.req.wen:=false.B
+            }
+        }
     }
 }

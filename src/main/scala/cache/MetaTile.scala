@@ -14,6 +14,10 @@ class MetaIOISimple extends Bundle with CacheParameters{
 class MetaIOI extends MetaIOISimple{
     val invalidate=Input(Bool())
 } 
+class MetaIODSimple extends MetaIOISimple{
+    val tag=Output(UInt(TagBits.W))
+    val dirty=Output(Bool())
+} 
 class MetaIOI4 extends Bundle with CacheParameters_4Way{
     val index_in=Input(UInt(IndexBits.W))
     val tags_in=Input(UInt(TagBits.W))
@@ -110,5 +114,21 @@ class Meta_Data(nline:Int) extends Module with CacheParameters{
         dirty(reg_index):=true.B
     }
 }
-class MetaDataSimple(nline:Int) extends Meta_Data(nline){
+class MetaDataSimple(nline:Int) extends Module with CacheParameters{
+    val io=IO(new MetaIODSimple)
+    val tags= RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
+    val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
+    val dirty=RegInit(VecInit(Seq.fill(nline)(false.B)))
+    io.dirty:=dirty(io.index_in)
+    io.hit:= io.tags_in===tags(io.index_in)&&valid(io.index_in)
+    io.tag:=tags(io.index_in)
+
+    when(io.update){
+        tags(io.aux_index):=io.aux_tag
+        valid(io.aux_index):=true.B
+        dirty(io.aux_index):=false.B
+    }.elsewhen(!io.hit){
+        valid(io.index_in):=false.B
+    }
+     
 }
