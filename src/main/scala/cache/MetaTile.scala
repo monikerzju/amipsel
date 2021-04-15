@@ -19,14 +19,13 @@ class MetaIODSimple extends MetaIOISimple{
     val tag=Output(UInt(TagBits.W))
     val dirty=Output(Bool())
 } 
-class MetaIOI4 extends Bundle with CacheParameters_4Way{
+class MetaIOI4Way extends Bundle with CacheParameters_4Way{
     val index_in=Input(UInt(IndexBits.W))
     val tags_in=Input(UInt(TagBits.W))
     val update=Input(Bool())
-    val invalidate=Input(Bool())
+    val hit=Output(Bool())
     val aux_index=Input(UInt(IndexBits.W))
     val aux_tag=Input(UInt(TagBits.W))
-    val hit=Output(Bool())
     val sub_index=Output(UInt(2.W))
 }
 class Meta(nline:Int) extends Module with CacheParameters{
@@ -50,33 +49,35 @@ class MetaSimple(nline:Int) extends Module with CacheParameters{
     when(io.update){
         tags(io.aux_index):=io.aux_tag
         valid(io.aux_index):=true.B
-    }.elsewhen(!io.hit){
-        valid(io.index_in):=false.B
     }
 }
 class MetaBundleI extends Bundle with CacheParameters{
     val tag=UInt(TagBits.W)
     val valid=Bool()
+    val b=Vec(4,Bool())
 }
 class MetaBundleD extends MetaBundleI{
     val dirty=Bool()
 }
 class Meta_4Way(nline:Int) extends Module with CacheParameters_4Way{
-    val io=IO(new MetaIOI4)
-    val groups=Vec(nline/4,Vec(4,new MetaBundleI))
+    val io=IO(new MetaIOI4Way)
+    val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((TagBits+5).W).asTypeOf(new MetaBundleI))))))
+    
     io.hit:=groups(io.index_in).exists({c:MetaBundleI=>c.tag===io.tags_in && c.valid})
     io.sub_index:=Mux(io.hit,groups(io.index_in).indexWhere({c=>c.tag===io.tags_in && c.valid}),0.U)
-    val idx=io.aux_index
-    def replacement(a:UInt)={
-        val slot=groups(a).indexWhere({c:MetaBundleI=> !c.valid})
-        slot
+    val lastest=VecInit(Seq.fill(4)(true.B))
+    when(io.hit){
+        var i=0
+        for(i<-0 to 3){
+            groups(io.index_in)(i).b(io.sub_index):=false.B
+        }
+        groups(io.index_in)(io.sub_index).b:=lastest
     }
-    val sid=replacement(io.aux_index)
+    val idx=io.aux_index
+    val sid=groups(idx).indexWhere({c:MetaBundleI=> c.b.asUInt===0.U})
     when(io.update){
         groups(idx)(sid).tag:=io.aux_tag
         groups(idx)(sid).valid:=true.B
-    }.elsewhen(io.invalidate){
-        groups(idx)(sid).valid:=false.B
     }
 }
 class Meta_Data(nline:Int) extends Module with CacheParameters{
@@ -130,8 +131,6 @@ class MetaDataSimple(nline:Int) extends Module with CacheParameters{
         tags(io.aux_index):=io.aux_tag
         valid(io.aux_index):=true.B
         dirty(io.aux_index):=false.B
-    }.elsewhen(!io.hit){
-        valid(io.index_in):=false.B
     }
      
 }

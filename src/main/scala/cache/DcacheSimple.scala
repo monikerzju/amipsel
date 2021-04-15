@@ -92,7 +92,7 @@ class DCacheSimple extends Module with CacheParameters with Config{
 
     data.io.web:=reg_wen
     data.io.addrb:=reg_addr
-    data.io.dinb:=writeline
+    data.io.dinb:=writeline.asUInt
     when(reg_wen){
         writeline(word1):=wd
     }
