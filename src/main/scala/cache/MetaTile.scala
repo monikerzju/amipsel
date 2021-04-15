@@ -8,11 +8,11 @@ class MetaIOISimple extends Bundle with CacheParameters{
     val tags_in=Input(UInt(TagBits.W))
     val update=Input(Bool())
     val hit=Output(Bool())
+    val aux_index=Input(UInt((IndexBits).W))
+    val aux_tag=Input(UInt((TagBits).W))
 }
 class MetaIOI extends MetaIOISimple{
     val invalidate=Input(Bool())
-    val aux_index=Input(UInt((IndexBits).W))
-    val aux_tag=Input(UInt((TagBits).W))
 } 
 class MetaIOI4 extends Bundle with CacheParameters_4Way{
     val index_in=Input(UInt(IndexBits.W))
@@ -43,8 +43,8 @@ class MetaSimple(nline:Int) extends Module with CacheParameters{
     val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
     io.hit:= io.tags_in===tags(io.index_in)&&valid(io.index_in)
     when(io.update){
-        tags(io.index_in):=io.tags_in
-        valid(io.index_in):=true.B
+        tags(io.aux_index):=io.aux_tag
+        valid(io.aux_index):=true.B
     }.elsewhen(!io.hit){
         valid(io.index_in):=false.B
     }
@@ -86,8 +86,10 @@ class Meta_Data(nline:Int) extends Module with CacheParameters{
         val write_hit=Input(Bool())
         val hit=Output(Bool())
         val dirty=Output(Bool())
+        val tag=Output(UInt(TagBits.W))
         // for dual-port non-blocking access; 
     })
+    io.tag:=tags(io.tags_in)
     val reg_tag=RegNext(io.tags_in)
     val reg_index=RegNext(io.index_in)
     val tags= RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
@@ -107,4 +109,6 @@ class Meta_Data(nline:Int) extends Module with CacheParameters{
     .elsewhen(io.write_hit){
         dirty(reg_index):=true.B
     }
+}
+class MetaDataSimple(nline:Int) extends Meta_Data(nline){
 }
