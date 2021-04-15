@@ -5,10 +5,10 @@ import chisel3.util._
 
 trait MDUOperation extends AluOpType {
   val SZ_MDU_OP = aluOpWidth // same with ALU
-  val MDU_MUL = 0
-  val MDU_DIV = 1
-  val MDU_MULU = 2
-  val MDU_DIVU = 3
+  val MDU_MUL = 16
+  val MDU_DIV = 17
+  val MDU_MULU = 18
+  val MDU_DIVU = 19
   // Some other operations
 }
 

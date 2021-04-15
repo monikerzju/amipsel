@@ -73,7 +73,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   io.fb.fmbs.instn := decode_instn
   for (i <- 0 until frontendIssueN) {
     decs(i).inst := Mux(wtg, decode_reg_line(i), io.icache.resp.bits.rdata(i))
-    io.fb.fmbs.pcs(i) := decode_pc_low + (i.U << 2.U)
+    decs(i).pc := decode_pc_low + (i.U << 2.U)
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
 
