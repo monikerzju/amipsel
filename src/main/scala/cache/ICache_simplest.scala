@@ -32,7 +32,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class ICache_simplest extends Module with Cache_Parameters with Config{
+class ICacheSimple extends Module with CacheParameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
@@ -61,7 +61,7 @@ class ICache_simplest extends Module with Cache_Parameters with Config{
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
-    val meta=Module(new Meta(nline));
+    val meta=Module(new MetaSimple(nline));
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word1+1.U
@@ -69,10 +69,10 @@ class ICache_simplest extends Module with Cache_Parameters with Config{
     meta.io.tags_in:=tag_raw
     meta.io.index_in:=index_raw
     meta.io.update:=false.B
-    meta.io.aux_index:=index_refill
-    meta.io.aux_tag:=tag_refill
-
-
+    // meta.io.aux_index:=index_refill
+    // meta.io.aux_tag:=tag_refill
+    // meta.io.invalidate:=false.B
+    
     val out_of_service=RegInit(false.B)
 
     io.cpu.req.ready:=io.cpu.resp.valid
@@ -94,15 +94,17 @@ class ICache_simplest extends Module with Cache_Parameters with Config{
             io.bar.req.addr:=io.cpu.req.bits.addr
             tag_refill:=io.bar.req.addr
             index_refill:=index_raw
-            meta.io.invalidate:=true.B
-            meta.io.aux_index:=index_raw
+            // meta.io.invalidate:=true.B
+            // meta.io.aux_index:=index_raw
         }
     }
     .elsewhen(out_of_service&&io.bar.resp.valid){
         out_of_service:=false.B
         for(i<- 0 until 1<<(OffsetBits-2)){fillline(i):=data.io.dout(i*len+31,i*len)}
-        io.cpu.req.valid:=true.B
+        io.cpu.resp.valid:=true.B
         meta.io.update:=true.B
+        meta.io.tags_in:=tag_refill
+        meta.io.index_in:=index_refill
         data.io.addr:=index_refill
         data.io.we:=true.B
         // inform_cpu_data_valid()
