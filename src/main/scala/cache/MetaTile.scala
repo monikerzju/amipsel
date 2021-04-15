@@ -1,11 +1,11 @@
 package cache
-// class MetaIO extends Bundle with Cache_Parameters{
+// class MetaIO extends Bundle with CacheParameters{
 //     val index_in=Input(UInt(IndexBits.W))
 //     val tags_in=Input(UInt(TagBits.W))
 //     val update=Input(Bool())
 //     val hit=Output(Bool())
 // }
-// class Meta(nline:Int) extends Module with Cache_Parameters{
+// class Meta(nline:Int) extends Module with CacheParameters{
 //     val io=IO(new MetaIO)
 //     io.index_in:=DontCare
 //     io.tags_in:=DontCare
@@ -23,7 +23,7 @@ package cache
 //         valid(reg_index):=true.B
 //     }
 // }
-// trait Cache_Parameters4Way{
+// trait CacheParameters4Way{
 //     val TagBits=18
 //     val IndexBits=6
 //     val OffsetBits=6
@@ -32,7 +32,7 @@ package cache
 //     // FIXME: not compatible with current interface
 //     assert(TagBits+IndexBits+OffsetBits==30)
 // }
-// class Meta4Way(nline:Int) extends Meta with Cache_Parameters4Way{
+// class Meta4Way(nline:Int) extends Meta with CacheParameters4Way{
 //     val io=IO(new MetaIO)
 //     io.index_in:=DontCare
 //     io.tags_in:=DontCare
@@ -58,7 +58,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
-class MetaIOI extends Bundle with Cache_Parameters{
+class MetaIOI extends Bundle with CacheParameters{
     val index_in=Input(UInt(IndexBits.W))
     val tags_in=Input(UInt(TagBits.W))
     val update=Input(Bool())
@@ -67,7 +67,7 @@ class MetaIOI extends Bundle with Cache_Parameters{
     val aux_index=Input(UInt((IndexBits).W))
     val aux_tag=Input(UInt((TagBits).W))
 }
-class MetaIOI4 extends Bundle with Cache_Parameters_4Way{
+class MetaIOI4 extends Bundle with CacheParameters_4Way{
     val index_in=Input(UInt(IndexBits.W))
     val tags_in=Input(UInt(TagBits.W))
     val update=Input(Bool())
@@ -77,7 +77,7 @@ class MetaIOI4 extends Bundle with Cache_Parameters_4Way{
     val hit=Output(Bool())
     val sub_index=Output(UInt(2.W))
 }
-class Meta(nline:Int) extends Module with Cache_Parameters{
+class Meta(nline:Int) extends Module with CacheParameters{
     val io=IO(new MetaIOI)
     val tags=RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
     val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
@@ -91,14 +91,14 @@ class Meta(nline:Int) extends Module with Cache_Parameters{
         valid(io.aux_index):=false.B
     }
 }
-class MetaBundleI extends Bundle with Cache_Parameters{
+class MetaBundleI extends Bundle with CacheParameters{
     val tag=UInt(TagBits.W)
     val valid=Bool()
 }
 class MetaBundleD extends MetaBundleI{
     val dirty=Bool()
 }
-class Meta_4Way(nline:Int) extends Module with Cache_Parameters_4Way{
+class Meta_4Way(nline:Int) extends Module with CacheParameters_4Way{
     val io=IO(new MetaIOI4)
     val groups=Vec(nline/4,Vec(4,new MetaBundleI))
     io.hit:=groups(io.index_in).exists({c:MetaBundleI=>c.tag===io.tags_in && c.valid})
@@ -116,7 +116,7 @@ class Meta_4Way(nline:Int) extends Module with Cache_Parameters_4Way{
         groups(idx)(sid).valid:=false.B
     }
 }
-class Meta_Data(nline:Int) extends Module with Cache_Parameters{
+class Meta_Data(nline:Int) extends Module with CacheParameters{
 
     val io=IO(new Bundle{
         val index_in=Input(UInt(IndexBits.W))
