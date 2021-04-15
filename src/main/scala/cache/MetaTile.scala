@@ -89,38 +89,33 @@ class Meta_4Way(nline:Int) extends Module with CacheParameters_4Way{
         groups(idx)(sid).valid:=true.B
     }
 }
-class MetaData_4Way(nline:Int) extends Meta_4Way(nline) with CacheParameters_4Way{
-    override val io=IO(new MetaIOD4Way)
-    val dirty=RegInit(VecInit(Seq.fill(nline*4)(false.B)))
+class MetaData_4Way(nline:Int) extends Module with CacheParameters_4Way{
+    val io=IO(new MetaIOD4Way)
+    val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((TagBits+5).W).asTypeOf(new MetaBundleI))))))
+    val dirty=RegInit(VecInit(Seq.fill(nline)(false.B)))
+    io.hit:=groups(io.index_in).exists({c:MetaBundleI=>c.tag===io.tags_in && c.valid})
+    io.sub_index:=Mux(io.hit,groups(io.index_in).indexWhere({c=>c.tag===io.tags_in && c.valid}),0.U)
+    val lastest=VecInit(Seq.fill(4)(true.B))
+    when(io.hit){
+        var i=0
+        for(i<-0 to 3){
+            groups(io.index_in)(i).b(io.sub_index):=false.B
+        }
+        groups(io.index_in)(io.sub_index).b:=lastest
+    }
+    val idx=io.aux_index
+    val sid=groups(idx).indexWhere({c:MetaBundleI=> c.b.asUInt===0.U})
+    val sub=groups(io.index_in).indexWhere({c:MetaBundleI=> c.b.asUInt===0.U})
     when(io.write && io.hit){
         dirty(Cat(io.index_in,io.sub_index)):=true.B
     }
+    when(io.update){
+        groups(idx)(sid).tag:=io.aux_tag
+        groups(idx)(sid).valid:=true.B
+    }
+    io.tag:=groups(idx)(sid).tag
+    io.dirty:=dirty(Cat(io.index_in,sub)) && groups(io.index_in)(sub).valid
 }
-// class MetaData_4Way(nline:Int) extends Module with CacheParameters_4Way{
-//     val io=IO(new MetaIOD4Way)
-//     val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((TagBits+5).W).asTypeOf(new MetaBundleI))))))
-//     val dirty=RegInit(VecInit(Seq.fill(nline)(false.B)))
-//     io.hit:=groups(io.index_in).exists({c:MetaBundleI=>c.tag===io.tags_in && c.valid})
-//     io.sub_index:=Mux(io.hit,groups(io.index_in).indexWhere({c=>c.tag===io.tags_in && c.valid}),0.U)
-//     io.dirty:=dirty(Cat(idx,sid)) && groups(idx)(sid).valid
-//     val lastest=VecInit(Seq.fill(4)(true.B))
-//     when(io.hit){
-//         var i=0
-//         for(i<-0 to 3){
-//             groups(io.index_in)(i).b(io.sub_index):=false.B
-//         }
-//         groups(io.index_in)(io.sub_index).b:=lastest
-//     }
-//     val idx=io.aux_index
-//     val sid=groups(idx).indexWhere({c:MetaBundleI=> c.b.asUInt===0.U})
-//     when(io.write && io.hit){
-//         dirty(Cat(io.index_in,io.sub_index)):=true.B
-//     }
-//     when(io.update){
-//         groups(idx)(sid).tag:=io.aux_tag
-//         groups(idx)(sid).valid:=true.B
-//     }
-// }
 class Meta_Data(nline:Int) extends Module with CacheParameters{
 
     val io=IO(new Bundle{
