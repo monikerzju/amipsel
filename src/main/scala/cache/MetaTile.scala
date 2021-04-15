@@ -15,6 +15,7 @@ class MetaIOI extends MetaIOISimple{
     val invalidate=Input(Bool())
 } 
 class MetaIODSimple extends MetaIOISimple{
+    val write=Input(Bool())
     val tag=Output(UInt(TagBits.W))
     val dirty=Output(Bool())
 } 
@@ -122,7 +123,9 @@ class MetaDataSimple(nline:Int) extends Module with CacheParameters{
     io.dirty:=dirty(io.index_in)
     io.hit:= io.tags_in===tags(io.index_in)&&valid(io.index_in)
     io.tag:=tags(io.index_in)
-
+    when(io.write && io.hit){
+        dirty(io.index_in):=true.B
+    }
     when(io.update){
         tags(io.aux_index):=io.aux_tag
         valid(io.aux_index):=true.B

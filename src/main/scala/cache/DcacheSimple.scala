@@ -38,9 +38,9 @@ class DCacheSimple extends Module with CacheParameters with Config{
         val bar=new CacheIO(1<<(OffsetBits+3))
     })
     val nline=1<<IndexBits
-    val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
+    val data=Module(new DPBRAMSyncReadMem(nline,1<<(OffsetBits+3)))
     
-    data.io.we:=false.B
+    data.io.wea:=false.B
 
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
@@ -56,10 +56,10 @@ class DCacheSimple extends Module with CacheParameters with Config{
     val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
     val index=RegNext(index_raw)
-    data.io.addr:=index_raw
-    data.io.din:=io.bar.resp.data
+    data.io.addra:=index_raw
+    data.io.dina:=io.bar.resp.data
     var i=0
-    for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
+    for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
 
     val meta=Module(new MetaDataSimple(nline));
     val tag_refill=RegInit(0.U(TagBits.W))
@@ -71,13 +71,17 @@ class DCacheSimple extends Module with CacheParameters with Config{
     meta.io.update:=false.B
     meta.io.aux_index:=index_refill
     meta.io.aux_tag:=tag_refill
-    // meta.io.invalidate:=false.B
-    
-    val out_of_service=RegInit(false.B)
+    meta.io.write:=io.cpu.req.bits.wen
+    val writeline=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
+    writeline:=line
+    val mask="hffffffff".U
+    val reg_wen=RegNext(io.cpu.req.bits.wen && io.cpu.req.valid)
+    val wdata=RegNext(io.cpu.req.bits.wdata)
+    val wd=(mask & wdata) | (~mask & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
-
-    io.cpu.resp.valid:=io.bar.resp.valid||(!out_of_service && meta.io.hit)
+    val reg_addr=RegNext(io.cpu.req.bits.addr)
+    io.cpu.resp.valid:=io.bar.resp.valid||meta.io.hit
     val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     io.cpu.resp.bits.respn:= dual_issue
@@ -85,6 +89,13 @@ class DCacheSimple extends Module with CacheParameters with Config{
     io.cpu.resp.bits.rdata(1):=line(word2)
     val s_normal::s_evict::s_refill::Nil=Enum(3)
     val state=RegInit(s_normal)
+
+    data.io.web:=reg_wen
+    data.io.addrb:=reg_addr
+    data.io.dinb:=writeline
+    when(reg_wen){
+        writeline(word1):=wd
+    }
     switch(state){
         is(s_normal){
             when(io.cpu.req.valid){
@@ -110,18 +121,16 @@ class DCacheSimple extends Module with CacheParameters with Config{
         }
         is(s_refill){
             when(io.bar.resp.valid){
-                out_of_service:=false.B
                 for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
                 io.cpu.resp.valid:=true.B
                 meta.io.update:=true.B
-                data.io.addr:=index_refill
-                data.io.we:=true.B
+                data.io.addra:=index_refill
+                data.io.wea:=true.B
             }
         }
         is(s_evict){
             when(io.bar.resp.valid){
                 state:=s_normal
-                out_of_service:=true.B
                 io.bar.req.valid:=true.B
                 io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
                 io.bar.req.wen:=false.B
