@@ -87,10 +87,11 @@ class ICacheSimple extends Module with CacheParameters with Config{
     io.cpu.resp.bits.rdata(1):=line(word2)
     val checking= !out_of_service && io.cpu.req.valid
     when(checking){
-        when(meta.io.hit){
-            // nothing to be done, data on the way
-        }
-        .otherwise{
+        // TODO TOOOOOO MANY COMBO LOOPS
+        // when(meta.io.hit){
+        //     // nothing to be done, data on the way
+        // }
+        // .otherwise{
             out_of_service:=true.B
             io.bar.req.valid:=true.B
             io.bar.req.addr:=io.cpu.req.bits.addr
@@ -98,7 +99,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
             index_refill:=index_raw
             meta.io.invalidate:=true.B
             meta.io.aux_index:=index_raw
-        }
+        // }
     }
     .elsewhen(out_of_service&&io.bar.resp.valid){
         out_of_service:=false.B
