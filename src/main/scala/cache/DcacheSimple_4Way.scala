@@ -1,29 +1,3 @@
-/***********************************************************
-*********************dcache prototype***********************
-1-way direct-mapped instruction cache
-features:   
-    - AXI protocol added
-    - non-blocking
-    - meta ready at the cycle imediately after the request
-    - data delay 1 cycle
-    - for word access only
-
-TODO:   [x] output serialized to cater for AXI bandwidth
-        [ ] traits not compatible with icore defination
-        [x] BRAM interface for data access
-        [ ] invalidate instructions 
-        [ ] flush
-        [x] dual-issue for icache
-
-NOTICE: - expect the valid signal early in the cycle, not withstandable the latency 
-        - provides access for aligned address only
-FIXME:  [ ] skeptical : the valid signal might not trigger the state transfer; 
-                in which case both meta and data will suffer 1-cycle lantency 
-        [ ] valid-ready protocol 
-        [ ] 双发射字节对齐？若一个miss 一个hit？
-        [ ] non-blocking 导致 out-of-order?
-
-***********************************************************/
 package cache
 
 import chisel3._
@@ -32,14 +6,14 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class DCacheSimple extends Module with CacheParameters with MemAccessType with Config{
+class DCacheSimple_4Way extends Module with CacheParameters_4Way with MemAccessType with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
     })
     val nline=1<<IndexBits
-    val data=Module(new DPBRAMSyncReadMem(nline,1<<(OffsetBits+3)))
-    val meta=Module(new MetaDataSimple(nline));
+    val data=Module(new DPBRAMSyncReadMem(nline*4,1<<(OffsetBits+3)))
+    val meta=Module(new MetaData_4Way(nline));
 
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
@@ -63,7 +37,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val word2=word1+1.U
     val index_refill=RegInit(0.U(IndexBits.W))
     data.io.wea:=false.B
-    data.io.addra:=index_raw
+    data.io.addra:=Cat(index_raw,meta.io.sub_index)
     data.io.dina:=io.bar.resp.data
     meta.io.tags_in:=tag_raw
     meta.io.index_in:=index_raw
@@ -88,7 +62,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val wd=(mask & wdata) | (~mask & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
-    val reg_addr=RegNext(index_raw)
+    val reg_addr=RegNext(Cat(index_raw,meta.io.sub_index))
     io.cpu.resp.valid:=io.bar.resp.valid||meta.io.hit
     val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
@@ -132,7 +106,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                 for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
                 io.cpu.resp.valid:=true.B
                 meta.io.update:=true.B
-                data.io.addra:=index_refill
+                data.io.addra:=Cat(index_refill,meta.io.sub_index)
                 data.io.wea:=true.B
             }
         }
