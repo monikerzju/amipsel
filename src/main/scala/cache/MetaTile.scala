@@ -125,6 +125,7 @@ class MetaData_4Way(nline:Int) extends Module with CacheParameters_4Way{
     when(io.update){
         groups(idx)(sid).tag:=io.aux_tag
         groups(idx)(sid).valid:=true.B
+        dirty(Cat(idx,sid)):=false.B
         groups(idx)(sid).b:=latest
         var i=0
         for(i<-0 to 3){

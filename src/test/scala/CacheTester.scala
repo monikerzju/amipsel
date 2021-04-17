@@ -111,17 +111,17 @@ class CacheTester extends FreeSpec with ChiselScalatestTester with CacheParamete
             }
         }
     }
-}
-class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
-    "test 4-way meta" in{
-        test(new Meta_4Way(256)){c=>
+    "test 4-way meta(data)" in{
+        test(new MetaData_4Way(256)){c=>
             c.io.tags_in.poke(0.U)
-            c.io.index_in.poke(0.U)
+            c.io.index_in.poke (0.U)
             c.io.update.poke(false.B)
             c.io.aux_index.poke(0.U)
             c.io.aux_tag.poke(0.U)
             c.io.hit.expect(false.B)
+            c.io.dirty.expect(false.B)
             c.clock.step()
+
             // test simple miss
 
             c.io.tags_in.poke(0.U)
@@ -130,17 +130,29 @@ class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
             c.io.aux_index.poke(0.U)
             c.io.aux_tag.poke(0x10.U)
             c.io.hit.expect(false.B)
+            c.io.dirty.expect(false.B)
             c.clock.step()
             // test update
 
             c.io.tags_in.poke(0x10.U)
             c.io.index_in.poke(0.U)
             c.io.update.poke(false.B)
+            c.io.write.poke(true.B)
             c.io.aux_index.poke(0.U)
             c.io.aux_tag.poke(0.U)
             c.io.hit.expect(true.B)
+            c.io.dirty.expect(false.B)
             c.clock.step()
             // test hit
+            c.io.tags_in.poke(0x10.U)
+            c.io.write.poke(false.B)
+            c.io.update.poke(false.B)
+            c.io.aux_index.poke(0.U)
+            c.io.aux_tag.poke(0.U)
+            c.io.hit.expect(true.B)
+            c.io.dirty.expect(false.B)
+            c.clock.step()
+            // test write 
             
             var i=0
             for(i<-0 to 10){
@@ -148,9 +160,13 @@ class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
                 if(i>0)c.io.tags_in.poke((i-1).U)
                 else c.io.tags_in.poke(0x10.U)
                 c.io.update.poke(true.B)
+                c.io.write.poke(false.B)
                 c.io.aux_tag.poke(i.U)
                 println(s"$i , sub_index is ${c.io.sub_index.peek}")                        
                 c.io.hit.expect(true.B)
+                if(i==3)c.io.dirty.expect(true.B)
+                    else c.io.dirty.expect(false.B)
+                if(i>4)c.io.tag.expect((i-4).U)
                 c.clock.step()
                 if(i>3){
                     var j=0
@@ -170,4 +186,6 @@ class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
             }
         }
     }
+}
+class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
 }
