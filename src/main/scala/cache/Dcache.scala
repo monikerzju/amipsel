@@ -36,28 +36,24 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
+        // val data=Flipped(new DPBRAMSyncReadMemIO(8*(1<<OffsetBits),1<<IndexBits))
     })
     val nline=1<<IndexBits
     val data=Module(new DPBRAMSyncReadMem(nline,1<<(OffsetBits+3)))
     val meta=Module(new MetaDataSimple(nline));
 
+    val tag_raw=io.cpu.req.bits.addr(31,32-TagBits)
+    val index_raw=io.cpu.req.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
-    io.bar.req.addr:=io.cpu.req.bits.addr
+    io.bar.req.addr:=Cat(Seq(tag_raw,index_raw,0.U(OffsetBits.W)))
     io.bar.req.data:=0.U
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
-
-    
-    val tag_raw=io.cpu.req.bits.addr(31,32-TagBits)
-    val index_raw=io.cpu.req.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
-    
     val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
-    val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
     val index=RegNext(index_raw)
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
-
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word1+1.U
@@ -83,8 +79,9 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             mask:="h000000ff".U
         }
     }
-    val reg_wen=RegNext(io.cpu.req.bits.wen && io.cpu.req.valid)
-    val wdata=RegNext(io.cpu.req.bits.wdata)
+    val wen=io.cpu.req.bits.wen && io.cpu.req.valid
+    val reg_wen=RegNext(wen)
+    val wdata=RegEnable(io.cpu.req.bits.wdata,wen)
     val wd=(mask & wdata) | (~mask & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
@@ -97,8 +94,9 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     io.cpu.resp.bits.rdata(1):=line(word2)
     val s_normal::s_evict::s_refill::Nil=Enum(3)
     val state=RegInit(s_normal)
-
+    val tag_evict_reg=RegInit(0.U(TagBits.W))
     data.io.web:=reg_wen
+    // FIXME: [ ] write miss?
     data.io.addrb:=reg_addr
     data.io.dinb:=writeline.asUInt
     when(reg_wen){
@@ -113,22 +111,26 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                 .otherwise{
                     tag_refill:=tag_raw
                     index_refill:=index_raw
-                    io.bar.req.valid:=true.B
                     when(meta.io.dirty){
                         state:=s_evict
-                        io.bar.req.addr:=Cat(Seq(meta.io.tag,index_raw,0.U(OffsetBits.W)))
-                        // FIXME: align? 
-                        io.bar.req.wen:=true.B
+                        tag_evict_reg:=meta.io.tag
+                        // NOTE:如果路径过长可以从此处切开并把寄存器移到meta内部
+                        // io.bar.req.addr:=Cat(Seq(meta.io.tag,index_raw,0.U(OffsetBits.W)))
+                        // FIXME: align? register?
+                        // io.bar.req.wen:=true.B
                     }
                     .otherwise{
                         // out_of_service:=true.B
+                        io.bar.req.valid:=true.B
                         state:=s_refill
                     }
                 }
             }
         }
         is(s_refill){
+            io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
             when(io.bar.resp.valid){
+                state:=s_normal
                 for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
                 io.cpu.resp.valid:=true.B
                 meta.io.update:=true.B
@@ -137,8 +139,13 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             }
         }
         is(s_evict){
+            io.bar.req.valid:=true.B
+            io.bar.req.wen:=true.B
+            io.bar.req.data:=line.asUInt
+            // FIXME: register?
+            io.bar.req.addr:=Cat(Seq(tag_evict_reg,index_refill,0.U(OffsetBits.W)))
             when(io.bar.resp.valid){
-                state:=s_normal
+                state:=s_refill
                 io.bar.req.valid:=true.B
                 io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
                 io.bar.req.wen:=false.B
