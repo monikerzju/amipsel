@@ -39,7 +39,7 @@ class ICacheSimple extends Module with CacheParameters_4Way with Config{
     })
     val nline=1<<IndexBits
     val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
-    
+    val meta=Module(new MetaSimple(nline));
     data.io.we:=false.B
 
     io.bar.req.valid:=false.B
@@ -61,7 +61,6 @@ class ICacheSimple extends Module with CacheParameters_4Way with Config{
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
-    val meta=Module(new MetaSimple(nline));
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word1+1.U
@@ -72,39 +71,44 @@ class ICacheSimple extends Module with CacheParameters_4Way with Config{
     meta.io.aux_index:=index_refill
     meta.io.aux_tag:=tag_refill
     // meta.io.invalidate:=false.B
-    
-    val out_of_service=RegInit(false.B)
-
+    val s_normal::s_refill::Nil=Enum(2)
+    val state=RegInit(s_normal)
     io.cpu.req.ready:=io.cpu.resp.valid
 
-    io.cpu.resp.valid:=io.bar.resp.valid||(!out_of_service && meta.io.hit)
+    io.cpu.resp.valid:=io.bar.resp.valid||(state===s_normal && meta.io.hit)
     val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     io.cpu.resp.bits.respn:= dual_issue
     io.cpu.resp.bits.rdata(0):=line(word1)
     io.cpu.resp.bits.rdata(1):=line(word2)
-    val checking= !out_of_service && io.cpu.req.valid
-    when(checking){
-        when(meta.io.hit){
-            // nothing to be done, data on the way
+    // val checking= !out_of_service && io.cpu.req.valid
+    when(state===s_normal){
+        when(io.cpu.req.valid){
+            when(meta.io.hit){
+                // nothing to be done, data on the way
+            }
+            .otherwise{
+                // out_of_service:=true.B
+                state:=s_refill
+                io.bar.req.valid:=true.B
+                io.bar.req.addr:=io.cpu.req.bits.addr
+                tag_refill:=tag_raw
+                index_refill:=index_raw
+                // meta.io.invalidate:=true.B
+                // meta.io.aux_index:=index_raw
+            }
         }
-        .otherwise{
-            out_of_service:=true.B
-            io.bar.req.valid:=true.B
-            io.bar.req.addr:=io.cpu.req.bits.addr
-            tag_refill:=tag_raw
-            index_refill:=index_raw
-            // meta.io.invalidate:=true.B
-            // meta.io.aux_index:=index_raw
+    } 
+    .elsewhen(state===s_refill){
+        when(io.bar.resp.valid){
+            // out_of_service:=false.B
+            state:=s_normal
+            for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
+            io.cpu.resp.valid:=true.B
+            meta.io.update:=true.B
+            data.io.addr:=index_refill
+            data.io.we:=true.B
+            // inform_cpu_data_valid()
         }
-    }
-    .elsewhen(out_of_service&&io.bar.resp.valid){
-        out_of_service:=false.B
-        for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
-        io.cpu.resp.valid:=true.B
-        meta.io.update:=true.B
-        data.io.addr:=index_refill
-        data.io.we:=true.B
-        // inform_cpu_data_valid()
     }
 }
