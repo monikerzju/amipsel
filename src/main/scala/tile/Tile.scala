@@ -49,9 +49,9 @@ class Tile extends Module with Config with CacheParameters {
   core.io.interrupt := io.intr
   core.io.icache <> icache.io.cpu
   core.io.dcache <> dcache.io.cpu
-  // Serve I$ first
-  xbar.io.cache(0) <> icache.io.bar
-  xbar.io.cache(1) <> dcache.io.bar
+  // Serve D$ first
+  xbar.io.cache(0) <> dcache.io.bar
+  xbar.io.cache(1) <> icache.io.bar
 
   io.axi3 <> xbar.io.axi3
 }
@@ -75,5 +75,15 @@ object GenC {
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
       Seq(ChiselGeneratorAnnotation(() => new  Core)))
+  }
+}
+
+object GenB {
+  def main(args: Array[String]): Unit = {
+    val packageName = this.getClass.getPackage.getName
+
+    (new chisel3.stage.ChiselStage).execute(
+      Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
+      Seq(ChiselGeneratorAnnotation(() => new Backend)))
   }
 }

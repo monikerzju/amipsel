@@ -41,13 +41,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val io = IO(new BackendIO)
   val queueSize = 20
   val dcacheStall = WireDefault(false.B)
-  dcacheStall := !io.dcache.resp.valid
+  dcacheStall := !io.dcache.resp.valid && io.dcache.req.valid
   val issueQueue = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   issueQueue.io.enqStep := frontendIssueN.U
-  issueQueue.io.enqReq := true.B
-
-  // TODO: connect with frontend
-  io.fb.fmbs.please_wait := !issueQueue.io.sufficient
 
   for(i <- 0 until frontendIssueN) {
     // TODO: check
@@ -96,6 +92,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val exNum = RegInit(0.U(3.W))
   issueQueue.io.deqStep := exNum
   issueQueue.io.deqReq := !dcacheStall
+  issueQueue.io.enqReq := io.fb.fmbs.instn =/= 0.U
+  issueQueue.io.enqStep := io.fb.fmbs.instn
   val issueInsts = Wire(Vec(3, new Mops))
   issueInsts(0) := issueQueue.io.dout(0)
   issueInsts(1) := issueQueue.io.dout(1)

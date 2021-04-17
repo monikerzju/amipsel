@@ -29,20 +29,17 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   val decode_pc_low = RegInit(UInt(len.W), startAddr.U)
   val decode_instn = RegInit(UInt(frontendIssueN.W), 0.U)
   val decode_reg_line = Array.fill(frontendIssueN)(RegInit(0.U(len.W)))
-  val last_wait = RegNext(io.fb.bmfs.please_wait)
+  val last_wait = RegNext(pc_gen.io.please_wait)
 
   // Signals define
   val icache_stall_req_a = !io.icache.resp.valid && io.icache.req.valid
-  val wtg = last_wait && !io.fb.bmfs.please_wait
-  val gtw = !last_wait && io.fb.bmfs.please_wait
+  val wtg = last_wait && !pc_gen.io.please_wait
+  val gtw = !last_wait && pc_gen.io.please_wait
 
   // Replay PC
   val replay = RegNext(icache_stall_req_a)
   val repc = RegInit(startAddr.U(len.W))
   repc := Mux(icache_stall_req_a, repc, pc_gen.io.pc_o)
-
-  // Some of the output signals for backend and icache
-  io.fb.bmfs.please_wait := false.B
 
   // [---------- IF Stage ----------]
   // redirect_pc prio: bmfs.redirect > icache only fetch one
@@ -71,9 +68,9 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   }
   // for 0 cycle latency
   decode_pc_low := Mux(io.fb.fmbs.please_wait, decode_pc_low, pc_gen.io.pc_o)
-  decode_instn := Mux(io.fb.fmbs.please_wait, decode_instn, Mux(io.icache.resp.valid, io.icache.resp.bits.respn + 1.U, 0.U))
+  decode_instn := Mux(io.fb.fmbs.please_wait, decode_instn, Mux(io.icache.resp.valid, Cat(0.U, io.icache.resp.bits.respn) + 1.U, 0.U))
   // some IO to the fifo backend
-  io.fb.fmbs.instn := decode_instn
+  io.fb.fmbs.instn := Mux(io.fb.fmbs.please_wait, 0.U, decode_instn)
   for (i <- 0 until frontendIssueN) {
     decs(i).inst := Mux(wtg, decode_reg_line(i), io.icache.resp.bits.rdata(i))
     decs(i).pc := decode_pc_low + (i.U << 2.U)
