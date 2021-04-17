@@ -32,10 +32,11 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class ICacheSimple extends Module with CacheParameters_4Way with Config{
+class ICacheSimple extends Module with CacheParameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
+        // val data=Flipped(new BRAMSyncReadMemIO(8*1<<OffsetBits,1<<IndexBits))
     })
     val nline=1<<IndexBits
     val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
