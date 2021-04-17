@@ -20,7 +20,6 @@ class BMFS extends Bundle with Config {
   // redirect, eg syscall, branch, jump. please_wait means the frontend is busy, eg icache fetching from memory
   val redirect_kill = Output(Bool())
   val redirect_pc = Output(UInt(len.W))
-  val please_wait = Input(Bool())
 }
 
 // Frontend master backend slave

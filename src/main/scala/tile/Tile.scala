@@ -49,9 +49,9 @@ class Tile extends Module with Config with CacheParameters {
   core.io.interrupt := io.intr
   core.io.icache <> icache.io.cpu
   core.io.dcache <> dcache.io.cpu
-  // Serve I$ first
-  xbar.io.cache(0) <> icache.io.bar
-  xbar.io.cache(1) <> dcache.io.bar
+  // Serve D$ first
+  xbar.io.cache(0) <> dcache.io.bar
+  xbar.io.cache(1) <> icache.io.bar
 
   io.axi3 <> xbar.io.axi3
 }
