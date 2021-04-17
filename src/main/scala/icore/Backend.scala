@@ -41,7 +41,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val io = IO(new BackendIO)
   val queueSize = 20
   val dcacheStall = WireDefault(false.B)
-  dcacheStall := !io.dcache.resp.valid
+  dcacheStall := !io.dcache.resp.valid && io.dcache.req.valid
   val issueQueue = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   issueQueue.io.enqStep := frontendIssueN.U
 
