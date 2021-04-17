@@ -32,14 +32,14 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class ICacheSimple extends Module with CacheParameters_4Way with Config{
+class ICacheSimple extends Module with CacheParameters with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
     })
     val nline=1<<IndexBits
     val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
-    
+    val meta=Module(new MetaSimple(nline));
     data.io.we:=false.B
 
     io.bar.req.valid:=false.B
@@ -61,7 +61,6 @@ class ICacheSimple extends Module with CacheParameters_4Way with Config{
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
-    val meta=Module(new MetaSimple(nline));
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
     val word2=word1+1.U
