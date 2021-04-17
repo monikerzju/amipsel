@@ -134,9 +134,14 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
 
   val w_arbiter = Module(new CacheArbiter(nclient, policy))
   val r_arbiter = Module(new CacheArbiter(nclient, policy))
+  val cache_wen = RegInit(VecInit(Seq.fill(nclient)(false.B)))
+  val cache_valid = RegInit(VecInit(Seq.fill(nclient)(false.B)))
+
   for (i <- 0 until nclient) {
-    w_arbiter.io.valid(i) := io.cache(i).req.valid && io.cache(i).req.wen
-    r_arbiter.io.valid(i) := io.cache(i).req.valid && !io.cache(i).req.wen
+    cache_wen(i) := io.cache(i).req.wen
+    cache_valid(i) := io.cache(i).req.valid
+    w_arbiter.io.valid(i) := cache_valid(i) && cache_wen(i)
+    r_arbiter.io.valid(i) := cache_valid(i) && !cache_wen(i)
   }
   w_arbiter.io.lock := wstate =/= ws_idle
   r_arbiter.io.lock := rstate =/= rs_idle
