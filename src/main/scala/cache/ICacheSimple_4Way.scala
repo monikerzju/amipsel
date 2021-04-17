@@ -58,29 +58,31 @@ class ICacheSimple_4Way extends Module with CacheParameters_4Way with Config{
     // val checking= !out_of_service && io.cpu.req.valid
     when(state===s_normal){
         when(io.cpu.req.valid){
-        when(meta.io.hit){
-            // nothing to be done, data on the way
-        }
-        .otherwise{
-            // out_of_service:=true.B
-            state:=s_refill
-            io.bar.req.valid:=true.B
-            io.bar.req.addr:=io.cpu.req.bits.addr
-            tag_refill:=tag_raw
-            index_refill:=index_raw
-            // meta.io.invalidate:=true.B
-            // meta.io.aux_index:=index_raw
+            when(meta.io.hit){
+                // nothing to be done, data on the way
+            }
+            .otherwise{
+                // out_of_service:=true.B
+                state:=s_refill
+                io.bar.req.valid:=true.B
+                io.bar.req.addr:=io.cpu.req.bits.addr
+                tag_refill:=tag_raw
+                index_refill:=index_raw
+                // meta.io.invalidate:=true.B
+                // meta.io.aux_index:=index_raw
+            }
         }
     }
     .elsewhen(state===s_refill){
         when(io.bar.resp.valid){
-            // out_of_service:=false.B
-            state:=s_normal
-        for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
-        io.cpu.resp.valid:=true.B
-        meta.io.update:=true.B
-        data.io.addr:=Cat(index_refill,meta.io.sub_index)
-        data.io.we:=true.B
-        // inform_cpu_data_valid()
+                // out_of_service:=false.B
+                state:=s_normal
+            for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
+            io.cpu.resp.valid:=true.B
+            meta.io.update:=true.B
+            data.io.addr:=Cat(index_refill,meta.io.sub_index)
+            data.io.we:=true.B
+            // inform_cpu_data_valid()
+        }
     }
 }
