@@ -46,7 +46,7 @@ class ALU extends Module with Config with AluOpType {
       aluSll.U -> (io.a >> shamt),
       aluSrl.U -> (io.a << shamt),
       aluSra.U -> (io.a.asSInt() >> shamt).asUInt(), // should be tested
-      aluLui.U -> ("hdeadbeef".U)  // TODO
+      aluLui.U -> Cat(io.b(15, 0), Fill(16, 0.U))  // TODO:check imm
     )
   )
   // io.zero := Mux(io.r === 0.U(len.W), 1.U, 0.U)
