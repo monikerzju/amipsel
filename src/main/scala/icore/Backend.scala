@@ -164,7 +164,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     exInsts(2) -> LU
     exInsts(3) -> SU
    */
-  val exInstsOrder = Reg(Vec(4, UInt(2.W)))
+  val exInstsOrder = if (diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   for(i <- 0 until backendIssueN) {
     when(issueValid(i)) {
       switch(issueInsts(i).alu_mdu_lsu) {
