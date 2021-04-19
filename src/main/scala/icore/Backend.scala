@@ -63,7 +63,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
 
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {
-    !isDataHazard(inst1, inst2) && inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu //TODO: 4 fu
+    !isDataHazard(inst1, inst2) &&
+    (inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu ||
+      inst1.alu_mdu_lsu === toAMU.U && inst2.alu_mdu_lsu === toAMU.U) //TODO: 4 fu
   }
 
   val exInsts = RegInit(
@@ -89,8 +91,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
     )
   )
 
-  val exNum = RegInit(0.U(3.W))
-  issueQueue.io.deqStep := exNum
+  val exNum = RegInit(0.U(2.W))
+  val issueNum = WireDefault(0.U(2.W))
+  issueQueue.io.deqStep := issueNum
   issueQueue.io.deqReq := !dcacheStall
   issueQueue.io.enqReq := io.fb.fmbs.instn =/= 0.U
   issueQueue.io.enqStep := io.fb.fmbs.instn
@@ -102,16 +105,19 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // decide the true issue num
   val issueValid = WireDefault(VecInit(Seq.fill(4)(false.B)))
   when(!dcacheStall) {
+    //TODO: for loop can be removed
     for(i <- 0 until backendIssueN) {
       when(i.U < issueQueue.io.items) {
         issueValid(0) := true.B
-        exNum := 1.U
+//        exNum := 1.U
+        issueNum := 1.U
         switch(i.U) {
           is(1.U) {
             when(isCompatible(issueQueue.io.dout(0), issueQueue.io.dout(1))
             ) { // do not have data hazard and structural hazard
               issueValid(1) := true.B
-              exNum := 2.U
+//              exNum := 2.U
+              issueNum := 2.U
             }
           }
           is(2.U) {
@@ -120,13 +126,15 @@ class Backend extends Module with Config with InstType with MemAccessType {
                 isCompatible(issueQueue.io.dout(1), issueQueue.io.dout(2)))
             ) { // do not have data hazard and structural hazard
               issueValid(2) := true.B
-              exNum := 3.U
+//              exNum := 3.U
+              issueNum := 3.U
             }
           }
         }
       }
     }
   }
+  exNum := issueNum
 
 //  val nop = Wire(new Mops)
   val nop = WireInit(

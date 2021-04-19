@@ -46,15 +46,28 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     )
   )
    */
-
+  val shamt = io.req.in2(4, 0)
   val lo = MuxLookup(
     io.req.op,
-    0.U(32.W),
+    io.req.in1 + io.req.in2,
     Seq(
       MDU_MUL.U -> (io.req.in1.asSInt() * io.req.in2.asSInt())(31, 0).asUInt(),
       MDU_MULU.U -> (io.req.in1.asUInt() * io.req.in2.asUInt())(31, 0),
       MDU_DIV.U -> (io.req.in1.asSInt() / io.req.in2.asSInt()).asUInt(),
-      MDU_DIVU.U -> (io.req.in1.asUInt() / io.req.in2.asUInt())
+      MDU_DIVU.U -> (io.req.in1.asUInt() / io.req.in2.asUInt()),
+
+      aluAdd.U -> (io.req.in1 + io.req.in2),
+      aluSub.U -> (io.req.in1 - io.req.in2),
+      aluSlt.U -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
+      aluSltu.U -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
+      aluXor.U -> (io.req.in1 ^ io.req.in2),
+      aluAnd.U -> (io.req.in1 & io.req.in2),
+      aluOr.U -> (io.req.in1 | io.req.in2),
+      aluNor.U -> ~(io.req.in1 | io.req.in2),
+      aluSll.U -> (io.req.in1 >> shamt),
+      aluSrl.U -> (io.req.in1 << shamt),
+      aluSra.U -> (io.req.in1.asSInt() >> shamt).asUInt(), // should be tested
+      aluLui.U -> Cat(io.req.in2(15, 0), Fill(16, 0.U))  // TODO:check imm
     )
   )
 
