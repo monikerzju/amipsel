@@ -39,12 +39,13 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   // Replay PC
   val replay = RegNext(icache_stall_req_a)
   val repc = RegInit(startAddr.U(len.W))
-  repc := Mux(icache_stall_req_a, repc, pc_gen.io.pc_o)
+  repc := Mux(icache_stall_req_a && replay, repc, pc_gen.io.pc_o)
 
   // [---------- IF Stage ----------]
   // redirect_pc prio: bmfs.redirect > icache only fetch one
   // Only please wait from icache is atomic and will cause bmfs.please_wait = 1
-  pc_gen.io.please_wait := icache_stall_req_a || io.fb.fmbs.please_wait
+  val wait_icache = icache_stall_req_a || (io.icache.req.bits.addr =/= pc_gen.io.pc_o)
+  pc_gen.io.please_wait := wait_icache || io.fb.fmbs.please_wait
   pc_gen.io.redirect := io.fb.bmfs.redirect_kill  // TODO when BPU is added
   pc_gen.io.redirect_pc := io.fb.bmfs.redirect_pc  // TODO
 
@@ -67,8 +68,8 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
     decode_reg_line(i) := Mux(gtw, io.icache.resp.bits.rdata(i), decode_reg_line(i))
   }
   // for 0 cycle latency
-  decode_pc_low := Mux(io.fb.fmbs.please_wait, decode_pc_low, pc_gen.io.pc_o)
-  decode_instn := Mux(io.fb.bmfs.redirect_kill, 0.U, Mux(io.fb.fmbs.please_wait, decode_instn, Mux(io.icache.resp.valid, Cat(0.U, io.icache.resp.bits.respn) + 1.U, 0.U)))
+  decode_pc_low := Mux(io.fb.fmbs.please_wait, decode_pc_low, io.icache.req.bits.addr)
+  decode_instn := Mux(io.fb.bmfs.redirect_kill, 0.U, Mux(io.fb.fmbs.please_wait, decode_instn, Mux(!wait_icache, Cat(0.U, io.icache.resp.bits.respn) + 1.U, 0.U)))
   // some IO to the fifo backend
   io.fb.fmbs.instn := Mux(io.fb.fmbs.please_wait, 0.U, decode_instn)
   for (i <- 0 until frontendIssueN) {

@@ -45,14 +45,14 @@ class ICacheSimple extends Module with CacheParameters with Config{
 
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
-    io.bar.req.addr:=io.cpu.req.bits.addr
+    io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len - 1, OffsetBits), Fill(OffsetBits, 0.U))
     io.bar.req.data:=0.U
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 
     
-    val tag_raw=io.cpu.req.bits.addr(len-1,len-TagBits)
-    val index_raw=io.cpu.req.bits.addr(len-TagBits-1,len-TagBits-IndexBits)
+    val tag_raw = io.cpu.req.bits.addr(len - 1, len - TagBits)
+    val index_raw = io.cpu.req.bits.addr(len - TagBits - 1, len - TagBits - IndexBits)
     
     val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
