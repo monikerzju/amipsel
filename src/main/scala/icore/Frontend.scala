@@ -68,7 +68,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   }
   // for 0 cycle latency
   decode_pc_low := Mux(io.fb.fmbs.please_wait, decode_pc_low, pc_gen.io.pc_o)
-  decode_instn := Mux(io.fb.fmbs.please_wait, decode_instn, Mux(io.icache.resp.valid, Cat(0.U, io.icache.resp.bits.respn) + 1.U, 0.U))
+  decode_instn := Mux(io.fb.bmfs.redirect_kill, 0.U, Mux(io.fb.fmbs.please_wait, decode_instn, Mux(io.icache.resp.valid, Cat(0.U, io.icache.resp.bits.respn) + 1.U, 0.U)))
   // some IO to the fifo backend
   io.fb.fmbs.instn := Mux(io.fb.fmbs.please_wait, 0.U, decode_instn)
   for (i <- 0 until frontendIssueN) {
