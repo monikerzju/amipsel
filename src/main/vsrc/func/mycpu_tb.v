@@ -124,7 +124,9 @@ initial begin
 end
 
 //get reference result in falling edge
-reg        trace_cmp_flag;
+reg        trace_cmp_flag_0;
+reg        trace_cmp_flag_1;
+reg        trace_cmp_flag_2;
 reg        debug_end;
 
 reg [31:0] ref_wb_pc_0;
@@ -158,40 +160,42 @@ begin
     #1;
     if(|go && !debug_end && `CONFREG_OPEN_TRACE)
     begin
-        trace_cmp_flag=1'b0;
+        trace_cmp_flag_0=1'b0;
+        trace_cmp_flag_1=1'b0;
+        trace_cmp_flag_2=1'b0;
         if (three) begin      // 3 valid
-            while (!trace_cmp_flag && !($feof(trace_ref)))
+            while (!trace_cmp_flag_0 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag,
+                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag_0,
                         ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
             end
-            while (!trace_cmp_flag && !($feof(trace_ref)))
+            while (!trace_cmp_flag_1 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag,
+                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag_1,
                         ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_1);
             end
-            while (!trace_cmp_flag && !($feof(trace_ref)))
+            while (!trace_cmp_flag_2 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag,
+                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag_2,
                         ref_wb_pc_2, ref_wb_rf_wnum_2, ref_wb_rf_wdata_2);
             end
         end
         else if (two)begin      // 2 valid
-        while (!trace_cmp_flag && !($feof(trace_ref)))
+        while (!trace_cmp_flag_0 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag,
+                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag_0,
                         ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
             end
-            while (!trace_cmp_flag && !($feof(trace_ref)))
+            while (!trace_cmp_flag_1 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag,
+                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag_1,
                         ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_1);
             end
         end
         else begin
-            while (!trace_cmp_flag && !($feof(trace_ref)))
+            while (!trace_cmp_flag_0 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag,
+                $fscanf(trace_ref, "%h %h %h %h", trace_cmp_flag_0,
                         ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
             end
         end
@@ -303,10 +307,24 @@ begin
         begin
             $display("--------------------------------------------------------------");
             $display("[%t] Error!!!",$time);
+            if (first) begin
             $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
                       ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_v_0);
             $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_0, debug_wb_rf_wnum_0, debug_wb_rf_wdata_v_0);
+            end
+            if (sec) begin
+            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                      ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_v_1);
+            $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                      debug_wb_pc_1, debug_wb_rf_wnum_1, debug_wb_rf_wdata_v_1);
+            end
+            if (third) begin
+            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                      ref_wb_pc_2, ref_wb_rf_wnum_2, ref_wb_rf_wdata_v_2);
+            $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                      debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_v_2);
+            end
             $display("--------------------------------------------------------------");
             debug_wb_err <= 1'b1;
             #40;
