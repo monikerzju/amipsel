@@ -17,8 +17,8 @@ trait AluOpType{
   val aluNor = 8
   val aluSll = 9
   val aluSrl = 10
-  val aluSra = 10
-  val aluLui = 11
+  val aluSra = 11
+  val aluLui = 12
 }
 class ALU extends Module with Config with AluOpType {
   val io = IO(new Bundle {
@@ -36,6 +36,7 @@ class ALU extends Module with Config with AluOpType {
     (io.a + io.b),  // do not add useless logic as ZJV :(
     Seq(
       aluAdd.U -> (io.a + io.b),
+//      aluAddu.U -> (io.a + io.b),
       aluSub.U -> (io.a - io.b),
       aluSlt.U -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
       aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),

@@ -339,10 +339,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbResValid = RegNext(resValid)
 
   // alu execution
+  aluSrcB := MuxLookup(exInsts(0).src_a, 0.U,
+    Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
   aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
     Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
   alu.io.a := MuxLookup(aluSrcA, rsData(0),
-    Seq(0.U -> rsData(0), 1.U -> exInsts(0).pc, 2.U -> wbResult(fwdSrcAIndex)))
+    Seq(0.U -> rsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbResult(fwdSrcAIndex)))
   alu.io.b := MuxLookup(aluSrcB, rtData(1),
     Seq(0.U -> rtData(0), 1.U -> exInsts(0).imm, 2.U -> wbResult(fwdSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
