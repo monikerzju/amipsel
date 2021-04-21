@@ -59,7 +59,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
    *  [---------- IS stage -----------]
    */
   def isDataHazard(inst1: Mops, inst2: Mops): Bool = {
-    inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2
+    // TODO: add regWrite or memRead signal
+    inst1.rd =/= 0.U && (inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2)
   }
 
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {
@@ -100,6 +101,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   // decide the true issue num
   val issueValid = WireDefault(VecInit(Seq.fill(4)(false.B)))
+  // TODO: replace issueQueue.io.dout with issueInsts
   when(issueQueue.io.items > 0.U) {
     issueValid(0) := true.B
     issueNum := 1.U
@@ -201,7 +203,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
             exInstsOrder(3) := i.U
             exInstsValid(3) := true.B
           }
-          /*
           is(toAMU.U) {
             when(exInstsValid(0)) {
               exInsts(1) := issueInsts(i)
@@ -213,8 +214,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
               exInstsValid(0) := true.B
             }
           }
-
-           */
         }
       }
     }
@@ -340,10 +339,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbResValid = RegNext(resValid)
 
   // alu execution
+  aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
+    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
   alu.io.a := MuxLookup(aluSrcA, rsData(0),
     Seq(0.U -> rsData(0), 1.U -> exInsts(0).pc, 2.U -> wbResult(fwdSrcAIndex)))
   alu.io.b := MuxLookup(aluSrcB, rtData(1),
-    Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm, 2.U -> wbResult(fwdSrcBIndex)))
+    Seq(0.U -> rtData(0), 1.U -> exInsts(0).imm, 2.U -> wbResult(fwdSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
   val aluValid = exInstsValid(0) && (!reBranch || exBrSlot(0)) && (!wbReBranch || wbBrSlot(0))
@@ -437,7 +438,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // process branch
 
   reBranch := false.B
-  pcRedirect := exInsts(0).pc + Cat(Fill(16, exInsts(0).imm), exInsts(0).imm) + 4.U
+  pcRedirect := exInsts(0).pc + Cat(Fill(16, exInsts(0).imm(15)), exInsts(0).imm << 2) + 4.U
   when(exInsts(0).next_pc === MicroOpCtrl.Branch) {
     switch(exInsts(0).branch_type) {
       is(MicroOpCtrl.BrEQ) { // beq
@@ -473,12 +474,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val waitSlot = RegInit(false.B)
 
 
-
+  // dcacheStall?
   when(wbReBranch) {
     when(wbIsBrFinal) {
       pcSlot := pcRedirect
       waitSlot := true.B
       io.fb.bmfs.redirect_kill := false.B
+    } .otherwise {
+      io.fb.bmfs.redirect_kill := true.B
     }
   }
 
