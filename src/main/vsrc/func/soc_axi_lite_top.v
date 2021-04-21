@@ -382,7 +382,7 @@ Tile u_cpu(
     .io_debug_wb_pc_2      (debug_wb_pc_2         ),
     .io_debug_wb_wen_0     (debug_wb_rf_wen_0     ),
     .io_debug_wb_wen_1     (debug_wb_rf_wen_1     ),
-    .io_debug_wb_wen_2     (debug_wbrf__wen_2     ),
+    .io_debug_wb_wen_2     (debug_wb_rf_wen_2     ),
     .io_debug_wb_data_0    (debug_wb_rf_wdata_0   ),
     .io_debug_wb_data_1    (debug_wb_rf_wdata_1   ),
     .io_debug_wb_data_2    (debug_wb_rf_wdata_2   ),
