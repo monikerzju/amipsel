@@ -56,7 +56,8 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
   }
 
   when(io.flush) {
-    deqPtr := enqPtr
+    enqPtr := 0.U
+    deqPtr := 0.U
     maybe_full := false.B
   }
 }

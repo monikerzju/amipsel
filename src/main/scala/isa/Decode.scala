@@ -21,7 +21,7 @@ class Mops extends Bundle with Config with InstType {
   val rs1           = UInt(SZ_REG_ADDR.W)
   val rs2           = UInt(SZ_REG_ADDR.W)
   val rd            = UInt(SZ_REG_ADDR.W)  
-  val imm           = UInt(16.W)
+  val imm           = UInt(len.W)
   val pc            = UInt(len.W)
 }
 

@@ -176,7 +176,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     exInsts(2) -> LU
     exInsts(3) -> SU
    */
-  val exInstsOrder = Reg(Vec(4, UInt(2.W)))
+  val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(4)(false.B)))
   when(!dcacheStall) {
     for(i <- 0 until backendIssueN) {
@@ -395,7 +395,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   storeQueue.io.enqReq := storeValid
   storeQueue.io.deqReq := canStore
   val storeAddr = Wire(UInt(32.W))
-  storeAddr :=  exInsts(3).rs1 + Cat(Fill(16, exInsts(3).imm), exInsts(3).imm)
+  storeAddr :=  exInsts(3).rs1 + exInsts(3).imm
   storeQueue.io.din(0) := {
     val storeInfo = Wire(new StoreInfo)
     storeInfo.addr := storeAddr
@@ -414,7 +414,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
   io.dcache.req.bits.addr := Mux( // load first, then store
     loadValid,
-    exInsts(2).rs1 + Cat(Fill(16, exInsts(2).imm), exInsts(2).imm),
+    exInsts(2).rs1 + exInsts(2).imm,
     storeQueue.io.dout(0).addr
   )
 
@@ -440,7 +440,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // process branch
 
   reBranch := false.B
-  pcRedirect := exInsts(0).pc + Cat(Fill(16, exInsts(0).imm(15)), exInsts(0).imm << 2) + 4.U
+  pcRedirect := exInsts(0).pc + (exInsts(0).imm << 2.U)(31, 0) + 4.U
   when(exInsts(0).next_pc === MicroOpCtrl.Branch) {
     switch(exInsts(0).branch_type) {
       is(MicroOpCtrl.BrEQ) { // beq
@@ -497,11 +497,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
     wbInsts := exInsts
   }
 
+  /*
   for(i <- 0 until 3) {
     regFile.io.wen_vec(i) := Mux(wbInstsValid(i) && wbResValid(i), wbInsts(i).write_dest === MicroOpCtrl.DReg, false.B)
   }
-
   regFile.io.rd_addr_vec := VecInit(Seq(wbInsts(0).rd, wbInsts(1).rd, wbInsts(2).rd)) // ?
+   */
+
+
   // handle load-inst separately
   val dataFromDcache = Wire(UInt(32.W))
   dataFromDcache := io.dcache.resp.bits.rdata(0) // connect one port
@@ -524,90 +527,81 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
 
+  val luData = Wire(UInt(len.W))
+  luData := Mux(isDataInSQ, dataLoadInSQ, dataFromDcacheExtend)
+  /*
   regFile.io.rd_data_vec(0) := wbResult(0)
   regFile.io.rd_data_vec(1) := wbResult(1)
-  regFile.io.rd_data_vec(2) := Mux(isDataInSQ, dataLoadInSQ, dataFromDcacheExtend)
+  regFile.io.rd_data_vec(2) := luData
+   */
 
+  for(i <- 0 until 3) {
+    regFile.io.wen_vec(i) := false.B
+    regFile.io.rd_addr_vec(i) := 0.U
+    regFile.io.rd_data_vec(i) := 0.U
+  }
+
+  for(i <- 0 until 3) {
+    when(wbInstsValid(i)) {
+      switch(wbInstsOrder(i)) {
+        is(0.U) {
+          regFile.io.wen_vec(0) := wbInstsValid(i) && wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+          regFile.io.rd_addr_vec(0) := wbInsts(i).rd
+          regFile.io.rd_data_vec(0) := MuxLookup(i.U, wbResult(0),
+            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
+        }
+        is(1.U) {
+          regFile.io.wen_vec(1) := wbInstsValid(i) && wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+          regFile.io.rd_addr_vec(1) := wbInsts(i).rd
+          regFile.io.rd_data_vec(1) := MuxLookup(i.U, wbResult(0),
+            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
+        }
+        is(2.U) {
+          regFile.io.wen_vec(2) := wbInstsValid(i) && wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+          regFile.io.rd_addr_vec(2) := wbInsts(i).rd
+          regFile.io.rd_data_vec(2) := MuxLookup(i.U, wbResult(0),
+            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
+        }
+      }
+    }
+  }
 
   if (diffTestV) {
     val debug_pc   = Wire(Vec(backendIssueN, UInt(len.W)))
     val debug_wen  = Wire(Vec(backendIssueN, Bool()))
     val debug_data = Wire(Vec(backendIssueN, UInt(len.W)))
     val debug_nreg = Wire(Vec(backendIssueN, UInt(5.W)))
-
-    when (wbInstsOrder(0) < wbInstsOrder(1) && wbInstsOrder(0) < wbInstsOrder(2)) {
-      debug_pc(0) := wbInsts(0).pc
-      debug_wen(0) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
-      debug_data(0) := wbResult(0) 
-      debug_nreg(0) := wbInsts(0).rd
-      when (wbInstsOrder(1) < wbInstsOrder(2)) {
-        debug_pc(1) := wbInsts(1).pc
-        debug_wen(1) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
-        debug_data(1) := wbResult(1) 
-        debug_nreg(1) := wbInsts(1).rd
-        debug_pc(2) := wbInsts(2).pc
-        debug_wen(2) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
-        debug_data(2) := dataFromDcache
-        debug_nreg(2) := wbInsts(2).rd
-      }.otherwise {
-        debug_pc(2) := wbInsts(1).pc
-        debug_wen(2) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
-        debug_data(2) := wbResult(1) 
-        debug_nreg(2) := wbInsts(1).rd
-        debug_pc(1) := wbInsts(2).pc
-        debug_wen(1) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
-        debug_data(1) := dataFromDcache
-        debug_nreg(1) := wbInsts(2).rd
-      }
-    }.elsewhen (wbInstsOrder(1) < wbInstsOrder(0) && wbInstsOrder(1) < wbInstsOrder(2)) {
-      debug_pc(0) := wbInsts(1).pc
-      debug_wen(0) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
-      debug_data(0) := wbResult(1) 
-      debug_nreg(0) := wbInsts(1).rd
-      when (wbInstsOrder(0) < wbInstsOrder(2)) {
-        debug_pc(1) := wbInsts(0).pc
-        debug_wen(1) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
-        debug_data(1) := wbResult(0) 
-        debug_nreg(1) := wbInsts(0).rd
-        debug_pc(2) := wbInsts(2).pc
-        debug_wen(2) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
-        debug_data(2) := dataFromDcache
-        debug_nreg(2) := wbInsts(2).rd
-      }.otherwise {
-        debug_pc(2) := wbInsts(0).pc
-        debug_wen(2) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
-        debug_data(2) := wbResult(0) 
-        debug_nreg(2) := wbInsts(0).rd
-        debug_pc(1) := wbInsts(2).pc
-        debug_wen(1) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
-        debug_data(1) := dataFromDcache
-        debug_nreg(1) := wbInsts(2).rd
-      }
-    }.otherwise {
-      debug_pc(0) := wbInsts(2).pc
-      debug_wen(0) := wbInstsValid(2) && wbInsts(2).write_dest === MicroOpCtrl.DReg && wbInsts(2).rd =/= 0.U
-      debug_data(0) := dataFromDcache 
-      debug_nreg(0) := wbInsts(2).rd
-      when (wbInstsOrder(0) < wbInstsOrder(1)) {
-        debug_pc(1) := wbInsts(0).pc
-        debug_wen(1) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
-        debug_data(1) := wbResult(0) 
-        debug_nreg(1) := wbInsts(0).rd
-        debug_pc(2) := wbInsts(1).pc
-        debug_wen(2) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
-        debug_data(2) := wbResult(1)
-        debug_nreg(2) := wbInsts(1).rd
-      }.otherwise {
-        debug_pc(2) := wbInsts(0).pc
-        debug_wen(2) := wbInstsValid(0) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
-        debug_data(2) := wbResult(0) 
-        debug_nreg(2) := wbInsts(0).rd
-        debug_pc(1) := wbInsts(1).pc
-        debug_wen(1) := wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && wbInsts(1).rd =/= 0.U
-        debug_data(1) := wbResult(1)
-        debug_nreg(1) := wbInsts(1).rd
+    for(i <- 0 until 3) {
+      debug_pc(i) := 0.U
+      debug_wen(i) := false.B
+      debug_data(i) := 0.U
+      debug_nreg(i) := 0.U
+    }
+    for(i <- 0 until 3) {
+      when(wbInstsValid(i)) {
+        switch(wbInstsOrder(i)) {
+          is(0.U) {
+            debug_pc(0) := wbInsts(i).pc
+            debug_wen(0) := wbInstsValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+            debug_data(0) := wbResult(i)
+            debug_nreg(0) := wbInsts(i).rd
+          }
+          is(1.U) {
+            debug_pc(1) := wbInsts(i).pc
+            debug_wen(1) := wbInstsValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+            debug_data(1) := wbResult(i)
+            debug_nreg(1) := wbInsts(i).rd
+          }
+          is(2.U) {
+            debug_pc(2) := wbInsts(i).pc
+            debug_wen(2) := wbInstsValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+            debug_data(2) := wbResult(i)
+            debug_nreg(2) := wbInsts(i).rd
+          }
+        }
       }
     }
+
 
     BoringUtils.addSource(debug_pc,   "dt_pc"    )
     BoringUtils.addSource(debug_wen,  "dt_wen"   )
