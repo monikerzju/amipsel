@@ -57,6 +57,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
       MDU_DIVU.U -> (io.req.in1.asUInt() / io.req.in2.asUInt()),
 
       aluAdd.U -> (io.req.in1 + io.req.in2),
+      //      aluAddu.U -> (io.req.in1 + io.req.in2),
       aluSub.U -> (io.req.in1 - io.req.in2),
       aluSlt.U -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
       aluSltu.U -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
@@ -64,9 +65,9 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
       aluAnd.U -> (io.req.in1 & io.req.in2),
       aluOr.U -> (io.req.in1 | io.req.in2),
       aluNor.U -> ~(io.req.in1 | io.req.in2),
-      aluSll.U -> (io.req.in1 >> shamt),
-      aluSrl.U -> (io.req.in1 << shamt),
-      aluSra.U -> (io.req.in1.asSInt() >> shamt).asUInt(), // should be tested
+      aluSll.U -> (io.req.in2 >> shamt),
+      aluSrl.U -> (io.req.in2 << shamt),
+      aluSra.U -> (io.req.in2.asSInt() >> shamt).asUInt(), // should be tested
       aluLui.U -> Cat(io.req.in2(15, 0), Fill(16, 0.U))  // TODO:check imm
     )
   )

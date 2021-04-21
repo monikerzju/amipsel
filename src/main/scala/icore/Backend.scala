@@ -244,7 +244,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
 
   when(wbFlush) {
-    for(i <- 0 until backendIssueN) {
+    for(i <- 0 until 4) {
       exInsts(i) := nop
     }
   }
@@ -339,13 +339,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbResValid = RegNext(resValid)
 
   // alu execution
-  aluSrcB := MuxLookup(exInsts(0).src_a, 0.U,
+  aluSrcA := MuxLookup(exInsts(0).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
   aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
     Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
   alu.io.a := MuxLookup(aluSrcA, rsData(0),
     Seq(0.U -> rsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbResult(fwdSrcAIndex)))
-  alu.io.b := MuxLookup(aluSrcB, rtData(1),
+  alu.io.b := MuxLookup(aluSrcB, rtData(0),
     Seq(0.U -> rtData(0), 1.U -> exInsts(0).imm, 2.U -> wbResult(fwdSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
@@ -353,8 +353,18 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   // TODO: alu in mdu
   // mdu execution
-  mdu.io.req.in1 := rsData(1)
-  mdu.io.req.in2 := rtData(1)
+  val mduSrc1 = Wire(UInt(2.W))
+  val mduSrc2 = Wire(UInt(2.W))
+
+  mduSrc1 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_a, 0.U,
+    Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U)))
+  mduSrc2 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_b, 0.U,
+    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U)))
+
+  mdu.io.req.in1 := MuxLookup(mduSrc1, rsData(1),
+    Seq(0.U -> rsData(1), 1.U -> exInsts(1).imm(10, 6)))
+  mdu.io.req.in2 := MuxLookup(mduSrc2, rtData(1),
+    Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm))
   mdu.io.req.op := exInsts(1).alu_op
 
   val hi = RegInit(0.U(len.W))
@@ -457,11 +467,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
   wbReBranch := reBranch
 
-  when(wbFlush) {
-    for(i <- 0 until 4) {
-      wbInsts(i) := nop
-    }
-  }
+
 
   val wbInstsOrder = RegNext(exInstsOrder)
   /**
@@ -495,6 +501,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   when(!dcacheStall) {
     wbInsts := exInsts
+  }
+
+  when(wbFlush) {
+    for(i <- 0 until 4) {
+      wbInsts(i) := nop
+    }
   }
 
   /*
