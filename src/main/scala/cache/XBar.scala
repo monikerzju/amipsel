@@ -170,7 +170,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   // AXI3 Read Channel
   io.axi3.ar.bits.id    := 0.U
   io.axi3.ar.bits.addr  := RegNext(io.cache(rsel).req.addr)
-  io.axi3.ar.bits.len   := (bit_cacheline / 32).U
+  io.axi3.ar.bits.len   := (bit_cacheline / 32 - 1).U
   io.axi3.ar.bits.size  := "b10".U
   io.axi3.ar.bits.burst := INCR.U
   io.axi3.ar.bits.lock  := 0.U
@@ -188,7 +188,9 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
       next_rstate := Mux(io.axi3.ar.ready, rs_receive, rstate)
     }
     is (rs_receive) {
-      rbuff.enqueue(io.axi3.r.bits.data)
+      when (io.axi3.r.valid) {
+        rbuff.enqueue(io.axi3.r.bits.data)
+      }
       io.axi3.r.ready := true.B
       next_rstate := Mux(io.axi3.r.valid && io.axi3.r.bits.last.orR, rs_finish, rstate)
     }
