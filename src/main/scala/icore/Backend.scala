@@ -545,19 +545,19 @@ class Backend extends Module with Config with InstType with MemAccessType {
     when(wbInstsValid(i)) {
       switch(wbInstsOrder(i)) {
         is(0.U) {
-          regFile.io.wen_vec(0) := wbInstsValid(i) && wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+          regFile.io.wen_vec(0) := wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
           regFile.io.rd_addr_vec(0) := wbInsts(i).rd
           regFile.io.rd_data_vec(0) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
         }
         is(1.U) {
-          regFile.io.wen_vec(1) := wbInstsValid(i) && wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+          regFile.io.wen_vec(1) := wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
           regFile.io.rd_addr_vec(1) := wbInsts(i).rd
           regFile.io.rd_data_vec(1) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
         }
         is(2.U) {
-          regFile.io.wen_vec(2) := wbInstsValid(i) && wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+          regFile.io.wen_vec(2) := wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
           regFile.io.rd_addr_vec(2) := wbInsts(i).rd
           regFile.io.rd_data_vec(2) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
@@ -582,19 +582,19 @@ class Backend extends Module with Config with InstType with MemAccessType {
         switch(wbInstsOrder(i)) {
           is(0.U) {
             debug_pc(0) := wbInsts(i).pc
-            debug_wen(0) := wbInstsValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+            debug_wen(0) := wbResValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
             debug_data(0) := wbResult(i)
             debug_nreg(0) := wbInsts(i).rd
           }
           is(1.U) {
             debug_pc(1) := wbInsts(i).pc
-            debug_wen(1) := wbInstsValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+            debug_wen(1) := wbResValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
             debug_data(1) := wbResult(i)
             debug_nreg(1) := wbInsts(i).rd
           }
           is(2.U) {
             debug_pc(2) := wbInsts(i).pc
-            debug_wen(2) := wbInstsValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
+            debug_wen(2) := wbResValid(i) && wbInsts(0).write_dest === MicroOpCtrl.DReg && wbInsts(0).rd =/= 0.U
             debug_data(2) := wbResult(i)
             debug_nreg(2) := wbInsts(i).rd
           }
