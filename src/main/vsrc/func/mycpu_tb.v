@@ -154,6 +154,72 @@ wire first, sec, third;
 assign first = debug_wb_rf_wen_0;
 assign sec = debug_wb_rf_wen_1;
 assign third  = debug_wb_rf_wen_2;
+wire three_bad;
+assign three_bad = (
+                three && 
+                (
+                    ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
+                     ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                     ||
+                     ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
+                     ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_1))
+                     ||
+                     ((debug_wb_pc_2!==ref_wb_pc_2) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_2)
+                     ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_2))
+                )
+            );
+wire two_bad;
+wire a, b, c;
+assign two_bad = (
+                !three && two &&
+                (
+                    (first && sec &&
+                        (
+                            ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                             ||
+                             ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
+                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_1))
+                        )
+                    ) ||
+                    (first && third &&
+                        (
+                             ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                             ||
+                             ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
+                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_1))
+                        )
+                    ) ||
+                    (sec && third &&
+                        (
+                            ((debug_wb_pc_1!==ref_wb_pc_0) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
+                             ||
+                             ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
+                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_1))
+                         )
+                    )
+                )
+            );
+wire one_bad;
+assign one_bad = (
+                !three && !two && one && 
+                (
+                    (first && (
+                    ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                    )) ||
+                    (sec && (
+                    ((debug_wb_pc_1!==ref_wb_pc_0) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
+                    )) ||
+                    (third && (
+                    ((debug_wb_pc_2!==ref_wb_pc_0) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_0))
+                    ))
+                )
+            );
 
 always @(posedge cpu_clk)
 begin 
@@ -241,68 +307,11 @@ begin
                       debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_v_2);
         end
         if (
-            (
-                three && 
-                (
-                    ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                     ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
-                     ||
-                     ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
-                     ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_1))
-                     ||
-                     ((debug_wb_pc_2!==ref_wb_pc_2) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_2)
-                     ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_2))
-                )
-            )
+            three_bad
             ||
-            (
-                !three && two &&
-                (
-                    (first && sec &&
-                        (
-                            ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
-                             ||
-                             ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
-                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_1))
-                        )
-                    ) ||
-                    (first && third &&
-                        (
-                             ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
-                             ||
-                             ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
-                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_1))
-                        )
-                    ) ||
-                    (
-                            ((debug_wb_pc_1!==ref_wb_pc_0) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
-                             ||
-                             ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
-                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_1))
-                    )
-                )
-            )
+            two_bad
             ||
-            (
-                !three && !two && one && 
-                (
-                    (first && (
-                    ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
-                    )) ||
-                    (sec && (
-                    ((debug_wb_pc_1!==ref_wb_pc_0) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
-                    )) ||
-                    (third && (
-                    ((debug_wb_pc_2!==ref_wb_pc_0) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_0))
-                    ))
-                )
-            )
+            one_bad
         )
         begin
             $display("--------------------------------------------------------------");
