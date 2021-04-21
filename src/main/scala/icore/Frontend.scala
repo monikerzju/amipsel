@@ -33,7 +33,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
 
   // Signals define
   val icache_stall_req_a = !io.icache.resp.valid && io.icache.req.valid
-  val wtg = last_wait && !pc_gen.io.please_wait
+  val wtg = last_wait
   val gtw = !last_wait && pc_gen.io.please_wait
 
   // Replay PC

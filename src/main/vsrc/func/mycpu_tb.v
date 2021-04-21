@@ -91,15 +91,15 @@ soc_axi_lite_top #(.SIMULATION(1'b1)) soc_lite
 wire cpu_clk;
 wire sys_clk;
 wire [31:0] debug_wb_pc_0;
-wire [3 :0] debug_wb_rf_wen_0;
+wire debug_wb_rf_wen_0;
 wire [4 :0] debug_wb_rf_wnum_0;
 wire [31:0] debug_wb_rf_wdata_0;
 wire [31:0] debug_wb_pc_1;
-wire [3 :0] debug_wb_rf_wen_1;
+wire debug_wb_rf_wen_1;
 wire [4 :0] debug_wb_rf_wnum_1;
 wire [31:0] debug_wb_rf_wdata_1;
 wire [31:0] debug_wb_pc_2;
-wire [3 :0] debug_wb_rf_wen_2;
+wire debug_wb_rf_wen_2;
 wire [4 :0] debug_wb_rf_wnum_2;
 wire [31:0] debug_wb_rf_wdata_2;
 assign cpu_clk             = soc_lite.cpu_clk;

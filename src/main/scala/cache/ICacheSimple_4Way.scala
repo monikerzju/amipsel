@@ -1,29 +1,3 @@
-/***********************************************************
-*********************icache prototype***********************
-1-way direct-mapped instruction cache
-features:   
-    - AXI protocol added
-    - non-blocking
-    - meta ready at the cycle imediately after the request
-    - data delay 1 cycle
-    - for word access only
-
-TODO:   [x] output serialized to cater for AXI bandwidth
-        [ ] traits not compatible with icore defination
-        [x] BRAM interface for data access
-        [ ] invalidate instructions 
-        [ ] flush
-        [x] dual-issue for icache
-
-NOTICE: - expect the valid signal early in the cycle, not withstandable the latency 
-        - provides access for aligned address only
-FIXME:  [ ] skeptical : the valid signal might not trigger the state transfer; 
-                in which case both meta and data will suffer 1-cycle lantency 
-        [ ] valid-ready protocol 
-        [ ] 双发射字节对齐？若一个miss 一个hit？
-        [ ] non-blocking 导致 out-of-order?
-
-***********************************************************/
 package cache
 
 import chisel3._
@@ -32,15 +6,14 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class ICacheSimple extends Module with CacheParameters with Config{
+class ICacheSimple_4Way extends Module with CacheParameters_4Way with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
-        // val data=Flipped(new BRAMSyncReadMemIO(8*1<<OffsetBits,1<<IndexBits))
     })
     val nline=1<<IndexBits
-    val data=Module(new BRAMSyncReadMem(nline,1<<(OffsetBits+3)))
-    val meta=Module(new MetaSimple(nline));
+    val data=Module(new BRAMSyncReadMem(nline*4,1<<(OffsetBits+3)))
+    val meta=Module(new Meta_4Way(nline));
     data.io.we:=false.B
 
     io.bar.req.valid:=false.B
@@ -57,7 +30,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
     val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
     val index=RegNext(index_raw)
-    data.io.addr:=index_raw
+    data.io.addr:=Cat(index_raw,meta.io.sub_index)
     data.io.din:=io.bar.resp.data
     var i=0
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
@@ -99,15 +72,15 @@ class ICacheSimple extends Module with CacheParameters with Config{
                 // meta.io.aux_index:=index_raw
             }
         }
-    } 
+    }
     .elsewhen(state===s_refill){
         when(io.bar.resp.valid){
-            // out_of_service:=false.B
-            state:=s_normal
+                // out_of_service:=false.B
+                state:=s_normal
             for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
             io.cpu.resp.valid:=true.B
             meta.io.update:=true.B
-            data.io.addr:=index_refill
+            data.io.addr:=Cat(index_refill,meta.io.sub_index)
             data.io.we:=true.B
             // inform_cpu_data_valid()
         }
