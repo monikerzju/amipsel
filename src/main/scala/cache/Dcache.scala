@@ -43,7 +43,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val meta=Module(new MetaDataSimple(nline));
 
     val tag_raw=io.cpu.req.bits.addr(31,32-TagBits)
-    val index_raw=io.cpu.req.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
+    val index_raw=io.cpu.req.bits.addr(len-TagBits-1,len-TagBits-IndexBits)
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
     io.bar.req.addr:=Cat(Seq(tag_raw,index_raw,0.U(OffsetBits.W)))
