@@ -178,6 +178,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
    */
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(4)(false.B)))
+  for(i <- 0 until 4) {
+    exInstsOrder(i) := false.B
+  }
   when(!dcacheStall) {
     for(i <- 0 until backendIssueN) {
       when(issueValid(i)) {
@@ -246,6 +249,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   when(wbFlush) {
     for(i <- 0 until 4) {
       exInsts(i) := nop
+      exInstsValid(i) := false.B
     }
   }
 
@@ -506,6 +510,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   when(wbFlush) {
     for(i <- 0 until 4) {
       wbInsts(i) := nop
+      wbInstsValid(i) := false.B
     }
   }
 
