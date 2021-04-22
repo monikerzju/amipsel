@@ -414,7 +414,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   storeQueue.io.enqReq := storeValid
   storeQueue.io.deqReq := canStore
   val storeAddr = Wire(UInt(32.W))
-  storeAddr :=  exInsts(3).rs1 + exInsts(3).imm
+  storeAddr :=  rsData(3) + exInsts(3).imm
   storeQueue.io.din(0) := {
     val storeInfo = Wire(new StoreInfo)
     storeInfo.addr := storeAddr
@@ -433,8 +433,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
   io.dcache.req.bits.addr := Mux( // load first, then store
     loadValid,
-    exInsts(2).rs1 + exInsts(2).imm,
-    storeQueue.io.dout(0).addr
+    rsData(2) + exInsts(2).imm,
+    Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).addr, storeAddr)
+
   )
 
 
