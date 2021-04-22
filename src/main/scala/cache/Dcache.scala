@@ -70,6 +70,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val writeline=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     writeline:=line
     val mask=Wire(UInt(32.W))
+    val shift=index_raw(1,0)<<3
     mask:="hffffffff".U
     switch(io.cpu.req.bits.mtype){
         is(MEM_HALF.U){
@@ -82,7 +83,8 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val wen=io.cpu.req.bits.wen && io.cpu.req.valid
     val reg_wen=RegNext(wen)
     val wdata=RegEnable(io.cpu.req.bits.wdata,wen)
-    val wd=(mask & wdata) | (~mask & line(word1))
+    // val wd=(mask & wdata) | (~mask & line(word1))
+    val wd=((mask & wdata)<<shift) | ((~mask << shift) & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
     val reg_addr=RegNext(index_raw)

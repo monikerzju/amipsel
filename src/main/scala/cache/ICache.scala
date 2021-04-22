@@ -92,7 +92,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
                 // out_of_service:=true.B
                 state:=s_refill
                 io.bar.req.valid:=true.B
-                io.bar.req.addr:=io.cpu.req.bits.addr
+                // io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len-1,OffsetBits),0.U(OffsetBits.W))
                 tag_refill:=tag_raw
                 index_refill:=index_raw
                 // meta.io.invalidate:=true.B
