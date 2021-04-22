@@ -136,6 +136,8 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                 meta.io.update:=true.B
                 data.io.addra:=index_refill
                 data.io.wea:=true.B
+            }.otherwise {
+                io.bar.req.valid:=true.B
             }
         }
         is(s_evict){
@@ -146,7 +148,6 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             io.bar.req.addr:=Cat(Seq(tag_evict_reg,index_refill,0.U(OffsetBits.W)))
             when(io.bar.resp.valid){
                 state:=s_refill
-                io.bar.req.valid:=true.B
                 io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
                 io.bar.req.wen:=false.B
             }
