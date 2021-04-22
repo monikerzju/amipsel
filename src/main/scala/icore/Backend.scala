@@ -178,10 +178,10 @@ class Backend extends Module with Config with InstType with MemAccessType {
    */
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(4)(false.B)))
-  for(i <- 0 until 4) {
-    exInstsOrder(i) := false.B
-  }
   when(!dcacheStall) {
+    for(i <- 0 until 4) {
+      exInstsValid(i) := false.B
+    }
     for(i <- 0 until backendIssueN) {
       when(issueValid(i)) {
         switch(issueInsts(i).alu_mdu_lsu) {
@@ -265,6 +265,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   val mdu = Module(new MDU())
   val wbResult = RegInit(VecInit(Seq.fill(4)(0.U(len.W)))) //TODO:
+  val wbInstsValid = RegNext(exInstsValid)
+  val wbInstsOrder = RegNext(exInstsOrder)
 
   val wbInsts = RegInit(
     VecInit(
@@ -290,9 +292,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   )
 
   val aluSrcA = WireDefault(0.U(2.W))
-  val fwdSrcAIndex = WireInit(0.U)
+  val fwdAluSrcAIndex = WireInit(0.U)
   val aluSrcB = WireDefault(0.U(2.W))
-  val fwdSrcBIndex = WireInit(0.U)
+  val fwdAluSrcBIndex = WireInit(0.U)
   val regFile = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
 
   /*
@@ -342,15 +344,16 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
   val wbResValid = RegNext(resValid)
 
+  val wbData = Wire(Vec(3, UInt(32.W)))
   // alu execution
   aluSrcA := MuxLookup(exInsts(0).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
   aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
     Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
   alu.io.a := MuxLookup(aluSrcA, rsData(0),
-    Seq(0.U -> rsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbResult(fwdSrcAIndex)))
+    Seq(0.U -> rsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbData(fwdAluSrcAIndex)))
   alu.io.b := MuxLookup(aluSrcB, rtData(0),
-    Seq(0.U -> rtData(0), 1.U -> exInsts(0).imm, 2.U -> wbResult(fwdSrcBIndex)))
+    Seq(0.U -> rtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
   val aluValid = exInstsValid(0) && (!reBranch || exBrSlot(0)) && (!wbReBranch || wbBrSlot(0))
@@ -359,6 +362,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // mdu execution
   val mduSrc1 = Wire(UInt(2.W))
   val mduSrc2 = Wire(UInt(2.W))
+  val fwdMduSrc1Index = WireInit(0.U)
+  val fwdMduSrc2Index = WireInit(0.U)
 
   mduSrc1 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U)))
@@ -366,9 +371,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
     Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U)))
 
   mdu.io.req.in1 := MuxLookup(mduSrc1, rsData(1),
-    Seq(0.U -> rsData(1), 1.U -> exInsts(1).imm(10, 6)))
+    Seq(0.U -> rsData(1), 1.U -> exInsts(1).imm(10, 6), 2.U -> wbData(fwdMduSrc1Index)))
   mdu.io.req.in2 := MuxLookup(mduSrc2, rtData(1),
-    Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm))
+    Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index)))
   mdu.io.req.op := exInsts(1).alu_op
 
   val hi = RegInit(0.U(len.W))
@@ -438,12 +443,22 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // assume I-type Inst replace rt with rd, and update rt = 0
   // TODO: forward mdu and lsu
   for(i <- 0 until 3) {
-    when(wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
+    when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
       when(wbInsts(i).rd === exInsts(0).rs1) {
         aluSrcA := 2.U
+        fwdAluSrcAIndex := i.U
       }
       when(wbInsts(i).rd === exInsts(0).rs2) {
         aluSrcB := 2.U
+        fwdAluSrcBIndex := i.U
+      }
+      when(wbInsts(i).rd === exInsts(1).rs1) {
+        mduSrc1 := 2.U
+        fwdMduSrc1Index := i.U
+      }
+      when(wbInsts(i).rd === exInsts(1).rs2) {
+        mduSrc2 := 2.U
+        fwdMduSrc2Index := i.U
       }
     }
   }
@@ -473,12 +488,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
 
 
-  val wbInstsOrder = RegNext(exInstsOrder)
+
   /**
    *  [---------- WB stage -----------]
    */
 
-  val wbInstsValid = RegNext(exInstsValid)
+
   io.fb.bmfs.redirect_pc := pcRedirect
   io.fb.bmfs.redirect_kill := false.B
   // branch, wait for delay slot
@@ -507,12 +522,19 @@ class Backend extends Module with Config with InstType with MemAccessType {
     wbInsts := exInsts
   }
 
+  when(dcacheStall) {
+    for(i <- 0 until 4) {
+      wbResValid(i) := false.B
+    }
+  }
+
   when(wbFlush) {
     for(i <- 0 until 4) {
       wbInsts(i) := nop
       wbInstsValid(i) := false.B
     }
   }
+
 
   /*
   for(i <- 0 until 3) {
@@ -546,6 +568,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   val luData = Wire(UInt(len.W))
   luData := Mux(isDataInSQ, dataLoadInSQ, dataFromDcacheExtend)
+
+  wbData(0) := wbResult(0)
+  wbData(1) := wbResult(1)
+  wbData(2) := luData
+
+
+
   /*
   regFile.io.rd_data_vec(0) := wbResult(0)
   regFile.io.rd_data_vec(1) := wbResult(1)
