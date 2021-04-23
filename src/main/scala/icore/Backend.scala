@@ -178,10 +178,23 @@ class Backend extends Module with Config with InstType with MemAccessType {
    */
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(4)(false.B)))
+  val issueFuValid = Wire(Vec(4, Bool()))
+
+  for(i <- 0 until 4) {
+    issueFuValid(i) := false.B
+  }
+
+  val aluOccupy = Wire(Bool())
+  val mduOccupy = Wire(Bool())
+  aluOccupy := false.B
+  mduOccupy := false.B
   when(!dcacheStall) {
+    /*
     for(i <- 0 until 4) {
       exInstsValid(i) := false.B
     }
+     */
+
     for(i <- 0 until backendIssueN) {
       when(issueValid(i)) {
         switch(issueInsts(i).alu_mdu_lsu) {
@@ -189,33 +202,51 @@ class Backend extends Module with Config with InstType with MemAccessType {
           is(toALU.U) {
             exInsts(0) := issueInsts(i)
             exInstsOrder(0) := i.U
-            exInstsValid(0) := true.B
+            issueFuValid(0) := true.B
+            aluOccupy := true.B
           }
           is(toMDU.U) {
             exInsts(1) := issueInsts(i)
             exInstsOrder(1) := i.U
-            exInstsValid(1) := true.B
+            issueFuValid(1) := true.B
+            mduOccupy := true.B
           }
           is(toLU.U) {
             exInsts(2) := issueInsts(i)
             exInstsOrder(2) := i.U
-            exInstsValid(2) := true.B
+            issueFuValid(2) := true.B
           }
           is(toSU.U) {
             exInsts(3) := issueInsts(i)
             exInstsOrder(3) := i.U
-            exInstsValid(3) := true.B
+            issueFuValid(3) := true.B
           }
+          /*
           is(toAMU.U) {
-            when(exInstsValid(0)) {
+            when(issueFuValid(0)) {
               exInsts(1) := issueInsts(i)
               exInstsOrder(1) := i.U
-              exInstsValid(1) := true.B
-            } .otherwise {
+              issueFuValid(1) := true.B
+            }.otherwise {
               exInsts(0) := issueInsts(i)
               exInstsOrder(0) := i.U
-              exInstsValid(0) := true.B
+              issueFuValid(0) := true.B
             }
+          }
+
+           */
+        }
+      }
+      for(i <- 0 until backendIssueN) {
+        when(issueValid(i) && issueInsts(i).alu_mdu_lsu === toAMU.U) {
+          when(!aluOccupy) {
+            exInsts(0) := issueInsts(i)
+            exInstsOrder(0) := i.U
+            issueFuValid(0) := true.B
+          } .elsewhen(!mduOccupy) {
+            exInsts(1) := issueInsts(i)
+            exInstsOrder(1) := i.U
+            issueFuValid(1) := true.B
           }
         }
       }
@@ -224,25 +255,26 @@ class Backend extends Module with Config with InstType with MemAccessType {
     when(issueValid(0) && issueValid(1) && issueInsts(0).alu_mdu_lsu === issueInsts(1).alu_mdu_lsu) {
       exInsts(0) := issueInsts(0)
       exInstsOrder(0) := 0.U
-      exInstsValid(0) := true.B
+      issueFuValid(0) := true.B
       exInsts(1) := issueInsts(1)
       exInstsOrder(1) := 1.U
-      exInstsValid(1) := true.B
+      issueFuValid(1) := true.B
     } .elsewhen(issueValid(0) && issueValid(2) && issueInsts(0).alu_mdu_lsu === issueInsts(2).alu_mdu_lsu) {
       exInsts(0) := issueInsts(0)
       exInstsOrder(0) := 0.U
-      exInstsValid(0) := true.B
+      issueFuValid(0) := true.B
       exInsts(1) := issueInsts(2)
       exInstsOrder(1) := 2.U
-      exInstsValid(1) := true.B
+      issueFuValid(1) := true.B
     } .elsewhen(issueValid(1) && issueValid(2) && issueInsts(1).alu_mdu_lsu === issueInsts(2).alu_mdu_lsu) {
       exInsts(0) := issueInsts(1)
       exInstsOrder(0) := 1.U
-      exInstsValid(0) := true.B
+      issueFuValid(0) := true.B
       exInsts(1) := issueInsts(2)
       exInstsOrder(1) := 2.U
-      exInstsValid(1) := true.B
+      issueFuValid(1) := true.B
     }
+    exInstsValid := issueFuValid
   }
 
 
@@ -321,6 +353,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
 
+  // branch and jump delay slot
   val reBranch = Wire(Bool())
   val wbReBranch = RegInit(false.B)
   val exIsBrFinal = exInstsOrder(0) === exNum - 1.U
@@ -477,7 +510,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // process branch
 
   reBranch := false.B
-  pcRedirect := exInsts(0).pc + (exInsts(0).imm << 2.U)(31, 0) + 4.U
+  val jumpPc = Wire(UInt(32.W))
+  val brPC = exInsts(0).pc + (exInsts(0).imm << 2.U)(31, 0) + 4.U
+  pcRedirect := Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc) // TODO: maybe extend
   when(exInsts(0).next_pc === MicroOpCtrl.Branch) {
     switch(exInsts(0).branch_type) {
       is(MicroOpCtrl.BrEQ) { // beq
@@ -494,7 +529,20 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
   wbReBranch := reBranch
 
+  // process jump
+  // TODO: merge fwd together!!!!!!!!!!!
 
+  jumpPc := Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W))
+  when(exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr
+    reBranch := true.B
+    jumpPc := rsData(0)
+  }
+  when(exInsts(0).write_src === MicroOpCtrl.WBPC) {
+    wbResult(0) := exInsts(0).pc + 8.U
+  }
+  when(exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal
+    reBranch := true.B
+  }
 
 
   /**
