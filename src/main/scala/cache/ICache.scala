@@ -110,6 +110,8 @@ class ICacheSimple extends Module with CacheParameters with Config{
             data.io.addr:=index_refill
             data.io.we:=true.B
             // inform_cpu_data_valid()
+        }.otherwise {
+            io.bar.req.valid := true.B
         }
     }
 }
