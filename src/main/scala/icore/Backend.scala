@@ -343,8 +343,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
     resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (!wbReBranch || wbBrSlot(i))
   }
   val wbResValid = RegNext(resValid)
-
   val wbData = Wire(Vec(3, UInt(32.W)))
+
+  // TODO: load fwd, store fwd, load - store fwd
   // alu execution
   aluSrcA := MuxLookup(exInsts(0).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
@@ -358,7 +359,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
   wbResult(0) := alu.io.r
   val aluValid = exInstsValid(0) && (!reBranch || exBrSlot(0)) && (!wbReBranch || wbBrSlot(0))
 
-  // TODO: alu in mdu
   // mdu execution
   val mduSrc1 = Wire(UInt(2.W))
   val mduSrc2 = Wire(UInt(2.W))
@@ -393,8 +393,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
   val storeQueue = Module(new FIFO(sqSize, new StoreInfo, sqSize, 1))
   val loadValid = exInstsValid(2) && (!reBranch || exBrSlot(2)) && (!wbReBranch || wbBrSlot(2))
-  val storeValid = exInstsValid(3) && (!reBranch || exBrSlot(3)) && (!wbReBranch || wbBrSlot(3))
-  io.dcache.req.valid := loadValid || storeValid
+  val storeValid = Wire(Bool())
+//  io.dcache.req.valid := loadValid || storeValid
+
   val isDataInSQ = Reg(Bool())
   val dataLoadInSQIndex = WireDefault(0.U(log2Ceil(sqSize).W))
   val dataLoadInSQ = RegInit(0.U(32.W))
@@ -427,7 +428,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
     storeInfo
   }
 
-  io.dcache.req.bits.mtype := Mux(loadValid, exInsts(2).mem_width, storeQueue.io.dout(0).mtype)
+//  val storeValid = exInstsValid(3) && (!reBranch || exBrSlot(3)) && (!wbReBranch || wbBrSlot(3))
+  storeValid := storeQueue.io.items > 0.U && (!reBranch || exBrSlot(3)) && (!wbReBranch || wbBrSlot(3))
+  io.dcache.req.valid := loadValid || storeValid
+  io.dcache.req.bits.mtype := Mux(
+    loadValid,
+    exInsts(2).mem_width,
+    Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).mtype, exInsts(3).mem_width)
+  )
   storeQueue.io.flush := false.B
   io.dcache.req.bits.wen := canStore
   io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
@@ -435,7 +443,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
     loadValid,
     rsData(2) + exInsts(2).imm,
     Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).addr, storeAddr)
-
   )
 
 
