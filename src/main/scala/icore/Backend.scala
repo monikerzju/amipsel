@@ -293,7 +293,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   val alu = Module(new ALU)
   val wbNum = RegNext(exNum) // ?
-  // TODO: MDU and LSU
 
   val mdu = Module(new MDU())
   val wbResult = RegInit(VecInit(Seq.fill(4)(0.U(len.W)))) //TODO:
@@ -353,6 +352,39 @@ class Backend extends Module with Config with InstType with MemAccessType {
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
 
+  // forward all the data here
+  val fwdRsData = Wire(Vec(4, UInt(32.W)))
+  val fwdRtData = Wire(Vec(4, UInt(32.W)))
+  val isRsFwd = Wire(Vec(4, Bool()))
+  val isRtFwd = Wire(Vec(4, Bool()))
+  val rsFwdIndex = Wire(Vec(4, UInt(2.W)))
+  val rtFwdIndex = Wire(Vec(4, UInt(2.W)))
+  for(i <- 0 until 4) {
+    isRsFwd(i) := false.B
+    isRtFwd(i) := false.B
+    rsFwdIndex(i) := 0.U
+    rtFwdIndex(i) := 0.U
+  }
+  for(i <- 0 until 3) {
+    when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
+      for(j <- 0 until 4) {
+        when(wbInsts(i).rd === exInsts(j).rs1) {
+          isRsFwd(j) := true.B
+          rsFwdIndex(j) := i.U
+        }
+        when(wbInsts(i).rd === exInsts(j).rs2) {
+          isRtFwd(j) := true.B
+          rtFwdIndex(j) := i.U
+        }
+      }
+    }
+  }
+  val wbData = Wire(Vec(3, UInt(32.W)))
+  for(i <- 0 until 4) {
+    fwdRsData(i) := Mux(isRsFwd(i), wbData(rsFwdIndex(i)), rsData(i))
+    fwdRtData(i) := Mux(isRtFwd(i), wbData(rtFwdIndex(i)), rtData(i))
+  }
+
   // branch and jump delay slot
   val reBranch = Wire(Bool())
   val wbReBranch = RegInit(false.B)
@@ -362,21 +394,40 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // judge delay slot
   exBrSlot(0) := false.B
   for(i <- 1 until 4) {
-    // delay slot and branch are issued together
-    exBrSlot(i) := !exIsBrFinal && exInstsOrder(i) === exInstsOrder(0) + 1.U
+    // delay slot and branch or jump are issued together
+    exBrSlot(i) := reBranch && !exIsBrFinal && exInstsOrder(i) === exInstsOrder(0) + 1.U
   }
+
+  val stateFindSlot = RegInit(0.U(2.W))
+  switch(stateFindSlot) {
+    is(0.U) {
+      when(reBranch && exIsBrFinal) { // idle
+        stateFindSlot := 1.U
+      }
+    }
+    is(1.U) {
+      when(exNum > 0.U) { // check whether delay slot is in ex stage
+        stateFindSlot := 2.U
+      }
+    }
+    is(2.U) { // delay slot is find
+      stateFindSlot := 0.U
+    }
+  }
+  val wbIsSlotCome = stateFindSlot === 2.U
+
   val wbBrSlot = Wire(Vec(4, Bool()))
   for(i <- 0 until 4) {
-    // delay slot and branch are in different pipeline-stages
-    wbBrSlot(i) := wbIsBrFinal && exInstsOrder(i) === 0.U
+    // delay slot and branch or jump are in different pipeline-stages
+    wbBrSlot(i) := stateFindSlot === 1.U && exInstsOrder(i) === 0.U
   }
 
   val resValid = Wire(Vec(4, Bool()))
   for(i <- 0 until 4) {
-    resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (!wbReBranch || wbBrSlot(i))
+    resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (stateFindSlot === 0.U || wbBrSlot(i))
   }
   val wbResValid = RegNext(resValid)
-  val wbData = Wire(Vec(3, UInt(32.W)))
+
 
   // TODO: load fwd, store fwd, load - store fwd
   // alu execution
@@ -384,13 +435,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
   aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
     Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
-  alu.io.a := MuxLookup(aluSrcA, rsData(0),
-    Seq(0.U -> rsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbData(fwdAluSrcAIndex)))
-  alu.io.b := MuxLookup(aluSrcB, rtData(0),
-    Seq(0.U -> rtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex)))
+  alu.io.a := MuxLookup(aluSrcA, fwdRsData(0),
+    Seq(0.U -> fwdRsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbData(fwdAluSrcAIndex)))
+  alu.io.b := MuxLookup(aluSrcB, fwdRtData(0),
+    Seq(0.U -> fwdRtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
-  val aluValid = exInstsValid(0) && (!reBranch || exBrSlot(0)) && (!wbReBranch || wbBrSlot(0))
+  val aluValid = exInstsValid(0) && (!reBranch || exBrSlot(0)) && (stateFindSlot === 0.U || wbBrSlot(0))
 
   // mdu execution
   val mduSrc1 = Wire(UInt(2.W))
@@ -403,15 +454,15 @@ class Backend extends Module with Config with InstType with MemAccessType {
   mduSrc2 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_b, 0.U,
     Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U)))
 
-  mdu.io.req.in1 := MuxLookup(mduSrc1, rsData(1),
-    Seq(0.U -> rsData(1), 1.U -> exInsts(1).imm(10, 6), 2.U -> wbData(fwdMduSrc1Index)))
-  mdu.io.req.in2 := MuxLookup(mduSrc2, rtData(1),
-    Seq(0.U -> rtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index)))
+  mdu.io.req.in1 := MuxLookup(mduSrc1, fwdRsData(1),
+    Seq(0.U -> fwdRsData(1), 1.U -> exInsts(1).imm(10, 6), 2.U -> wbData(fwdMduSrc1Index)))
+  mdu.io.req.in2 := MuxLookup(mduSrc2, fwdRtData(1),
+    Seq(0.U -> fwdRtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index)))
   mdu.io.req.op := exInsts(1).alu_op
 
   val hi = RegInit(0.U(len.W))
   val lo = RegInit(0.U(len.W))
-  val mduValid = exInstsValid(1) && (!reBranch || exBrSlot(1)) && (!wbReBranch || wbBrSlot(1))
+  val mduValid = exInstsValid(1) && (!reBranch || exBrSlot(1)) && (stateFindSlot === 0.U || wbBrSlot(1))
   wbResult(1) := mdu.io.resp.lo
   hi := Mux(mduValid, mdu.io.resp.hi, hi)
   lo := Mux(mduValid, mdu.io.resp.lo, lo)
@@ -425,9 +476,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
     val rd = Output(UInt(5.W))
   }
   val storeQueue = Module(new FIFO(sqSize, new StoreInfo, sqSize, 1))
-  val loadValid = exInstsValid(2) && (!reBranch || exBrSlot(2)) && (!wbReBranch || wbBrSlot(2))
-  val storeValid = Wire(Bool())
-//  io.dcache.req.valid := loadValid || storeValid
+  val loadValid = exInstsValid(2) && (!reBranch || exBrSlot(2)) && (stateFindSlot === 0.U || wbBrSlot(2))
+
 
   val isDataInSQ = Reg(Bool())
   val dataLoadInSQIndex = WireDefault(0.U(log2Ceil(sqSize).W))
@@ -439,20 +489,23 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
   dataLoadInSQ := storeQueue.io.dout(dataLoadInSQIndex).wdata
-
+  val debug = false
+//  val storeValid = Wire(Bool())
+  val storeValid = if(debug) false.B else exInstsValid(3) && (!reBranch || exBrSlot(3)) && (stateFindSlot === 0.U || wbBrSlot(3))
   // su execution
   val canStore = Wire(Bool())
+
   canStore := !loadValid && storeQueue.io.items > 0.U //TODO: maybe changed
   storeQueue.io.enqStep := 1.U
-  storeQueue.io.deqStep := 1.U
+  storeQueue.io.deqStep := Mux(dcacheStall, 0.U, 1.U)
   storeQueue.io.enqReq := storeValid
   storeQueue.io.deqReq := canStore
   val storeAddr = Wire(UInt(32.W))
-  storeAddr :=  rsData(3) + exInsts(3).imm
+  storeAddr :=  fwdRsData(3) + exInsts(3).imm
   storeQueue.io.din(0) := {
     val storeInfo = Wire(new StoreInfo)
     storeInfo.addr := storeAddr
-    storeInfo.wdata := rtData(3)
+    storeInfo.wdata := fwdRtData(3)
     storeInfo.wen := (exInsts(3).write_dest === MicroOpCtrl.DMem)
     storeInfo.mtype := exInsts(3).mem_width
     storeInfo.flush := false.B
@@ -461,9 +514,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
     storeInfo
   }
 
-//  val storeValid = exInstsValid(3) && (!reBranch || exBrSlot(3)) && (!wbReBranch || wbBrSlot(3))
-  storeValid := storeQueue.io.items > 0.U && (!reBranch || exBrSlot(3)) && (!wbReBranch || wbBrSlot(3))
-  io.dcache.req.valid := loadValid || storeValid
+//  val storeValid = exInstsValid(3) && (!reBranch || exBrSlot(3)) && (stateFindSlot === 0.U || wbBrSlot(3))
+  io.dcache.req.valid := loadValid || canStore // TODO: store not stall one cycle
   io.dcache.req.bits.mtype := Mux(
     loadValid,
     exInsts(2).mem_width,
@@ -474,7 +526,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
   io.dcache.req.bits.addr := Mux( // load first, then store
     loadValid,
-    rsData(2) + exInsts(2).imm,
+    fwdRsData(2) + exInsts(2).imm,
     Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).addr, storeAddr)
   )
 
@@ -483,6 +535,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // forwarding here?
   // assume I-type Inst replace rt with rd, and update rt = 0
   // TODO: forward mdu and lsu
+  /*
   for(i <- 0 until 3) {
     when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
       when(wbInsts(i).rd === exInsts(0).rs1) {
@@ -503,6 +556,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
       }
     }
   }
+   */
 
 
 
@@ -513,7 +567,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val jumpPc = Wire(UInt(32.W))
   val brPC = exInsts(0).pc + (exInsts(0).imm << 2.U)(31, 0) + 4.U
   pcRedirect := Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc) // TODO: maybe extend
-  when(exInsts(0).next_pc === MicroOpCtrl.Branch) {
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Branch) {
     switch(exInsts(0).branch_type) {
       is(MicroOpCtrl.BrEQ) { // beq
         when(alu.io.zero === 1.U) {
@@ -533,14 +587,14 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // TODO: merge fwd together!!!!!!!!!!!
 
   jumpPc := Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W))
-  when(exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr
     reBranch := true.B
-    jumpPc := rsData(0)
+    jumpPc := fwdRsData(0)
   }
   when(exInsts(0).write_src === MicroOpCtrl.WBPC) {
     wbResult(0) := exInsts(0).pc + 8.U
   }
-  when(exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal
     reBranch := true.B
   }
 
@@ -558,21 +612,27 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
 
   // dcacheStall?
-  when(wbReBranch) {
-    when(wbIsBrFinal) {
-      pcSlot := pcRedirect
-      waitSlot := true.B
-      io.fb.bmfs.redirect_kill := false.B
-    } .otherwise {
-      io.fb.bmfs.redirect_kill := true.B
+  switch(waitSlot) {
+    is(false.B) {
+      when(wbReBranch) {
+        when(wbIsBrFinal) {
+          waitSlot := true.B
+          io.fb.bmfs.redirect_kill := false.B
+          pcSlot := pcRedirect
+        } .otherwise {
+          io.fb.bmfs.redirect_kill := true.B
+        }
+      }
+    }
+    is(true.B) {
+      when(!dcacheStall && wbNum > 0.U) {
+        waitSlot := false.B
+        io.fb.bmfs.redirect_pc := pcSlot
+        io.fb.bmfs.redirect_kill := true.B
+      }
     }
   }
 
-  when(waitSlot && !dcacheStall) {
-    waitSlot := false.B
-    io.fb.bmfs.redirect_pc := pcSlot
-    io.fb.bmfs.redirect_kill := true.B
-  }
 
   when(!dcacheStall) {
     wbInsts := exInsts
@@ -588,6 +648,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     for(i <- 0 until 4) {
       wbInsts(i) := nop
       wbInstsValid(i) := false.B
+      wbReBranch := false.B
     }
   }
 
