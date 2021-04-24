@@ -392,7 +392,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbIsBrFinal = RegNext(exIsBrFinal)
   val exBrSlot = Wire(Vec(4, Bool()))
   // judge delay slot
-  exBrSlot(0) := false.B
+  exBrSlot(0) := true.B // jump or branch
   for(i <- 1 until 4) {
     // delay slot and branch or jump are issued together
     exBrSlot(i) := reBranch && !exIsBrFinal && exInstsOrder(i) === exInstsOrder(0) + 1.U
@@ -423,8 +423,10 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
 
   val resValid = Wire(Vec(4, Bool()))
+  val noDelaySlot = stateFindSlot === 0.U
   for(i <- 0 until 4) {
-    resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (stateFindSlot === 0.U || wbBrSlot(i))
+    resValid(i) := exInstsValid(i) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(i) || wbBrSlot(i))
+//    resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (stateFindSlot === 0.U || wbBrSlot(i))
   }
   val wbResValid = RegNext(resValid)
 
@@ -441,7 +443,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     Seq(0.U -> fwdRtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
-  val aluValid = exInstsValid(0) && (!reBranch || exBrSlot(0)) && (stateFindSlot === 0.U || wbBrSlot(0))
+  val aluValid = exInstsValid(0) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(0) || wbBrSlot(0))
 
   // mdu execution
   val mduSrc1 = Wire(UInt(2.W))
@@ -462,7 +464,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   val hi = RegInit(0.U(len.W))
   val lo = RegInit(0.U(len.W))
-  val mduValid = exInstsValid(1) && (!reBranch || exBrSlot(1)) && (stateFindSlot === 0.U || wbBrSlot(1))
+  val mduValid = exInstsValid(1) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(1) || wbBrSlot(1))
   wbResult(1) := mdu.io.resp.lo
   hi := Mux(mduValid, mdu.io.resp.hi, hi)
   lo := Mux(mduValid, mdu.io.resp.lo, lo)
@@ -476,7 +478,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     val rd = Output(UInt(5.W))
   }
   val storeQueue = Module(new FIFO(sqSize, new StoreInfo, sqSize, 1))
-  val loadValid = exInstsValid(2) && (!reBranch || exBrSlot(2)) && (stateFindSlot === 0.U || wbBrSlot(2))
+  val loadValid = exInstsValid(2) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(2) || wbBrSlot(2))
 
 
   val isDataInSQ = Reg(Bool())
@@ -489,9 +491,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
   dataLoadInSQ := storeQueue.io.dout(dataLoadInSQIndex).wdata
-  val debug = false
 //  val storeValid = Wire(Bool())
-  val storeValid = if(debug) false.B else exInstsValid(3) && (!reBranch || exBrSlot(3)) && (stateFindSlot === 0.U || wbBrSlot(3))
+  val storeValid = exInstsValid(3) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(3) || wbBrSlot(3))
   // su execution
   val canStore = Wire(Bool())
 
@@ -514,7 +515,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     storeInfo
   }
 
-//  val storeValid = exInstsValid(3) && (!reBranch || exBrSlot(3)) && (stateFindSlot === 0.U || wbBrSlot(3))
+//  val storeValid = exInstsValid(3) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(3) || wbBrSlot(3))
   io.dcache.req.valid := loadValid || canStore // TODO: store not stall one cycle
   io.dcache.req.bits.mtype := Mux(
     loadValid,
