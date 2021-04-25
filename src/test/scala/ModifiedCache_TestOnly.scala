@@ -17,7 +17,7 @@ class DCacheSimple_test extends Module with CacheParameters with MemAccessType w
     val meta=Module(new MetaDataSimple(nline));
 
     val tag_raw=io.cpu.req.bits.addr(31,32-TagBits)
-    val index_raw=io.cpu.req.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
+    val index_raw=io.cpu.req.bits.addr(len-TagBits-1,len-TagBits-IndexBits)
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
     io.bar.req.addr:=Cat(Seq(tag_raw,index_raw,0.U(OffsetBits.W)))
@@ -44,6 +44,8 @@ class DCacheSimple_test extends Module with CacheParameters with MemAccessType w
     val writeline=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     writeline:=line
     val mask=Wire(UInt(32.W))
+    // val shift=index_raw(1,0)<<3
+    val shift=io.cpu.req.bits.addr(1,0)<<3
     mask:="hffffffff".U
     switch(io.cpu.req.bits.mtype){
         is(MEM_HALF.U){
@@ -56,7 +58,8 @@ class DCacheSimple_test extends Module with CacheParameters with MemAccessType w
     val wen=io.cpu.req.bits.wen && io.cpu.req.valid
     val reg_wen=RegNext(wen)
     val wdata=RegEnable(io.cpu.req.bits.wdata,wen)
-    val wd=(mask & wdata) | (~mask & line(word1))
+    // val wd=(mask & wdata) | (~mask & line(word1))
+    val wd=((mask & wdata)<<shift) | ((~(mask << shift)) & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
     val reg_addr=RegNext(index_raw)
@@ -140,14 +143,14 @@ class ICacheSimple_test extends Module with CacheParameters with Config{
 
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
-    io.bar.req.addr:=io.cpu.req.bits.addr
+    io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len - 1, OffsetBits), Fill(OffsetBits, 0.U))
     io.bar.req.data:=0.U
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 
     
-    val tag_raw=io.cpu.req.bits.addr(31,32-TagBits)
-    val index_raw=io.cpu.req.bits.addr(31-OffsetBits,32-OffsetBits-IndexBits)
+    val tag_raw = io.cpu.req.bits.addr(len - 1, len - TagBits)
+    val index_raw = io.cpu.req.bits.addr(len - TagBits - 1, len - TagBits - IndexBits)
     
     val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
     val fillline=RegInit(VecInit(Seq.fill(1<<(OffsetBits-2))(0.U(len.W))))
@@ -187,7 +190,7 @@ class ICacheSimple_test extends Module with CacheParameters with Config{
                 // out_of_service:=true.B
                 state:=s_refill
                 io.bar.req.valid:=true.B
-                io.bar.req.addr:=io.cpu.req.bits.addr
+                // io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len-1,OffsetBits),0.U(OffsetBits.W))
                 tag_refill:=tag_raw
                 index_refill:=index_raw
                 // meta.io.invalidate:=true.B

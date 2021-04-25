@@ -87,3 +87,12 @@ object GenB {
       Seq(ChiselGeneratorAnnotation(() => new Backend)))
   }
 }
+object GenD {
+  def main(args: Array[String]): Unit = {
+    val packageName = this.getClass.getPackage.getName
+
+    (new chisel3.stage.ChiselStage).execute(
+      Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
+      Seq(ChiselGeneratorAnnotation(() => new DCacheSimple)))
+  }
+}

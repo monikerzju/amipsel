@@ -440,3 +440,164 @@ class ICacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
         }
     }
 }
+class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
+    "test dcache" in{
+        test(new DCacheSimple_test){c=>
+            c.io.cpu.req.initSource()
+            c.io.cpu.req.setSourceClock(c.clock)
+            c.io.cpu.resp.initSink()
+            c.io.cpu.resp.setSinkClock(c.clock)
+            val input_values=Seq.tabulate(8){i => i.U(32.W)}
+            val cpu_request_vector=Seq.tabulate(8){i => 
+                // test hit, read
+                new MemReq().Lit(_.addr->(i*4).U,_.wdata->0.U,_.wen->false.B,_.flush->false.B,_.invalidate->false.B,_.mtype->0.U)
+            }
+            var feed="h"
+            var j=0
+            for (j<-7 to 0 by -1){
+                feed+=s"0000${j}000"
+            }
+            val cpu_request_vector_write=Seq.tabulate(3){i => 
+                // test write hit, different access type
+                new MemReq().Lit(_.addr->(i).U,_.wdata->(i+0x0fffff00+1).U,_.wen->true.B,_.flush->false.B,_.invalidate->false.B,_.mtype->(2-i).U)
+            }
+            val expected_write=Seq("h2000_0fffff01".U,"h2000_00ff0200".U,"h2000_00031000".U)
+            // expected write value; dout from cacheline set to "h2000_00001000"
+
+            val cpu_request_vector_replace=Seq.tabulate(10){i => 
+                // test replacement, half write, half read
+                new MemReq().Lit(_.addr->((i+1)<<(OffsetBits+IndexBits)).U,_.wdata->"h0fffffff".U,_.wen->(i%2==1).B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
+            }
+            // val expected_replace=Seq.tabulate(5){i=>
+
+            // }
+
+            // val Cache_request_vector=input_values.map{i => 
+            //     new CacheReq().Lit(
+            //         _.addr->i,_.valid->true.B,_.wen->false.B,_.data->0.U
+            //     )
+            // }
+            // val Cache_response_vector=Seq.tabulate(10){i => 
+            //     new CacheResp().Lit(
+            //         _.data->(i+1000).U(256.W),_.valid->true.B
+            //     )
+            // }
+            // val cpu_response_vector=Seq.tabulate(10){i => 
+            //     new MemResp().Lit(
+            //         _.rdata->(1000+i).U(32.W)
+            //     )
+            // }
+            c.io.cpu.req.valid.poke(true.B)
+            c.io.cpu.req.bits.poke(cpu_request_vector(0))
+            c.io.bar.req.addr.expect(0.U)
+            c.io.bar.req.valid.expect(true.B)
+            c.io.bar.req.wen.expect(false.B)
+            c.clock.step()
+            c.io.bar.resp.data.poke(1000.U)
+            c.io.bar.resp.valid.poke(true.B)
+            c.io.cpu.resp.bits.rdata(0).expect(1000.U)
+            c.io.cpu.resp.bits.rdata(1).expect(0.U)
+            c.io.cpu.resp.valid.expect(true.B)
+            c.io.data.wea.expect(true.B)
+            c.io.data.addra.expect(0.U)
+            c.io.data.dina.expect(1000.U)
+            c.clock.step()
+            c.io.data.douta.poke(1000.U)
+            c.io.cpu.resp.bits.rdata(0).expect(1000.U)
+            c.io.cpu.resp.bits.rdata(1).expect(0.U)
+            // test miss 
+            var i=0
+            for (i<-0 until 8){
+                // test hit
+                // FIXME: can't pass if 0 until 8
+                c.io.cpu.req.valid.poke(true.B)
+                c.io.cpu.req.bits.poke(cpu_request_vector(i))
+                c.io.cpu.resp.valid.expect(true.B)
+                c.io.data.wea.expect(false.B)
+                c.io.data.addra.expect(0.U)
+                // c.io.bar.req.addr.expect(0.U)
+                c.io.bar.req.valid.expect(false.B)
+                // c.io.bar.req.wen.expect(false.B)
+                c.clock.step()
+                c.io.data.douta.poke(feed.U)
+                // c.io.cpu.resp.data(0).expect(1000)
+                // c.io.bar.resp.data.poke(1000.U)
+                // c.io.bar.resp.valid.poke(true.B)
+                println(s"${i},${c.io.cpu.resp.bits.rdata(0).peek},${feed}")
+                c.io.cpu.resp.bits.rdata(0).expect(s"h${i}000".U)
+                if(i<7)c.io.cpu.resp.bits.rdata(1).expect(s"h${i+1}000".U)
+                // c.clock.step()
+            }
+            
+            for(i<-0 to 2){
+                // test write hit
+                c.io.cpu.req.valid.poke(true.B)
+                c.io.cpu.req.bits.poke(cpu_request_vector_write(i))
+                c.io.cpu.resp.valid.expect(true.B)
+                c.io.data.wea.expect(false.B)
+                c.io.data.addra.expect(0.U)
+                // c.io.bar.req.addr.expect(0.U)
+                c.io.bar.req.valid.expect(false.B)
+                // c.io.bar.req.wen.expect(false.B)
+                c.clock.step()
+                c.io.data.web.expect(true.B)
+                c.io.data.douta.poke("h200000001000".U)
+                c.io.data.dinb.expect(expected_write(i))
+                println(s"written: ${c.io.data.dinb.peek}")
+
+            }
+
+            for(i<-0 until 10){
+                // test replace (for directmapped only)
+                println(s"${i}")
+                c.io.bar.resp.valid.poke(false.B)
+                c.io.cpu.req.valid.poke(true.B)
+                c.io.cpu.req.bits.poke(cpu_request_vector_replace(i))
+                c.io.cpu.resp.valid.expect(false.B)
+                c.io.data.wea.expect(false.B)
+                if(i%2==0)  // evict needed
+                    c.io.bar.req.valid.expect(false.B)
+                else {
+                    c.io.bar.req.valid.expect(true.B)// not dirty, refill
+                    c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.wen.expect(false.B)
+                }
+                if(i%2==0){
+                    // read replace
+                    c.clock.step()
+                    c.io.data.douta.poke("hdeadbeef".U)
+                    c.io.bar.req.addr.expect((i<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.valid.expect(true.B)
+                    c.io.bar.req.wen.expect(true.B)
+                    c.io.bar.req.data.expect("hdeadbeef".U)
+                    c.clock.step()
+                    // c.io.bar.resp.data.poke("h2000_00001000".U)
+                    c.io.bar.resp.valid.poke(true.B)
+                    // evicted, refill started
+                    c.io.bar.req.valid.expect(true.B)
+                    c.io.bar.req.wen.expect(false.B)
+                    c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                    c.clock.step()
+                    c.io.bar.resp.data.poke("h2000_00001000".U)
+                    c.io.bar.resp.valid.poke(true.B)
+                    c.io.cpu.resp.bits.rdata(0).expect("h1000".U)
+                    c.io.cpu.resp.bits.rdata(1).expect("h2000".U)  
+                    // still in evict state, with bar.resp.valid as que to transfer to s_normal
+                }
+                else{
+                    // write replace
+                    c.clock.step()
+                    c.io.bar.resp.valid.poke(true.B)
+                    c.io.bar.resp.data.poke("h2000_00001000".U)
+                    
+                    c.clock.step()
+                    c.io.data.web.expect(true.B)
+                    c.io.data.douta.poke("h2000_00001000".U)
+                    c.io.data.dinb.expect("h2000_0fffffff".U)
+                    // println(s"written: ${c.io.data.dinb.peek}")
+                }
+                c.clock.step()                  
+            }
+        }
+    }
+}
