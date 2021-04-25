@@ -215,7 +215,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   io.axi3.aw.bits.id    := 0.U
   io.axi3.aw.bits.addr  := RegNext(io.cache(wsel).req.addr)
   io.axi3.aw.bits.len   := Mux(wtype===MEM_DWORD.U,(bit_cacheline / 32 - 1).U,0.U)
-  io.axi3.ar.bits.size  := MuxLookup(
+  io.axi3.aw.bits.size  := MuxLookup(
     wtype,"b10".U,
     Seq(
       MEM_BYTE .U->"b00".U,
