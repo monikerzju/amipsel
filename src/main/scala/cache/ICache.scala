@@ -47,6 +47,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
     io.bar.req.wen:=false.B
     io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len - 1, OffsetBits), Fill(OffsetBits, 0.U))
     io.bar.req.data:=0.U
+    io.bar.req.mtype:=3.U   // MEM_DWORD
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 

@@ -9,19 +9,21 @@ features:
     - for word access only
 
 TODO:   [x] output serialized to cater for AXI bandwidth
-        [ ] traits not compatible with icore defination
+        [x] traits not compatible with icore defination
         [x] BRAM interface for data access
         [ ] invalidate instructions 
         [ ] flush
         [x] dual-issue for icache
+        [ ] mmio 
+        [ ] map from virtual to physical
 
 NOTICE: - expect the valid signal early in the cycle, not withstandable the latency 
         - provides access for aligned address only
-FIXME:  [ ] skeptical : the valid signal might not trigger the state transfer; 
+FIXME:  [x] skeptical : the valid signal might not trigger the state transfer; 
                 in which case both meta and data will suffer 1-cycle lantency 
-        [ ] valid-ready protocol 
+        [x] valid-ready protocol 
         [ ] 双发射字节对齐？若一个miss 一个hit？
-        [ ] non-blocking 导致 out-of-order?
+        [x] non-blocking 导致 out-of-order?
 
 ***********************************************************/
 package cache
@@ -87,26 +89,27 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val wd=((mask & wdata)<<shift) | ((~(mask << shift)) & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
-    val reg_addr=RegNext(index_raw)
     io.cpu.resp.valid:=io.bar.resp.valid||meta.io.hit
     val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     io.cpu.resp.bits.respn:= dual_issue
     io.cpu.resp.bits.rdata(0):=line(word1)
     io.cpu.resp.bits.rdata(1):=line(word2)
-    val s_normal::s_evict::s_refill::Nil=Enum(3)
+    val s_normal::s_evict::s_refill::s_uncached::Nil=Enum(4)
     val state=RegInit(s_normal)
     val tag_evict_reg=RegInit(0.U(TagBits.W))
     data.io.web:=reg_wen
     // FIXME: [ ] write miss?
-    data.io.addrb:=reg_addr
+    data.io.addrb:=index
     data.io.dinb:=writeline.asUInt
+    val mmio=io.cpu.req.bits.addr(31,29)==="b101".U // A000_0000-C000_0000
+    io.bar.req.mtype:=Mux(mmio,io.cpu.req.bits.mtype,MEM_DWORD.U)
     when(reg_wen){
         writeline(word1):=wd
     }
     switch(state){
         is(s_normal){
-            when(io.cpu.req.valid){
+            when(!mmio&&io.cpu.req.valid){
                 when(meta.io.hit){
                     // nothing to be done, data on the way
                 }
@@ -128,6 +131,14 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                     }
                 }
             }
+            .elsewhen(mmio && io.cpu.req.valid){
+                // send with raw data right away
+                state:=s_uncached
+                io.bar.req.valid:=true.B
+                io.bar.req.addr:=io.cpu.req.bits.addr
+                io.bar.req.data:=io.cpu.req.bits.wdata
+                io.bar.req.wen:=io.cpu.req.bits.wen
+            }
         }
         is(s_refill){
             io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
@@ -146,12 +157,26 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             io.bar.req.valid:=true.B
             io.bar.req.wen:=true.B
             io.bar.req.data:=line.asUInt
-            // FIXME: register?
+            // FIXME: [ ] register for line?
             io.bar.req.addr:=Cat(Seq(tag_evict_reg,index_refill,0.U(OffsetBits.W)))
             when(io.bar.resp.valid){
                 state:=s_refill
                 io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
                 io.bar.req.wen:=false.B
+            }
+        }
+        is(s_uncached){
+            io.bar.req.valid:=true.B
+            io.bar.req.addr:=io.cpu.req.bits.addr
+            io.bar.req.data:=io.cpu.req.bits.wdata
+            io.bar.req.wen:=io.cpu.req.bits.wen
+
+            when(io.bar.resp.valid){
+                state:=s_normal
+                when(!reg_wen){
+                    io.cpu.resp.bits.rdata(0):=io.bar.resp.data(31,0)
+                }
+                // nothing to be done for write uncached 
             }
         }
     }
