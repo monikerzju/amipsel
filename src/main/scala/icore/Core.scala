@@ -38,12 +38,12 @@ class FrontBackIO extends Bundle with Config {
 
 class FrontendIO extends Bundle with Config {
   val fb = new FrontBackIO
-  val icache = Flipped(new MemIO)
+  val icache = Flipped(new MemIO())
 }
 
 class BackendIO extends Bundle with Config with CauseExcCode {
   val fb = Flipped(new FrontBackIO)
-  val dcache = Flipped(new MemIO)
+  val dcache = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
 }
 
@@ -67,22 +67,22 @@ class MemReq extends Bundle with Config with MemAccessType {
   val mtype = Output(UInt(SZ_MEM_TYPE.W))
 }
 
-class MemResp extends Bundle with Config with MemAccessType {
-  val rdata = Output(Vec(frontendIssueN, UInt(len.W)))    // 64-bit because of MEM_DWORD for dual-issue, 1 cycle latency for BRAM
+class MemResp(val issueN:Int = 2) extends Bundle with Config with MemAccessType {
+  val rdata = Output(Vec(issueN, UInt(len.W)))    // 64-bit because of MEM_DWORD for dual-issue, 1 cycle latency for BRAM
   val respn = Output(UInt(SZ_MEM_READ_RESP.W))       // if req is MEM_DWORD but cannot be responsed because of icache miss, 0 cycle latency
 }
 
 // From the view of cache, req is input and resp is output
-class MemIO extends Bundle with Config {
+class MemIO(val issueN:Int = 2) extends Bundle with Config {
   val req = Flipped(Decoupled(new MemReq))
-  val resp = Decoupled(new MemResp)
+  val resp = Decoupled(new MemResp(issueN))
 }
 
 // Memory or MMIO is judged in icache and dcache, not in core
 // From the view of core, MemIO should be in-out flipped
 class CoreIO extends Bundle with Config with CauseExcCode {
   val icache = Flipped(new MemIO)
-  val dcache = Flipped(new MemIO)
+  val dcache = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
 }
 

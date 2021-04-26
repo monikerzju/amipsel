@@ -212,7 +212,6 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     }
   }
 
-  val wtype=RegEnable(io.cache(wsel).req.mtype,wen)
   // AXI3 Write Channel
   val wtype = RegEnable(io.cache(wsel).req.mtype, wen)
   io.axi3.aw.bits.id    := 0.U

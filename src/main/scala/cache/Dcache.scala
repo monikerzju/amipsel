@@ -36,7 +36,7 @@ import conf._
 import icore._
 class DCacheSimple extends Module with CacheParameters with MemAccessType with Config{
     val io=IO(new Bundle{
-        val cpu=new MemIO()
+        val cpu=new MemIO(1)
         val bar=new CacheIO(1<<(OffsetBits+3))
         // val data=Flipped(new DPBRAMSyncReadMemIO(8*(1<<OffsetBits),1<<IndexBits))
     })
@@ -65,6 +65,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     data.io.wea:=false.B
     data.io.addra:=index_raw
     data.io.dina:=io.bar.resp.data
+    data.io.doutb:=DontCare
     meta.io.tags_in:=tag_raw
     meta.io.index_in:=index_raw
     meta.io.update:=false.B
@@ -91,14 +92,14 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val wd=((mask & wdata)<<shift) | ((~(mask << shift)) & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
-    io.cpu.resp.valid:=io.bar.resp.valid||meta.io.hit
-    val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
-    // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
-    io.cpu.resp.bits.respn:= dual_issue
-    io.cpu.resp.bits.rdata(0):=line(word1)
-    io.cpu.resp.bits.rdata(1):=line(word2)
     val s_normal::s_evict::s_refill::s_uncached::Nil=Enum(4)
     val state=RegInit(s_normal)
+    io.cpu.resp.valid:=io.bar.resp.valid||(state===s_normal && meta.io.hit)
+    // val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
+    // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
+    io.cpu.resp.bits.respn:= 0.U
+    io.cpu.resp.bits.rdata(0):=line(word1)
+    // io.cpu.resp.bits.rdata(1):=line(word2)
     val tag_evict_reg=RegInit(0.U(TagBits.W))
     data.io.web:=reg_wen
     // FIXME: [ ] write miss?
