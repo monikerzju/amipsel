@@ -32,7 +32,7 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class ICacheSimple extends Module with CacheParameters with Config{
+class ICacheSimple extends Module with CacheParameters with Config with MemAccessType {
     val io=IO(new Bundle{
         val cpu=new MemIO()
         val bar=new CacheIO(1<<(OffsetBits+3))
@@ -47,6 +47,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
     io.bar.req.wen:=false.B
     io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len - 1, OffsetBits), Fill(OffsetBits, 0.U))
     io.bar.req.data:=0.U
+    io.bar.req.mtype:=MEM_DWORD.U   // MEM_DWORD
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
 
@@ -92,7 +93,7 @@ class ICacheSimple extends Module with CacheParameters with Config{
                 // out_of_service:=true.B
                 state:=s_refill
                 io.bar.req.valid:=true.B
-                io.bar.req.addr:=io.cpu.req.bits.addr
+                // io.bar.req.addr:=Cat(io.cpu.req.bits.addr(len-1,OffsetBits),0.U(OffsetBits.W))
                 tag_refill:=tag_raw
                 index_refill:=index_raw
                 // meta.io.invalidate:=true.B

@@ -2,12 +2,14 @@ package cache
 
 import chisel3._
 import chisel3.util._
+import icore._
 
-class CacheReq(bit_cacheline: Int = 128, width: Int = 32) extends Bundle {
+class CacheReq(bit_cacheline: Int = 128, width: Int = 32) extends Bundle with MemAccessType {
   val valid = Input(Bool())
   val wen   = Input(Bool())
   val addr  = Input(UInt(width.W))
   val data  = Input(UInt(bit_cacheline.W))
+  val mtype = Input(UInt(SZ_MEM_TYPE.W))  // for mmio only; set to DWORD if not in mmio 
   override def cloneType = (new CacheReq(bit_cacheline, width)).asInstanceOf[this.type]
 }
 
@@ -119,7 +121,7 @@ class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1
   override def cloneType = (new AXI3ServerIO(nclient, bit_cacheline, id_width, len)).asInstanceOf[this.type]
 }
 
-class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", len: Int = 32) extends Module {
+class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", len: Int = 32) extends Module with MemAccessType{
   val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
   assert(bit_cacheline <= 256) 
@@ -165,13 +167,20 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     io.cache(i).resp.data  := rbuff.getl()
   }
 
-  // Selector
-
   // AXI3 Read Channel
+  val rtype = RegEnable(io.cache(rsel).req.mtype, ren)
   io.axi3.ar.bits.id    := 0.U
   io.axi3.ar.bits.addr  := RegNext(io.cache(rsel).req.addr)
-  io.axi3.ar.bits.len   := (bit_cacheline / 32 - 1).U
-  io.axi3.ar.bits.size  := "b10".U
+  io.axi3.ar.bits.len   := Mux(rtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
+  io.axi3.ar.bits.size  := MuxLookup(
+    rtype, "b10".U,
+    Seq(
+      MEM_BYTE.U  -> "b00".U,
+      MEM_HALF.U  -> "b01".U,
+      MEM_WORD.U  -> "b10".U,
+      MEM_DWORD.U -> "b10".U
+    )
+  )
   io.axi3.ar.bits.burst := INCR.U
   io.axi3.ar.bits.lock  := 0.U
   io.axi3.ar.bits.cache := 0.U
@@ -200,10 +209,19 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   }
 
   // AXI3 Write Channel
+  val wtype = RegEnable(io.cache(wsel).req.mtype, wen)
   io.axi3.aw.bits.id    := 0.U
   io.axi3.aw.bits.addr  := RegNext(io.cache(wsel).req.addr)
-  io.axi3.aw.bits.len   := (bit_cacheline / 32 - 1).U
-  io.axi3.aw.bits.size  := "b10".U
+  io.axi3.aw.bits.len   := Mux(wtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
+  io.axi3.aw.bits.size  := MuxLookup(
+    wtype, "b10".U,
+    Seq(
+      MEM_BYTE.U  -> "b00".U,
+      MEM_HALF.U  -> "b01".U,
+      MEM_WORD.U  -> "b10".U,
+      MEM_DWORD.U -> "b10".U
+    )
+  )
   io.axi3.aw.bits.burst := INCR.U
   io.axi3.aw.bits.lock  := 0.U
   io.axi3.aw.bits.cache := 0.U
@@ -211,8 +229,14 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   io.axi3.aw.valid      := false.B
   io.axi3.w.bits.id     := 0.U
   io.axi3.w.bits.data   := wbuff << (wptr << 5.U)
-  io.axi3.w.bits.strb   := "b1111".U
-  io.axi3.w.bits.last   := wptr === (bit_cacheline / 32 - 1).U
+  io.axi3.w.bits.strb   := MuxLookup(
+    wtype, "b1111".U,
+    Seq(
+      MEM_BYTE.U ->"b0001".U,
+      MEM_HALF.U ->"b0011".U
+    )
+  )
+  io.axi3.w.bits.last   := wtype =/= MEM_DWORD.U || wptr === (bit_cacheline / 32 - 1).U
   io.axi3.w.valid       := false.B
   io.axi3.b.ready       := true.B
   switch (wstate) {
@@ -226,7 +250,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     }
     is (ws_write) {
       io.axi3.w.valid := true.B
-      wptr := wptr + Mux(io.axi3.w.ready, 1.U, 0.U)
+      wptr := wptr + Mux(io.axi3.w.ready && wtype =/= MEM_DWORD.U, 1.U, 0.U)
       next_wstate := Mux(io.axi3.w.bits.last.orR, ws_wait_valid, wstate)
     }
     is (ws_wait_valid) {
