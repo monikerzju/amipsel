@@ -33,9 +33,9 @@ class ALU extends Module with Config with AluOpType {
   // maybe choose "switch"
   io.r := MuxLookup(
     io.aluOp,
-    (io.a + io.b),  // do not add useless logic as ZJV :(
+    (io.a + io.b),  // ALUADD and ALUADDU
     Seq(
-      aluAdd.U -> (io.a + io.b),
+//      aluAdd.U -> (io.a + io.b),
 //      aluAddu.U -> (io.a + io.b),
       aluSub.U -> (io.a - io.b),
       aluSlt.U -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
@@ -44,8 +44,8 @@ class ALU extends Module with Config with AluOpType {
       aluAnd.U -> (io.a & io.b),
       aluOr.U -> (io.a | io.b),
       aluNor.U -> ~(io.a | io.b),
-      aluSll.U -> (io.b >> shamt),
-      aluSrl.U -> (io.b << shamt),
+      aluSll.U -> (io.b << shamt),
+      aluSrl.U -> (io.b >> shamt),
       aluSra.U -> (io.b.asSInt() >> shamt).asUInt(), // should be tested
       aluLui.U -> Cat(io.b(15, 0), Fill(16, 0.U))  // TODO:check imm
     )

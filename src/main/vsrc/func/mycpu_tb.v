@@ -159,36 +159,35 @@ assign three_bad = (
                 three && 
                 (
                     ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                     ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                     ||(debug_wb_rf_wdata_0!==ref_wb_rf_wdata_0))
                      ||
                      ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
-                     ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_1))
+                     ||(debug_wb_rf_wdata_1!==ref_wb_rf_wdata_1))
                      ||
                      ((debug_wb_pc_2!==ref_wb_pc_2) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_2)
-                     ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_2))
+                     ||(debug_wb_rf_wdata_2!==ref_wb_rf_wdata_2))
                 )
             );
 wire two_bad;
-wire a, b, c;
 assign two_bad = (
                 !three && two &&
                 (
                     (first && sec &&
                         (
                             ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                             ||(debug_wb_rf_wdata_0!==ref_wb_rf_wdata_0))
                              ||
                              ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
-                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_1))
+                             ||(debug_wb_rf_wdata_1!==ref_wb_rf_wdata_1))
                         )
                     ) ||
                     (first && third &&
                         (
                              ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                             ||(debug_wb_rf_wdata_0!==ref_wb_rf_wdata_0))
                              ||
                              ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
-                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_1))
+                             ||(debug_wb_rf_wdata_2!==ref_wb_rf_wdata_1))
                         )
                     ) ||
                     (sec && third &&
@@ -197,26 +196,30 @@ assign two_bad = (
                              ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
                              ||
                              ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
-                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_1))
+                             ||(debug_wb_rf_wdata_2!==ref_wb_rf_wdata_1))
                          )
                     )
                 )
             );
 wire one_bad;
+wire a, b, c;
+assign a = (debug_wb_pc_1!==ref_wb_pc_0);
+assign b = (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0);
+assign c = (debug_wb_rf_wdata_1!==ref_wb_rf_wdata_0);
 assign one_bad = (
                 !three && !two && one && 
                 (
                     (first && (
                     ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_0!==ref_wb_rf_wdata_v_0))
+                             ||(debug_wb_rf_wdata_0!==ref_wb_rf_wdata_0))
                     )) ||
                     (sec && (
                     ((debug_wb_pc_1!==ref_wb_pc_0) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
+                             ||(debug_wb_rf_wdata_1!==ref_wb_rf_wdata_0))
                     )) ||
                     (third && (
                     ((debug_wb_pc_2!==ref_wb_pc_0) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_2!==ref_wb_rf_wdata_v_0))
+                             ||(debug_wb_rf_wdata_2!==ref_wb_rf_wdata_0))
                     ))
                 )
             );
@@ -279,8 +282,15 @@ assign debug_wb_rf_wdata_v_0 = debug_wb_rf_wdata_0 & {32{debug_wb_rf_wen_0}};
 assign debug_wb_rf_wdata_v_1 = debug_wb_rf_wdata_1 & {32{debug_wb_rf_wen_1}};
 assign debug_wb_rf_wdata_v_2 = debug_wb_rf_wdata_2 & {32{debug_wb_rf_wen_2}};
 assign   ref_wb_rf_wdata_v_0 =   ref_wb_rf_wdata_0 & {32{debug_wb_rf_wen_0}};
-assign   ref_wb_rf_wdata_v_1 =   ref_wb_rf_wdata_1 & {32{debug_wb_rf_wen_1}};
-assign   ref_wb_rf_wdata_v_2 =   ref_wb_rf_wdata_2 & {32{debug_wb_rf_wen_2}};
+assign   ref_wb_rf_wdata_v_1 =   ref_wb_rf_wdata_1 & (first ? {32{debug_wb_rf_wen_1}} : {32{debug_wb_rf_wen_0}});
+assign   ref_wb_rf_wdata_v_2 =   ref_wb_rf_wdata_2 & (first ? 
+(sec ?
+{32{debug_wb_rf_wen_2}} : {32{debug_wb_rf_wen_1}}) :
+(
+sec ? 
+{32{debug_wb_rf_wen_1}} : {32{debug_wb_rf_wen_0}}
+)
+);
 
 
 //compare result in rsing edge 
@@ -320,19 +330,35 @@ begin
             $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
                       ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_v_0);
             $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      debug_wb_pc_0, debug_wb_rf_wnum_0, debug_wb_rf_wdata_v_0);
+                      debug_wb_pc_0, debug_wb_rf_wnum_0, debug_wb_rf_wdata_0);
             end
             if (sec) begin
-            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_v_1);
-            $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      debug_wb_pc_1, debug_wb_rf_wnum_1, debug_wb_rf_wdata_v_1);
+                if (first) begin
+                    $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                          ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_1);
+                end
+                else begin
+                    $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                          ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
+                end
+                $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                            debug_wb_pc_1, debug_wb_rf_wnum_1, debug_wb_rf_wdata_1);
             end
             if (third) begin
+            if (first && sec) begin
             $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      ref_wb_pc_2, ref_wb_rf_wnum_2, ref_wb_rf_wdata_v_2);
+                      ref_wb_pc_2, ref_wb_rf_wnum_2, ref_wb_rf_wdata_2);
+            end
+            if (first || sec) begin
+            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                      ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_1);
+            end
+            else begin
+            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                      ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
+            end
             $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_v_2);
+                      debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_2);
             end
             $display("--------------------------------------------------------------");
             debug_wb_err <= 1'b1;
