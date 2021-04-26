@@ -43,10 +43,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val nline=1<<IndexBits
     val data=Module(new DPBRAMSyncReadMem(nline,1<<(OffsetBits+3)))
     val meta=Module(new MetaDataSimple(nline));
-    val unmaped=io.cpu.req.bits.addr(31,29)==="b100".U
-    // 0x80000000-0xa000000
-    // translate virtual addr from start
-    val tag_raw=Cat(Mux(unmaped,0.U(3.W),io.cpu.req.bits.addr(31,29)),io.cpu.req.bits.addr(28,32-TagBits))
+    val tag_raw=io.cpu.req.bits.addr(31,32-TagBits)
     val index_raw=io.cpu.req.bits.addr(len-TagBits-1,len-TagBits-IndexBits)
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B

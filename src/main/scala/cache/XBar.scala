@@ -32,7 +32,7 @@ class AChannel(id_width: Int = 1, width: Int = 32) extends Bundle {
   val len   = Output(UInt(4.W))
   val size  = Output(UInt(3.W))
   val burst = Output(UInt(2.W))
-  val lock  = Output(UInt(1.W))
+  val lock  = Output(UInt(2.W))
   val cache = Output(UInt(4.W))
   val prot  = Output(UInt(3.W))
   override def cloneType = (new AChannel(id_width, width)).asInstanceOf[this.type]
@@ -124,6 +124,10 @@ class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1
 class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", len: Int = 32) extends Module with MemAccessType{
   val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
+  def mapAddr(addr: UInt): UInt = {
+    Cat("b000".U, addr(len - 4, 0))
+  }
+
   assert(bit_cacheline <= 256) 
   assert(policy == "Seq" || policy == "RR")
 
@@ -170,7 +174,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   // AXI3 Read Channel
   val rtype = RegEnable(io.cache(rsel).req.mtype, ren)
   io.axi3.ar.bits.id    := 0.U
-  io.axi3.ar.bits.addr  := RegNext(io.cache(rsel).req.addr)
+  io.axi3.ar.bits.addr  := RegNext(mapAddr(io.cache(rsel).req.addr))
   io.axi3.ar.bits.len   := Mux(rtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
   io.axi3.ar.bits.size  := MuxLookup(
     rtype, "b10".U,
@@ -211,7 +215,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   // AXI3 Write Channel
   val wtype = RegEnable(io.cache(wsel).req.mtype, wen)
   io.axi3.aw.bits.id    := 0.U
-  io.axi3.aw.bits.addr  := RegNext(io.cache(wsel).req.addr)
+  io.axi3.aw.bits.addr  := RegNext(mapAddr(io.cache(wsel).req.addr))
   io.axi3.aw.bits.len   := Mux(wtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
   io.axi3.aw.bits.size  := MuxLookup(
     wtype, "b10".U,

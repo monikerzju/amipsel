@@ -20,7 +20,7 @@ class DiffTestVIO extends Bundle with Config {
 // AXI3 Protocol according to Loongson
 // Interrupt(s)
 class TileIO extends Bundle with Config with CauseExcCode {
-  val axi3 = new AXI3(1, len)
+  val axi3 = new AXI3(4, len)
   val intr = Input(Vec(SZ_HARD_INT, Bool()))
   val debug = if (diffTestV) new DiffTestVIO else null
 }
@@ -44,7 +44,7 @@ class Tile extends Module with Config with CacheParameters {
 
   // TODO FIX DCACHE = ICACHE
   val dcache = Module(new DCacheSimple)
-  val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 1, "Seq", len))
+  val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 4, "Seq", len))
 
   core.io.interrupt := io.intr
   core.io.icache <> icache.io.cpu
