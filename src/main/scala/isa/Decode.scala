@@ -116,7 +116,7 @@ class Dec extends Module with InstType {
            
       ERET       -> List(SType   ,  Ret     ,  toAMU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
       MFC0       -> List(SType   ,  PC4     ,  toAMU.U,   BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBReg     , IRT , IXX , IRT , UIMM),
-      MTC0       -> List(SType   ,  PC4     ,  toAMU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IXX , IRT , IRD , UIMM)
+      MTC0       -> List(SType   ,  PCSelf  ,  toAMU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IXX , IRT , IRD , UIMM)
   )) 
  
 //  io.mops.inst_type     := control_signal(0)
