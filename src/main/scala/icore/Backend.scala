@@ -484,6 +484,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val isDataInSQ = Reg(Bool())
   val dataLoadInSQIndex = WireDefault(0.U(log2Ceil(sqSize).W))
   val dataLoadInSQ = RegInit(0.U(32.W))
+  isDataInSQ := false.B
   for(i <- 0 until sqSize) {
     when(storeQueue.io.dout(i).rd === exInsts(2).rd) {
       isDataInSQ := true.B
