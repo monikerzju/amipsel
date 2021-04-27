@@ -76,13 +76,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
         Cat(inst1.alu_mdu_lsu, inst2.alu_mdu_lsu),
         true.B,
         Seq(
-          Cat(toAMU.U, toAMU.U) -> isLUorSU,
-          Cat(toAMU.U, toALU.U) -> isLUorSU,
-          Cat(toALU.U, toAMU.U) -> isLUorSU,
-          Cat(toAMU.U, toMDU.U) -> isLUorSU,
-          Cat(toMDU.U, toAMU.U) -> isLUorSU,
-          Cat(toALU.U, toMDU.U) -> isLUorSU,
-          Cat(toMDU.U, toALU.U) -> isLUorSU
+          Cat(toAMU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLUorSU,
+          Cat(toAMU.U(typeLen.W), toALU.U(typeLen.W)) -> isLUorSU,
+          Cat(toALU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLUorSU,
+          Cat(toAMU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLUorSU,
+          Cat(toMDU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLUorSU,
+          Cat(toALU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLUorSU,
+          Cat(toMDU.U(typeLen.W), toALU.U(typeLen.W)) -> isLUorSU
         )
       )
   }
@@ -405,7 +405,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val stateFindSlot = RegInit(0.U(2.W))
   switch(stateFindSlot) {
     is(0.U) {
-      when(reBranch && exIsBrFinal) { // idle
+      when(reBranch && exIsBrFinal && !(wbReBranch && !wbIsBrFinal)) { // idle
         stateFindSlot := 1.U
       }
     }
@@ -429,7 +429,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   val noDelaySlot = stateFindSlot === 0.U
   for(i <- 0 until 4) {
-    resValid(i) := exInstsValid(i) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(i) || wbBrSlot(i))
+    resValid(i) := exInstsValid(i) &&
+      (!reBranch && noDelaySlot || noDelaySlot && (exBrSlot(i) || exInstsOrder(i) < exInstsOrder(0)) || wbBrSlot(i))
 //    resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (stateFindSlot === 0.U || wbBrSlot(i))
   }
 
