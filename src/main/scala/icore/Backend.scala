@@ -357,6 +357,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbResValid = RegNext(resValid)
 
   // forward all the data here
+  // assume I-type Inst replace rt with rd, and update rt = 0
   val fwdRsData = Wire(Vec(4, UInt(32.W)))
   val fwdRtData = Wire(Vec(4, UInt(32.W)))
   val isRsFwd = Wire(Vec(4, Bool()))
@@ -441,11 +442,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
   aluSrcA := MuxLookup(exInsts(0).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
   aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
-    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
+    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U, MicroOpCtrl.BZero -> 3.U))
   alu.io.a := MuxLookup(aluSrcA, fwdRsData(0),
     Seq(0.U -> fwdRsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbData(fwdAluSrcAIndex)))
   alu.io.b := MuxLookup(aluSrcB, fwdRtData(0),
-    Seq(0.U -> fwdRtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex)))
+    Seq(0.U -> fwdRtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex), 3.U -> 0.U))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
   val aluValid = exInstsValid(0) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(0) || wbBrSlot(0))
@@ -459,12 +460,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
   mduSrc1 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U)))
   mduSrc2 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_b, 0.U,
-    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U)))
+    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U, MicroOpCtrl.BZero ->3.U)))
 
   mdu.io.req.in1 := MuxLookup(mduSrc1, fwdRsData(1),
     Seq(0.U -> fwdRsData(1), 1.U -> exInsts(1).imm(10, 6), 2.U -> wbData(fwdMduSrc1Index)))
   mdu.io.req.in2 := MuxLookup(mduSrc2, fwdRtData(1),
-    Seq(0.U -> fwdRtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index)))
+    Seq(0.U -> fwdRtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index), 3.U -> 0.U))
   mdu.io.req.op := exInsts(1).alu_op
 
   val hi = RegInit(0.U(len.W))
@@ -539,31 +540,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
 
 
-  // forwarding here?
-  // assume I-type Inst replace rt with rd, and update rt = 0
-  // TODO: forward mdu and lsu
-  /*
-  for(i <- 0 until 3) {
-    when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
-      when(wbInsts(i).rd === exInsts(0).rs1) {
-        aluSrcA := 2.U
-        fwdAluSrcAIndex := i.U
-      }
-      when(wbInsts(i).rd === exInsts(0).rs2) {
-        aluSrcB := 2.U
-        fwdAluSrcBIndex := i.U
-      }
-      when(wbInsts(i).rd === exInsts(1).rs1) {
-        mduSrc1 := 2.U
-        fwdMduSrc1Index := i.U
-      }
-      when(wbInsts(i).rd === exInsts(1).rs2) {
-        mduSrc2 := 2.U
-        fwdMduSrc2Index := i.U
-      }
-    }
-  }
-   */
 
 
 
@@ -586,23 +562,50 @@ class Backend extends Module with Config with InstType with MemAccessType {
           reBranch := true.B
         }
       }
+      is(MicroOpCtrl.BrGE) { // bgez
+        when(alu.io.r >= 0.U) {
+          reBranch := true.B
+          when(exInsts(0).write_src === MicroOpCtrl.WBALU) {
+            wbResult(0) := exInsts(0).pc + 8.U
+          }
+        }
+      }
+      is(MicroOpCtrl.BrGT) { // bgtz
+        when(alu.io.r > 0.U) {
+          reBranch := true.B
+        }
+      }
+      is(MicroOpCtrl.BrLE) { // blez
+        when(alu.io.r <= 0.U) {
+          reBranch := true.B
+        }
+      }
+      is(MicroOpCtrl.BrLT) { // bltz
+        when(alu.io.r < 0.U) {
+          reBranch := true.B
+          when(exInsts(0).write_src === MicroOpCtrl.WBALU) {
+            wbResult(0) := exInsts(0).pc + 8.U
+          }
+        }
+      }
     }
   }
-  wbReBranch := reBranch
+  wbReBranch := reBranch //TODO: dcacheStall?
 
   // process jump
-  // TODO: merge fwd together!!!!!!!!!!!
 
-  jumpPc := Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W))
-  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr
-    reBranch := true.B
+  jumpPc := Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)) // TODO: check jump(31, 28) == ds(31, 28)
+  when(exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr, jalr
     jumpPc := fwdRsData(0)
   }
-  when(exInsts(0).write_src === MicroOpCtrl.WBPC) {
-    wbResult(0) := exInsts(0).pc + 8.U
-  }
-  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr, jalr
     reBranch := true.B
+  }
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal, j
+    reBranch := true.B
+  }
+  when(exInsts(0).write_src === MicroOpCtrl.WBPC) { // jal, jalr
+    wbResult(0) := exInsts(0).pc + 8.U
   }
 
 
