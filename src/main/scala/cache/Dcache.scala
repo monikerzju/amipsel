@@ -92,7 +92,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val wd=((mask & wdata)<<shift) | ((~(mask << shift)) & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
-    val s_normal::s_evict::s_refill::s_uncached::Nil=Enum(4)
+    val s_normal::s_evict::s_refill::s_uncached::s_wait::Nil=Enum(5)
     val state=RegInit(s_normal)
     io.cpu.resp.valid:=io.bar.resp.valid||(state===s_normal && meta.io.hit)
     // val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
@@ -107,6 +107,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     data.io.dinb:=writeline.asUInt
     val mmio=io.cpu.req.bits.addr(31,29)==="b101".U // A000_0000-C000_0000
     io.bar.req.mtype:=Mux(mmio,io.cpu.req.bits.mtype,MEM_DWORD.U)
+    val reg_rdata = RegInit(0.U(len.W))
     when(reg_wen){
         writeline(word1):=wd
     }
@@ -175,12 +176,19 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             io.bar.req.wen:=io.cpu.req.bits.wen
 
             when(io.bar.resp.valid){
-                state:=s_normal
                 when(!reg_wen){
-                    io.cpu.resp.bits.rdata(0):=io.bar.resp.data(31,0)
+                    state:=s_wait
+                    reg_rdata:=io.bar.resp.data(31,0)
+                }
+                .otherwise{
+                    state := s_normal
                 }
                 // nothing to be done for write uncached 
             }
+        }
+        is(s_wait){
+            io.cpu.resp.bits.rdata(0):=reg_rdata
+            state:=s_normal
         }
     }
 }
