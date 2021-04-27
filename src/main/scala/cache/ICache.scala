@@ -64,7 +64,7 @@ class ICacheSimple extends Module with CacheParameters with Config with MemAcces
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.dout(i*len+31,i*len)}
 
     val tag_refill=RegInit(0.U(TagBits.W))
-    val word1=RegNext(io.cpu.req.bits.addr(OffsetBits,2))
+    val word1=RegNext(io.cpu.req.bits.addr(OffsetBits-1,2))
     val word2=word1+1.U
     val index_refill=RegInit(0.U(IndexBits.W))
     meta.io.tags_in:=tag_raw
