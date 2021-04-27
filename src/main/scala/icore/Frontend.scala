@@ -33,6 +33,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
 
   // Signals define
   val icache_stall_req_a = !io.icache.resp.valid && io.icache.req.valid
+  val icache_fetch_half_a = io.icache.resp.valid && !io.icache.resp.bits.respn
   val wtg = last_wait
   val gtw = !last_wait && pc_gen.io.please_wait
 
@@ -46,8 +47,8 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   // Only please wait from icache is atomic and will cause bmfs.please_wait = 1
   val wait_icache = icache_stall_req_a || (io.icache.req.bits.addr =/= pc_gen.io.pc_o)
   pc_gen.io.please_wait := wait_icache || io.fb.fmbs.please_wait
-  pc_gen.io.redirect := io.fb.bmfs.redirect_kill  // TODO when BPU is added
-  pc_gen.io.redirect_pc := io.fb.bmfs.redirect_pc  // TODO
+  pc_gen.io.redirect := io.fb.bmfs.redirect_kill || icache_fetch_half_a  // TODO when BPU is added
+  pc_gen.io.redirect_pc := Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, pc_gen.io.pc_o + 4.U)  // TODO
 
   io.icache.req.valid := true.B // maybe situation will change by adding BPU
   io.icache.resp.ready := true.B 

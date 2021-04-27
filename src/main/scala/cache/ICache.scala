@@ -78,7 +78,7 @@ class ICacheSimple extends Module with CacheParameters with Config with MemAcces
     io.cpu.req.ready:=io.cpu.resp.valid
 
     io.cpu.resp.valid:=io.bar.resp.valid||(state===s_normal && meta.io.hit)
-    val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
+    val dual_issue=io.cpu.req.bits.mtype===3.U && io.cpu.req.bits.addr(OffsetBits-1,2)+1.U=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     io.cpu.resp.bits.respn:= dual_issue
     io.cpu.resp.bits.rdata(0):=line(word1)
