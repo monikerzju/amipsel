@@ -124,7 +124,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
        */
     }
   }
-  exNum := issueNum
+  exNum := Mux(dcacheStall, exNum, issueNum)
 
   val exInsts = RegInit(
     VecInit(
@@ -292,7 +292,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
    */
 
   val alu = Module(new ALU)
-  val wbNum = RegNext(exNum) // ?
+  val wbNum = RegInit(0.U(2.W))
+  wbNum := Mux(dcacheStall, wbNum, exNum)
 
   val mdu = Module(new MDU())
   val wbResult = RegInit(VecInit(Seq.fill(4)(0.U(len.W)))) //TODO:
@@ -352,6 +353,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
 
+  val resValid = Wire(Vec(4, Bool()))
+  val wbResValid = RegNext(resValid)
+
   // forward all the data here
   val fwdRsData = Wire(Vec(4, UInt(32.W)))
   val fwdRtData = Wire(Vec(4, UInt(32.W)))
@@ -368,11 +372,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
   for(i <- 0 until 3) {
     when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
       for(j <- 0 until 4) {
-        when(wbInsts(i).rd === exInsts(j).rs1) {
+        when(wbResValid(i) && wbInsts(i).rd === exInsts(j).rs1) {
           isRsFwd(j) := true.B
           rsFwdIndex(j) := i.U
         }
-        when(wbInsts(i).rd === exInsts(j).rs2) {
+        when(wbResValid(i) && wbInsts(i).rd === exInsts(j).rs2) {
           isRtFwd(j) := true.B
           rtFwdIndex(j) := i.U
         }
@@ -422,13 +426,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
     wbBrSlot(i) := stateFindSlot === 1.U && exInstsOrder(i) === 0.U
   }
 
-  val resValid = Wire(Vec(4, Bool()))
+
   val noDelaySlot = stateFindSlot === 0.U
   for(i <- 0 until 4) {
     resValid(i) := exInstsValid(i) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(i) || wbBrSlot(i))
 //    resValid(i) := exInstsValid(i) && (!reBranch || exBrSlot(i)) && (stateFindSlot === 0.U || wbBrSlot(i))
   }
-  val wbResValid = RegNext(resValid)
+
 
 
   // TODO: load fwd, store fwd, load - store fwd

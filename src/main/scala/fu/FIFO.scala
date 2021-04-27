@@ -12,7 +12,7 @@ class FIFOIO[T <: Data](size: Int, private val gen: T, readN: Int, enqN: Int) ex
   val din = Input(Vec(enqN, gen)) //TODO const should be altered
   val flush = Input(Bool())
   val sufficient = Output(Bool())
-  val items = Output(UInt(log2Ceil(readN).W)) // queue item num
+  val items = Output(UInt(log2Ceil(size).W)) // queue item num
   override def cloneType = (new FIFOIO(size, gen, readN, enqN)).asInstanceOf[this.type]
 }
 
@@ -22,8 +22,9 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
 
   def counter(incr: Bool, step: UInt): UInt = {
     val cntReg = RegInit(0.U(log2Ceil(size).W))
+    val cntNext = cntReg + step
     when(incr) {
-      cntReg := Mux(cntReg === (size - 1).U, 0.U, cntReg + step)
+      cntReg := Mux(cntNext >= size.U, cntNext - size.U, cntNext)
     }
     cntReg
   }

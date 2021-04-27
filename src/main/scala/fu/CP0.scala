@@ -125,7 +125,7 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   val int_en = (
     !statusr.asTypeOf(new StatusStruct).exl &&
     statusr.asTypeOf(new StatusStruct).ie.asBool &&
-    (Cat(io.except.hard_int_vec.asUInt | tim_int << 5.U, 
+    (Cat(io.except.hard_int_vec.asUInt | tim_int << 5.U,
     causer.asTypeOf(new CauseStruct).ips) & 
     (~ statusr.asTypeOf(new StatusStruct).im)).orR
   )
