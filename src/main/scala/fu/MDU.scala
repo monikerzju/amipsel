@@ -46,7 +46,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     )
   )
    */
-  val shamt = io.req.in2(4, 0)
+  val shamt = io.req.in1(4, 0)
   val lo = MuxLookup(
     io.req.op,
     io.req.in1 + io.req.in2,
@@ -65,8 +65,8 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
       aluAnd.U -> (io.req.in1 & io.req.in2),
       aluOr.U -> (io.req.in1 | io.req.in2),
       aluNor.U -> ~(io.req.in1 | io.req.in2),
-      aluSll.U -> (io.req.in2 >> shamt),
-      aluSrl.U -> (io.req.in2 << shamt),
+      aluSll.U -> (io.req.in2 << shamt),
+      aluSrl.U -> (io.req.in2 >> shamt),
       aluSra.U -> (io.req.in2.asSInt() >> shamt).asUInt(), // should be tested
       aluLui.U -> Cat(io.req.in2(15, 0), Fill(16, 0.U))  // TODO:check imm
     )
