@@ -748,19 +748,22 @@ class Backend extends Module with Config with InstType with MemAccessType {
           is(0.U) {
             debug_pc(0) := wbInsts(i).pc
             debug_wen(0) := wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U
-            debug_data(0) := wbResult(i)
+            debug_data(0) := MuxLookup(i.U, wbResult(0),
+            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(0) := wbInsts(i).rd
           }
           is(1.U) {
             debug_pc(1) := wbInsts(i).pc
             debug_wen(1) := wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U
-            debug_data(1) := wbResult(i)
+            debug_data(1) := MuxLookup(i.U, wbResult(0),
+            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(1) := wbInsts(i).rd
           }
           is(2.U) {
             debug_pc(2) := wbInsts(i).pc
             debug_wen(2) := wbResValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U
-            debug_data(2) := wbResult(i)
+            debug_data(2) := MuxLookup(i.U, wbResult(0),
+            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(2) := wbInsts(i).rd
           }
         }
