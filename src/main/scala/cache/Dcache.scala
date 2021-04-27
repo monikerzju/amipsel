@@ -158,7 +158,6 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             }
         }
         is(s_evict){
-            io.bar.req.valid:=true.B
             io.bar.req.wen:=true.B
             io.bar.req.data:=line.asUInt
             // FIXME: [ ] register for line?
@@ -167,10 +166,11 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                 state:=s_refill
                 io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
                 io.bar.req.wen:=false.B
+            }.otherwise {
+                io.bar.req.valid := true.B
             }
         }
         is(s_uncached){
-            io.bar.req.valid:=true.B
             io.bar.req.addr:=io.cpu.req.bits.addr
             io.bar.req.data:=io.cpu.req.bits.wdata
             io.bar.req.wen:=io.cpu.req.bits.wen
@@ -184,6 +184,8 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                     state := s_normal
                 }
                 // nothing to be done for write uncached 
+            }.otherwise {
+                io.bar.req.valid:=true.B
             }
         }
         is(s_wait){

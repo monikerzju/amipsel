@@ -142,8 +142,10 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   val r_arbiter = Module(new CacheArbiter(nclient, policy))
   val cache_wen = RegInit(VecInit(Seq.fill(nclient)(false.B)))
   val cache_valid = RegInit(VecInit(Seq.fill(nclient)(false.B)))
+  val addr = Reg(Vec(nclient, UInt(len.W)))
 
   for (i <- 0 until nclient) {
+    addr(i) := mapAddr(io.cache(i).req.addr)
     cache_wen(i) := io.cache(i).req.wen
     cache_valid(i) := io.cache(i).req.valid
     w_arbiter.io.valid(i) := cache_valid(i) && cache_wen(i)
@@ -174,7 +176,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   // AXI3 Read Channel
   val rtype = RegEnable(io.cache(rsel).req.mtype, ren)
   io.axi3.ar.bits.id    := 0.U
-  io.axi3.ar.bits.addr  := RegNext(mapAddr(io.cache(rsel).req.addr))
+  io.axi3.ar.bits.addr  := addr(rsel)
   io.axi3.ar.bits.len   := Mux(rtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
   io.axi3.ar.bits.size  := MuxLookup(
     rtype, "b10".U,
@@ -215,7 +217,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   // AXI3 Write Channel
   val wtype = RegEnable(io.cache(wsel).req.mtype, wen)
   io.axi3.aw.bits.id    := 0.U
-  io.axi3.aw.bits.addr  := RegNext(mapAddr(io.cache(wsel).req.addr))
+  io.axi3.aw.bits.addr  := addr(wsel)
   io.axi3.aw.bits.len   := Mux(wtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
   io.axi3.aw.bits.size  := MuxLookup(
     wtype, "b10".U,
