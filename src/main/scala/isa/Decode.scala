@@ -85,12 +85,12 @@ class Dec extends Module with InstType {
            
       BEQ        -> List(IBType  ,  Branch  ,  toALU.U,   BrEQ    ,  AReg   ,  BReg   ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IRT , IXX , SIMM),
       BNE        -> List(IBType  ,  Branch  ,  toALU.U,   BrNE    ,  AReg   ,  BReg   ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IRT , IXX , SIMM),
-      BGEZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrGE    ,  AReg   ,  BZero  ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
-      BGTZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrGT    ,  AReg   ,  BZero  ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
-      BLEZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrLE    ,  AReg   ,  BZero  ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
-      BLTZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrLT    ,  AReg   ,  BZero  ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
-      BGEZAL     -> List(IBType  ,  Branch  ,  toALU.U,   BrGE    ,  AReg   ,  BZero  ,  DReg   , aluSub.U   , MemXXX  ,  WBALU     , IRS , IXX , IRA , SIMM),
-      BLTZAL     -> List(IBType  ,  Branch  ,  toALU.U,   BrLT    ,  AReg   ,  BZero  ,  DReg   , aluSub.U   , MemXXX  ,  WBALU     , IRS , IXX , IRA , SIMM),
+      BGEZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrGE    ,  AReg   ,  BXXX   ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
+      BGTZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrGT    ,  AReg   ,  BXXX   ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
+      BLEZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrLE    ,  AReg   ,  BXXX   ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
+      BLTZ       -> List(IBType  ,  Branch  ,  toALU.U,   BrLT    ,  AReg   ,  BXXX   ,  DXXX   , aluSub.U   , MemXXX  ,  WBXXX     , IRS , IXX , IXX , SIMM),
+      BGEZAL     -> List(IBType  ,  Branch  ,  toALU.U,   BrGE    ,  AReg   ,  BXXX   ,  DReg   , aluSub.U   , MemXXX  ,  WBALU     , IRS , IXX , IRA , SIMM),
+      BLTZAL     -> List(IBType  ,  Branch  ,  toALU.U,   BrLT    ,  AReg   ,  BXXX   ,  DReg   , aluSub.U   , MemXXX  ,  WBALU     , IRS , IXX , IRA , SIMM),
            
       J          -> List(JType   ,  Jump    ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , JOffset),
       JAL        -> List(JType   ,  Jump    ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBPC      , IXX , IXX , IRA , JOffset),

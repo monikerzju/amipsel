@@ -442,11 +442,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
   aluSrcA := MuxLookup(exInsts(0).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U))
   aluSrcB := MuxLookup(exInsts(0).src_b, 0.U,
-    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U, MicroOpCtrl.BZero -> 3.U))
+    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U))
   alu.io.a := MuxLookup(aluSrcA, fwdRsData(0),
     Seq(0.U -> fwdRsData(0), 1.U -> exInsts(0).imm(10, 6), 2.U -> wbData(fwdAluSrcAIndex)))
   alu.io.b := MuxLookup(aluSrcB, fwdRtData(0),
-    Seq(0.U -> fwdRtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex), 3.U -> 0.U))
+    Seq(0.U -> fwdRtData(0), 1.U -> exInsts(0).imm, 2.U -> wbData(fwdAluSrcBIndex)))
   alu.io.aluOp := exInsts(0).alu_op
   wbResult(0) := alu.io.r
   val aluValid = exInstsValid(0) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(0) || wbBrSlot(0))
@@ -460,12 +460,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
   mduSrc1 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_a, 0.U,
     Seq(MicroOpCtrl.AReg -> 0.U, MicroOpCtrl.AShamt -> 1.U)))
   mduSrc2 := Mux(exInsts(1).alu_op > 15.U, 0.U, MuxLookup(exInsts(1).src_b, 0.U,
-    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U, MicroOpCtrl.BZero ->3.U)))
+    Seq(MicroOpCtrl.BReg -> 0.U, MicroOpCtrl.BImm -> 1.U)))
 
   mdu.io.req.in1 := MuxLookup(mduSrc1, fwdRsData(1),
     Seq(0.U -> fwdRsData(1), 1.U -> exInsts(1).imm(10, 6), 2.U -> wbData(fwdMduSrc1Index)))
   mdu.io.req.in2 := MuxLookup(mduSrc2, fwdRtData(1),
-    Seq(0.U -> fwdRtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index), 3.U -> 0.U))
+    Seq(0.U -> fwdRtData(1), 1.U -> exInsts(1).imm, 2.U -> wbData(fwdMduSrc2Index)))
   mdu.io.req.op := exInsts(1).alu_op
 
   val hi = RegInit(0.U(len.W))
