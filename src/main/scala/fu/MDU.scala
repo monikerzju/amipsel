@@ -155,7 +155,7 @@ class Div32 extends Module {
     rems(i)  := Mux(remsa(i).asSInt < 0.S, rems(i - 1) << 1.U, Cat(rems(i - 1)(32 - 2, 0), 1.U))
   }
 
-  io.vo := io.vi && step === num_nonz - 1.U
-  io.div_res := rems(7)(32 - 1, 0)
-  io.rem_res := rems(7)(32 * 2 - 1, 32) >> 1.U
+  io.vo      := RegNext(io.vi && step === num_nonz - 1.U)
+  io.div_res := RegNext(rems(7)(32 - 1, 0))
+  io.rem_res := RegNext(rems(7)(32 * 2 - 1, 32) >> 1.U)
 }
