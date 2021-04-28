@@ -503,7 +503,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
       dataLoadInSQIndex := i.U
     }
   }
-  dataLoadInSQ := Mux(loadAddr === storeAddr, fwdRtData(3), storeQueue.io.dout(dataLoadInSQIndex).wdata)
+  dataLoadInSQ := Mux(loadAddr === storeAddr && exInstsOrder(3) > exInstsOrder(2),
+    fwdRtData(3), storeQueue.io.dout(dataLoadInSQIndex).wdata)
 
   val storeValid = exInstsValid(3) &&
     (!reBranch && noDelaySlot || noDelaySlot && (exBrSlot(3) || exInstsOrder(3) < exInstsOrder(0)) || wbBrSlot(3))
