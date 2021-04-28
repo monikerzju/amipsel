@@ -60,7 +60,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits-1,2))
-    val word2=word1+1.U
+    // val word2=word1+1.U
     val index_refill=RegInit(0.U(IndexBits.W))
     data.io.wea:=false.B
     data.io.addra:=index_raw
@@ -101,7 +101,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     io.cpu.resp.bits.rdata(0):=line(word1)
     // io.cpu.resp.bits.rdata(1):=line(word2)
     val tag_evict_reg=RegInit(0.U(TagBits.W))
-    data.io.web:=reg_wen
+    data.io.web:=reg_wen && (state===s_normal || state===s_refill && io.bar.resp.valid)
     // FIXME: [ ] write miss?
     data.io.addrb:=index
     data.io.dinb:=writeline.asUInt
@@ -109,6 +109,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     io.bar.req.mtype:=Mux(mmio,io.cpu.req.bits.mtype,MEM_DWORD.U)
     val reg_rdata = RegInit(0.U(len.W))
     when(reg_wen){
+        // careful when write miss, web signaled the same cycle with valid, different from hit (1 cycle after valid) 
         writeline(word1):=wd
     }
     switch(state){
@@ -116,6 +117,11 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             when(!mmio&&io.cpu.req.valid){
                 when(meta.io.hit){
                     // nothing to be done, data on the way
+                    when(reg_wen){
+                        // inserted bubble
+                        reg_wen:=false.B
+                        io.cpu.resp.valid:=false.B
+                    }
                 }
                 .otherwise{
                     tag_refill:=tag_raw
