@@ -60,7 +60,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
     val tag_refill=RegInit(0.U(TagBits.W))
     val word1=RegNext(io.cpu.req.bits.addr(OffsetBits-1,2))
-    val word2=word1+1.U
+    // val word2=word1+1.U
     val index_refill=RegInit(0.U(IndexBits.W))
     data.io.wea:=false.B
     data.io.addra:=index_raw
@@ -92,7 +92,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     val wd=((mask & wdata)<<shift) | ((~(mask << shift)) & line(word1))
 
     io.cpu.req.ready:=io.cpu.resp.valid
-    val s_normal::s_evict::s_refill::s_uncached::s_wait::Nil=Enum(5)
+    val s_normal::s_evict::s_refill::s_uncached::Nil=Enum(4)
     val state=RegInit(s_normal)
     io.cpu.resp.valid:=io.bar.resp.valid||(state===s_normal && meta.io.hit)
     // val dual_issue=io.cpu.req.bits.mtype===3.U && word2=/=0.U
@@ -101,21 +101,33 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     io.cpu.resp.bits.rdata(0):=line(word1)
     // io.cpu.resp.bits.rdata(1):=line(word2)
     val tag_evict_reg=RegInit(0.U(TagBits.W))
-    data.io.web:=reg_wen
+    data.io.web:=reg_wen && (state===s_normal || state===s_refill && io.bar.resp.valid)
     // FIXME: [ ] write miss?
     data.io.addrb:=index
     data.io.dinb:=writeline.asUInt
     val mmio=io.cpu.req.bits.addr(31,29)==="b101".U // A000_0000-C000_0000
     io.bar.req.mtype:=Mux(mmio,io.cpu.req.bits.mtype,MEM_DWORD.U)
     val reg_rdata = RegInit(0.U(len.W))
+    val reg_wait = RegInit(false.B)
+    reg_wait:= false.B
     when(reg_wen){
+        // careful when write miss, web signaled the same cycle with valid, different from hit (1 cycle after valid) 
         writeline(word1):=wd
     }
     switch(state){
         is(s_normal){
+            when(reg_wait){
+                // recovered from read miss; valid is given a cycle ago 
+                io.cpu.resp.bits.rdata(0):=reg_rdata
+            }
             when(!mmio&&io.cpu.req.valid){
                 when(meta.io.hit){
                     // nothing to be done, data on the way
+                    when(reg_wen){
+                        // inserted bubble
+                        reg_wen:=false.B
+                        io.cpu.resp.valid:=false.B
+                    }
                 }
                 .otherwise{
                     tag_refill:=tag_raw
@@ -153,6 +165,10 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                 meta.io.update:=true.B
                 data.io.addra:=index_refill
                 data.io.wea:=true.B
+                when(!reg_wen){
+                    reg_wait :=true.B
+                    reg_rdata:=line(word1)
+                }
             }.otherwise {
                 io.bar.req.valid:=true.B
             }
@@ -176,21 +192,15 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             io.bar.req.wen:=io.cpu.req.bits.wen
 
             when(io.bar.resp.valid){
+                state:=s_normal
                 when(!reg_wen){
-                    state:=s_wait
+                    reg_wait:=true.B
                     reg_rdata:=io.bar.resp.data(31,0)
-                }
-                .otherwise{
-                    state := s_normal
                 }
                 // nothing to be done for write uncached 
             }.otherwise {
                 io.bar.req.valid:=true.B
             }
-        }
-        is(s_wait){
-            io.cpu.resp.bits.rdata(0):=reg_rdata
-            state:=s_normal
         }
     }
 }
