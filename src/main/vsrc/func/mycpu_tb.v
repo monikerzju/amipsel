@@ -193,7 +193,7 @@ assign two_bad = (
                     (sec && third &&
                         (
                             ((debug_wb_pc_1!==ref_wb_pc_0) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0)
-                             ||(debug_wb_rf_wdata_v_1!==ref_wb_rf_wdata_v_0))
+                             ||(debug_wb_rf_wdata_1!==ref_wb_rf_wdata_0))
                              ||
                              ((debug_wb_pc_2!==ref_wb_pc_1) || (debug_wb_rf_wnum_2!==ref_wb_rf_wnum_1)
                              ||(debug_wb_rf_wdata_2!==ref_wb_rf_wdata_1))
@@ -203,7 +203,13 @@ assign two_bad = (
             );
 wire one_bad;
 wire a, b, c;
-assign a = (debug_wb_pc_1!==ref_wb_pc_0);
+assign a = (
+                            ((debug_wb_pc_0!==ref_wb_pc_0) || (debug_wb_rf_wnum_0!==ref_wb_rf_wnum_0)
+                             ||(debug_wb_rf_wdata_0!==ref_wb_rf_wdata_0))
+                             ||
+                             ((debug_wb_pc_1!==ref_wb_pc_1) || (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_1)
+                             ||(debug_wb_rf_wdata_1!==ref_wb_rf_wdata_1))
+                        );
 assign b = (debug_wb_rf_wnum_1!==ref_wb_rf_wnum_0);
 assign c = (debug_wb_rf_wdata_1!==ref_wb_rf_wdata_0);
 assign one_bad = (
