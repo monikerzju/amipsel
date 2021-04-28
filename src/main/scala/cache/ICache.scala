@@ -81,10 +81,16 @@ class ICacheSimple extends Module with CacheParameters with Config with MemAcces
     val dual_issue=io.cpu.req.bits.mtype===3.U && io.cpu.req.bits.addr(OffsetBits-1,2)+1.U=/=0.U
     // io.cpu.resp.bits.respn:= Cat(dual_issue,!meta.io.hit)
     io.cpu.resp.bits.respn:= dual_issue
+    val reg_rdata=Reg(Vec(2,UInt(len.W)))
+    val reg_wait=RegInit(false.B)
+    reg_wait:=false.B
     io.cpu.resp.bits.rdata(0):=line(word1)
     io.cpu.resp.bits.rdata(1):=line(word2)
     // val checking= !out_of_service && io.cpu.req.valid
     when(state===s_normal){
+        when(reg_wait){
+            io.cpu.resp.bits.rdata:=reg_rdata
+        }
         when(io.cpu.req.valid){
             when(meta.io.hit){
                 // nothing to be done, data on the way
@@ -110,7 +116,9 @@ class ICacheSimple extends Module with CacheParameters with Config with MemAcces
             meta.io.update:=true.B
             data.io.addr:=index_refill
             data.io.we:=true.B
-            // inform_cpu_data_valid()
+            reg_wait :=true.B
+            reg_rdata(0):=line(word1)
+            reg_rdata(1):=line(word2)
         }.otherwise {
             io.bar.req.valid := true.B
         }
