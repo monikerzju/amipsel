@@ -113,12 +113,12 @@ class Div32 extends Module {
   val s_idle :: s_calc :: Nil = Enum(2)
   val state  = RegInit(s_idle)
   val nstate = WireDefault(s_idle)
-  val step   = RegInit(0.U(log2Ceil(32 / 8).W))
+  val step   = RegInit(0.U((log2Ceil(32 / 8) + 1).W))
   state := nstate
 
   val remr  = Reg(UInt((2 * 32).W))
-  val remsa = Wire(Vec(8, UInt((2 * 32).W)))
-  val rems  = Wire(Vec(8, UInt((2 * 32).W)))
+  val remsa = Wire(Vec(2, UInt((2 * 32).W)))
+  val rems  = Wire(Vec(2, UInt((2 * 32).W)))
 
   when (io.kill) {
     nstate := s_idle
@@ -127,9 +127,9 @@ class Div32 extends Module {
       nstate := Mux(io.vi && num_nonz === 1.U, s_calc, s_idle)
       remr := Cat(Fill(32, 0.U), io.in1)
     }.otherwise {
-      nstate := Mux(step === num_nonz - 1.U, s_idle, s_calc)
-      step := Mux(step === num_nonz - 1.U, 0.U, step + 1.U)
-      remr := rems(7)
+      nstate := Mux(step >> 2.U === num_nonz - 1.U, s_idle, s_calc)
+      step := Mux(step >> 2.U === num_nonz - 1.U, 0.U, step + 1.U)
+      remr := rems(1)
     }
   }
 
@@ -150,12 +150,12 @@ class Div32 extends Module {
   val true_rem = Mux(step === 0.U, io.in1 << 1.U, remr)
   remsa(0) := true_rem - io.in2
   rems(0)  := Mux(remsa(0).asSInt < 0.S, true_rem << 1.U, Cat(true_rem(32 - 2, 0), 1.U))
-  for (i <- 1 until 8) {
+  for (i <- 1 until 2) {
     remsa(i) := rems(i - 1) - io.in2
     rems(i)  := Mux(remsa(i).asSInt < 0.S, rems(i - 1) << 1.U, Cat(rems(i - 1)(32 - 2, 0), 1.U))
   }
 
-  io.vo      := RegNext(io.vi && step === num_nonz - 1.U)
-  io.div_res := RegNext(rems(7)(32 - 1, 0))
-  io.rem_res := RegNext(rems(7)(32 * 2 - 1, 32) >> 1.U)
+  io.vo      := RegNext(io.vi && step >> 2.U === num_nonz - 1.U)
+  io.div_res := RegNext(rems(1)(32 - 1, 0))
+  io.rem_res := RegNext(rems(1)(32 * 2 - 1, 32) >> 1.U)
 }

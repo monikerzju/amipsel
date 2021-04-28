@@ -11,6 +11,7 @@ trait Config {
   var backendIssueN: Int = 3    // 3
   // Cache
   var withRealCache: Boolean = false
+  var metaZeroLatency: Boolean = true
   // BPU
   var withBPU: Boolean = false 
   var BPUEntryN: Int = 512
