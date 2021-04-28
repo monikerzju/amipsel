@@ -404,19 +404,21 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
 
   val stateFindSlot = RegInit(0.U(2.W))
-  switch(stateFindSlot) {
-    is(0.U) {
-      when(reBranch && exIsBrFinal && !(wbReBranch && !wbIsBrFinal)) { // idle
-        stateFindSlot := 1.U
+  when(!dcacheStall) {
+    switch(stateFindSlot) {
+      is(0.U) {
+        when(reBranch && exIsBrFinal && !(wbReBranch && !wbIsBrFinal)) { // idle
+          stateFindSlot := 1.U
+        }
       }
-    }
-    is(1.U) {
-      when(exNum > 0.U) { // check whether delay slot is in ex stage
-        stateFindSlot := 2.U
+      is(1.U) {
+        when(exNum > 0.U) { // check whether delay slot is in ex stage
+          stateFindSlot := 2.U
+        }
       }
-    }
-    is(2.U) { // delay slot is find
-      stateFindSlot := 0.U
+      is(2.U) { // delay slot is find
+        stateFindSlot := 0.U
+      }
     }
   }
   val wbIsSlotCome = stateFindSlot === 2.U
@@ -642,7 +644,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
       }
     }
     is(true.B) {
-      when(!dcacheStall && wbNum > 0.U) {
+      when(!dcacheStall && wbNum > 0.U && stateFindSlot === 2.U) {
         waitSlot := false.B
         io.fb.bmfs.redirect_pc := pcSlot
         io.fb.bmfs.redirect_kill := true.B
