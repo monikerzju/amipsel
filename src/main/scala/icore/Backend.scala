@@ -58,6 +58,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   /**
    *  [---------- IS stage -----------]
    */
+
+  /*
   def isDataHazard(inst1: Mops, inst2: Mops): Bool = {
     // TODO: add regWrite or memRead signal
     inst1.rd =/= 0.U && (inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2)
@@ -87,9 +89,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
       )
   }
 
+   */
+
 
   val exNum = RegInit(0.U(2.W))
-  val issueNum = WireDefault(0.U(2.W))
+  val issueNum = Wire(UInt(2.W))
   issueQueue.io.deqStep := issueNum
   issueQueue.io.deqReq := !dcacheStall
   issueQueue.io.enqReq := io.fb.fmbs.instn =/= 0.U
@@ -99,6 +103,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
   issueInsts(1) := issueQueue.io.dout(1)
   issueInsts(2) := issueQueue.io.dout(2)
 
+  val issueArbiter = Module(new IssueArbiter(queueSize))
+  issueArbiter.io.queue_items := issueQueue.io.items
+  issueArbiter.io.insts_in := issueInsts
+  issueNum := issueArbiter.io.issue_num
+
+  /*
   // decide the true issue num
   val issueValid = WireDefault(VecInit(Seq.fill(4)(false.B)))
   // TODO: replace issueQueue.io.dout with issueInsts
@@ -124,6 +134,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
        */
     }
   }
+
+   */
   exNum := Mux(dcacheStall, exNum, issueNum)
 
   val exInsts = RegInit(
@@ -148,7 +160,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
       })
     )
   )
-//  val nop = Wire(new Mops)
+
   val nop = WireInit(
     (new Mops).Lit(
       _.rs1 -> 0.U,
@@ -178,8 +190,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
    */
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(4)(false.B)))
+  /*
   val issueFuValid = Wire(Vec(4, Bool()))
-
   for(i <- 0 until 4) {
     issueFuValid(i) := false.B
   }
@@ -188,13 +200,10 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val mduOccupy = Wire(Bool())
   aluOccupy := false.B
   mduOccupy := false.B
+   */
+
   when(!dcacheStall) {
     /*
-    for(i <- 0 until 4) {
-      exInstsValid(i) := false.B
-    }
-     */
-
     for(i <- 0 until backendIssueN) {
       when(issueValid(i)) {
         switch(issueInsts(i).alu_mdu_lsu) {
@@ -274,7 +283,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
       exInstsOrder(1) := 2.U
       issueFuValid(1) := true.B
     }
+
     exInstsValid := issueFuValid
+
+     */
+    exInstsValid := issueArbiter.io.issue_fu_valid
+    exInstsOrder := issueArbiter.io.insts_order
+    exInsts := issueArbiter.io.insts_out
   }
 
 
@@ -688,7 +703,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val dataFromDcacheExtend = Wire(UInt(32.W))
   // load mask
   dataFromDcacheExtend := dataFromDcache
-  switch(wbInsts(3).mem_width) {
+  switch(wbInsts(2).mem_width) {
     is(MicroOpCtrl.MemByte) {
       dataFromDcacheExtend := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0))
     }
