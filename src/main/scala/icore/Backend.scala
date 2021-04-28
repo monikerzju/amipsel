@@ -357,6 +357,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val wbResValid = RegNext(resValid)
 
   // forward all the data here
+  // assume I-type Inst replace rt with rd, and update rt = 0
   val fwdRsData = Wire(Vec(4, UInt(32.W)))
   val fwdRtData = Wire(Vec(4, UInt(32.W)))
   val isRsFwd = Wire(Vec(4, Bool()))
@@ -539,31 +540,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
 
 
-  // forwarding here?
-  // assume I-type Inst replace rt with rd, and update rt = 0
-  // TODO: forward mdu and lsu
-  /*
-  for(i <- 0 until 3) {
-    when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
-      when(wbInsts(i).rd === exInsts(0).rs1) {
-        aluSrcA := 2.U
-        fwdAluSrcAIndex := i.U
-      }
-      when(wbInsts(i).rd === exInsts(0).rs2) {
-        aluSrcB := 2.U
-        fwdAluSrcBIndex := i.U
-      }
-      when(wbInsts(i).rd === exInsts(1).rs1) {
-        mduSrc1 := 2.U
-        fwdMduSrc1Index := i.U
-      }
-      when(wbInsts(i).rd === exInsts(1).rs2) {
-        mduSrc2 := 2.U
-        fwdMduSrc2Index := i.U
-      }
-    }
-  }
-   */
 
 
 
@@ -586,23 +562,50 @@ class Backend extends Module with Config with InstType with MemAccessType {
           reBranch := true.B
         }
       }
+      is(MicroOpCtrl.BrGE) { // bgez
+        when(alu.io.r >= 0.U) {
+          reBranch := true.B
+          when(exInsts(0).write_src === MicroOpCtrl.WBALU) {
+            wbResult(0) := exInsts(0).pc + 8.U
+          }
+        }
+      }
+      is(MicroOpCtrl.BrGT) { // bgtz
+        when(alu.io.r > 0.U) {
+          reBranch := true.B
+        }
+      }
+      is(MicroOpCtrl.BrLE) { // blez
+        when(alu.io.r <= 0.U) {
+          reBranch := true.B
+        }
+      }
+      is(MicroOpCtrl.BrLT) { // bltz
+        when(alu.io.r < 0.U) {
+          reBranch := true.B
+          when(exInsts(0).write_src === MicroOpCtrl.WBALU) {
+            wbResult(0) := exInsts(0).pc + 8.U
+          }
+        }
+      }
     }
   }
-  wbReBranch := reBranch
+  wbReBranch := reBranch //TODO: dcacheStall?
 
   // process jump
-  // TODO: merge fwd together!!!!!!!!!!!
 
-  jumpPc := Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W))
-  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr
-    reBranch := true.B
+  jumpPc := Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)) // TODO: check jump(31, 28) == ds(31, 28)
+  when(exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr, jalr
     jumpPc := fwdRsData(0)
   }
-  when(exInsts(0).write_src === MicroOpCtrl.WBPC) {
-    wbResult(0) := exInsts(0).pc + 8.U
-  }
-  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.PCReg) { // jr, jalr
     reBranch := true.B
+  }
+  when(exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Jump) { // jal, j
+    reBranch := true.B
+  }
+  when(exInsts(0).write_src === MicroOpCtrl.WBPC) { // jal, jalr
+    wbResult(0) := exInsts(0).pc + 8.U
   }
 
 
