@@ -107,7 +107,7 @@ xpm_memory_tdpram #(
 );
 
 endmodule
-   """.stripMargin)
+""".stripMargin)
 }
 
 class DPBRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
@@ -205,7 +205,7 @@ xpm_memory_spram #(
 );
 
 endmodule
-   """.stripMargin)
+""".stripMargin)
 }
 
 class BRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {

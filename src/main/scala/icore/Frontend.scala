@@ -71,7 +71,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   }
   // for 0 cycle latency
   val delayed_redirect_kill = RegInit(false.B)
-  delayed_redirect_kill := Mux(!pc_gen.io.please_wait, false.B, 
+  delayed_redirect_kill := Mux(!icache_stall_req_a, false.B, 
     Mux(io.fb.bmfs.redirect_kill || RegNext(io.fb.bmfs.redirect_kill), true.B, delayed_redirect_kill)
   )
   decode_pc_low := Mux(io.fb.fmbs.please_wait, decode_pc_low, io.icache.req.bits.addr)
