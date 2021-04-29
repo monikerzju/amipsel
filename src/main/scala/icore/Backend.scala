@@ -8,21 +8,6 @@ import isa._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util.experimental.BoringUtils
 
-// class InstInfo extends Bundle with InstType with AluOpType with MDUOperation {
-//   val rs = UInt(5.W)
-//   val rt = UInt(5.W)
-//   val rd = UInt(5.W)
-//   val aluOp = UInt(aluOpWidth.W)
-//   val mduOp = UInt(SZ_MDU_OP.W)
-//   val imm = UInt(32.W)
-//   val fuDest = UInt(typeLen.W)
-//   val regWrite = Bool()
-//   val pc = UInt(32.W)
-//   val pcNext = UInt(32.W)
-//   val bType = UInt(32.W)
-//   val isBranch = Bool()
-// }
-
 trait InstType {
   val typeLen = 3
   val toALU = 0
@@ -499,15 +484,22 @@ class Backend extends Module with Config with InstType with MemAccessType {
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
   // lu execution
+  /*
   val sqSize = 5
   class StoreInfo extends MemReq {
   }
   val storeQueue = Module(new FIFO(sqSize, new StoreInfo, sqSize, 1))
+
+   */
   val loadValid = exInstsValid(2) &&
     (!reBranch && noDelaySlot || noDelaySlot && (exBrSlot(2) || exInstsOrder(2) < exInstsOrder(0)) || wbBrSlot(2))
+  val storeValid = exInstsValid(3) &&
+    (!reBranch && noDelaySlot || noDelaySlot && (exBrSlot(3) || exInstsOrder(3) < exInstsOrder(0)) || wbBrSlot(3))
   val loadAddr = fwdRsData(2) + exInsts(2).imm
   val storeAddr = Wire(UInt(32.W))
+  storeAddr :=  fwdRsData(3) + exInsts(3).imm
 
+  /*
   val isDataInSQ = Reg(Bool())
   val dataLoadInSQIndex = WireDefault(0.U(log2Ceil(sqSize).W))
   val dataLoadInSQ = RegInit(0.U(32.W))
@@ -521,9 +513,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
   dataLoadInSQ := Mux(loadAddr === storeAddr && exInstsOrder(3) > exInstsOrder(2),
     fwdRtData(3), storeQueue.io.dout(dataLoadInSQIndex).wdata)
 
-  val storeValid = exInstsValid(3) &&
-    (!reBranch && noDelaySlot || noDelaySlot && (exBrSlot(3) || exInstsOrder(3) < exInstsOrder(0)) || wbBrSlot(3))
-
   // su execution
   val canStore = Wire(Bool())
   val isStoreEnq = RegInit(false.B)
@@ -535,7 +524,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   storeQueue.io.enqReq := storeValid && !isStoreEnq
   storeQueue.io.deqReq := canStore
 
-  storeAddr :=  fwdRsData(3) + exInsts(3).imm
+
   storeQueue.io.din(0) := {
     val storeInfo = Wire(new StoreInfo)
     storeInfo.addr := storeAddr
@@ -547,13 +536,17 @@ class Backend extends Module with Config with InstType with MemAccessType {
     storeInfo
   }
 
-//  val storeValid = exInstsValid(3) && (!reBranch && noDelaySlot || noDelaySlot && exBrSlot(3) || wbBrSlot(3))
-  io.dcache.req.valid := loadValid || canStore // TODO: store not stall one cycle
+   */
+
+  /* io.dcache.req.valid := loadValid || canStore // TODO: store not stall one cycle */
+  io.dcache.req.valid := loadValid || storeValid
   io.dcache.req.bits.mtype := Mux(
     loadValid,
     exInsts(2).mem_width,
-    Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).mtype, exInsts(3).mem_width)
+    exInsts(3).mem_width
+    /* Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).mtype, exInsts(3).mem_width) */
   )
+  /*
   storeQueue.io.flush := false.B
   io.dcache.req.bits.wen := canStore
   io.dcache.req.bits.wdata := storeQueue.io.dout(0).wdata
@@ -563,6 +556,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
     Mux(storeQueue.io.items > 0.U, storeQueue.io.dout(0).addr, storeAddr)
   )
 
+   */
+
+  io.dcache.req.bits.wen := storeValid
+  io.dcache.req.bits.wdata := fwdRtData(3)
+  io.dcache.req.bits.addr := Mux(exInstsValid(2), loadAddr, storeAddr)
 
 
 
@@ -719,7 +717,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   }
 
   val luData = Wire(UInt(len.W))
-  luData := Mux(isDataInSQ, dataLoadInSQ, dataFromDcacheExtend)
+//  luData := Mux(isDataInSQ, dataLoadInSQ, dataFromDcacheExtend)
+  luData := dataFromDcacheExtend
 
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)

@@ -105,7 +105,8 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     // FIXME: [ ] write miss?
     data.io.addrb:=index
     data.io.dinb:=writeline.asUInt
-    val mmio=io.cpu.req.bits.addr(31,29)==="b101".U // A000_0000-C000_0000
+//    val mmio=io.cpu.req.bits.addr(31,29)==="b101".U // A000_0000-C000_0000
+    val mmio = true.B
     io.bar.req.mtype:=Mux(mmio,io.cpu.req.bits.mtype,MEM_DWORD.U)
     val reg_rdata = RegInit(0.U(len.W))
     val reg_wait = RegInit(false.B)

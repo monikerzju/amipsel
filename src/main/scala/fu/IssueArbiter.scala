@@ -16,16 +16,17 @@ class IAIO(private val iq_size: Int) extends Bundle with Config {
 }
 
 class IssueArbiter(private val iq_size: Int) extends Module with InstType with Config {
-  val io = IO(new IAIO(iq_size))
+
   def isDataHazard(inst1: Mops, inst2: Mops): Bool = {
-    // TODO: add regWrite or memRead signal
     inst1.rd =/= 0.U && (inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2)
   }
 
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {
     !isDataHazard(inst1, inst2) &&
-      (inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu ||
-        inst1.alu_mdu_lsu === toAMU.U && inst2.alu_mdu_lsu === toAMU.U) //TODO: 4 fu
+      (inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu &&
+        !(inst1.alu_mdu_lsu === toLU.U && inst2.alu_mdu_lsu === toSU.U ||
+          inst1.alu_mdu_lsu === toSU.U && inst2.alu_mdu_lsu === toLU.U) ||
+          inst1.alu_mdu_lsu === toAMU.U && inst2.alu_mdu_lsu === toAMU.U)
   }
 
   def isUglyCompatible(inst1: Mops, inst2: Mops, inst3: Mops): Bool = {
@@ -45,6 +46,7 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
         )
       )
   }
+  val io = IO(new IAIO(iq_size))
   // decide the true issue num
   val issue_valid = WireDefault(VecInit(Seq.fill(4)(false.B)))
   io.issue_num := 0.U
