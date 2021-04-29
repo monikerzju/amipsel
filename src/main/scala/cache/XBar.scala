@@ -182,9 +182,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     rtype, "b10".U,
     Seq(
       MEM_BYTE.U  -> "b00".U,
-      MEM_HALF.U  -> "b01".U,
-      MEM_WORD.U  -> "b10".U,
-      MEM_DWORD.U -> "b10".U
+      MEM_HALF.U  -> "b01".U
     )
   )
   io.axi3.ar.bits.burst := INCR.U
@@ -223,9 +221,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     wtype, "b10".U,
     Seq(
       MEM_BYTE.U  -> "b00".U,
-      MEM_HALF.U  -> "b01".U,
-      MEM_WORD.U  -> "b10".U,
-      MEM_DWORD.U -> "b10".U
+      MEM_HALF.U  -> "b01".U
     )
   )
   io.axi3.aw.bits.burst := INCR.U
@@ -256,7 +252,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     }
     is (ws_write) {
       io.axi3.w.valid := true.B
-      wptr := wptr + Mux(io.axi3.w.ready && wtype =/= MEM_DWORD.U, 1.U, 0.U)
+      wptr := wptr + Mux(io.axi3.w.ready && wtype === MEM_DWORD.U, 1.U, 0.U)
       next_wstate := Mux(io.axi3.w.bits.last.orR, ws_wait_valid, wstate)
     }
     is (ws_wait_valid) {
