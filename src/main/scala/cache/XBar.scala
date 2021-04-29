@@ -132,7 +132,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   assert(policy == "Seq" || policy == "RR")
 
   val rs_idle :: rs_wait_ready :: rs_receive :: rs_finish :: Nil = Enum(4)
-  val ws_idle :: ws_wait_ready :: ws_write :: ws_wait_valid :: Nil = Enum(4)
+  val ws_idle :: ws_wait_ready :: ws_write :: ws_wait_valid :: ws_finish :: Nil = Enum(5)
   val rstate = RegInit(rs_idle)
   val next_rstate = WireDefault(rstate)
   val wstate = RegInit(ws_idle)
@@ -169,7 +169,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   val wen = w_arbiter.io.en
   
   for (i <- 0 until nclient) {
-    io.cache(i).resp.valid := Mux(i.U === rsel, rstate === rs_finish, Mux(i.U === wsel, wstate === ws_wait_valid, false.B))
+    io.cache(i).resp.valid := Mux(i.U === rsel, rstate === rs_finish, Mux(i.U === wsel, wstate === ws_finish, false.B))
     io.cache(i).resp.data  := rbuff.getl()
   }
 
@@ -182,9 +182,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     rtype, "b10".U,
     Seq(
       MEM_BYTE.U  -> "b00".U,
-      MEM_HALF.U  -> "b01".U,
-      MEM_WORD.U  -> "b10".U,
-      MEM_DWORD.U -> "b10".U
+      MEM_HALF.U  -> "b01".U
     )
   )
   io.axi3.ar.bits.burst := INCR.U
@@ -223,9 +221,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     wtype, "b10".U,
     Seq(
       MEM_BYTE.U  -> "b00".U,
-      MEM_HALF.U  -> "b01".U,
-      MEM_WORD.U  -> "b10".U,
-      MEM_DWORD.U -> "b10".U
+      MEM_HALF.U  -> "b01".U
     )
   )
   io.axi3.aw.bits.burst := INCR.U
@@ -256,11 +252,14 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     }
     is (ws_write) {
       io.axi3.w.valid := true.B
-      wptr := wptr + Mux(io.axi3.w.ready && wtype =/= MEM_DWORD.U, 1.U, 0.U)
+      wptr := wptr + Mux(io.axi3.w.ready && wtype === MEM_DWORD.U, 1.U, 0.U)
       next_wstate := Mux(io.axi3.w.bits.last.orR, ws_wait_valid, wstate)
     }
     is (ws_wait_valid) {
-      next_wstate := Mux(io.axi3.b.valid, ws_idle, wstate)
+      next_wstate := Mux(io.axi3.b.valid, ws_finish, wstate)
+    }
+    is (ws_finish) {
+      next_wstate := ws_idle
     }
   }
 }
