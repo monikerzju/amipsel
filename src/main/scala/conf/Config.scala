@@ -9,7 +9,8 @@ trait Config {
   var statusVal: String = "b00000000010000000000000000000000"
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 3    // 3
-  var fuN : Int = 4
+  var fuN: Int = 4
+  val queueSize: Int = 20
   // Cache
   var withRealCache: Boolean = false
   var metaZeroLatency: Boolean = true
