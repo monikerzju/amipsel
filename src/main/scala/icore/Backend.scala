@@ -144,8 +144,15 @@ class Backend extends Module with Config with InstType with MemAccessType {
     exInsts      := issueArbiter.io.insts_out
     exIsRsFwd    := isRsFwd
     exIsRtFwd    := isRtFwd
-    exRsFwdIndex := exRsFwdIndex
-    exRtFwdIndex := exRtFwdIndex
+    exRsFwdIndex := rsFwdIndex
+    exRtFwdIndex := rtFwdIndex
+  }
+
+  when(stall_x) {
+    for(i <- 0 until 4) {
+      exIsRsFwd(i) := false.B
+      exIsRtFwd(i) := false.B
+    }
   }
 
   /*
@@ -166,7 +173,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   // forward all the data here
   // assume I-type Inst replace rt with rd, and update rt = 0
-  /*
+
   for(i <- 0 until 4) {
     isRsFwd(i) := false.B
     isRtFwd(i) := false.B
@@ -174,7 +181,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     rtFwdIndex(i) := 0.U
   }
   for(i <- 0 until 3) {
-    when(resValid(i) && issueArbiter.io.insts_out(i).write_dest === MicroOpCtrl.DReg && exInsts(i).rd =/= 0.U) {
+    when(resValid(i) && exInsts(i).write_dest === MicroOpCtrl.DReg && exInsts(i).rd =/= 0.U) {
       for(j <- 0 until 4) {
         when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs1) {
           isRsFwd(j) := true.B
@@ -188,7 +195,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
 
-   */
+  /*
   for(i <- 0 until 4) {
     isRsFwd(i) := false.B
     isRtFwd(i) := false.B
@@ -210,21 +217,25 @@ class Backend extends Module with Config with InstType with MemAccessType {
     }
   }
 
+   */
+
   for(i <- 0 until 4) {
     rsData(i) := regFile.io.rs_data_vec(2 * i)
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
+  /*
   for(i <- 0 until 4) {
     fwdRsData(i) := Mux(isRsFwd(i), wbData(rsFwdIndex(i)), rsData(i))
     fwdRtData(i) := Mux(isRtFwd(i), wbData(rtFwdIndex(i)), rtData(i))
   }
-  /*
+
+   */
+
   for(i <- 0 until 4) {
     fwdRsData(i) := Mux(exIsRsFwd(i), wbData(exRsFwdIndex(i)), rsData(i))
     fwdRtData(i) := Mux(exIsRtFwd(i), wbData(exRtFwdIndex(i)), rtData(i))
   }
 
-   */
 
   aluValid   := exInstsValid(0) && !kill_x && (!wfds || exInstsOrder(0) === 0.U)
   mduValid   := exInstsValid(1) && !kill_x && (!wfds || exInstsOrder(1) === 0.U) // if waiting for slot, must be the smallsest one
