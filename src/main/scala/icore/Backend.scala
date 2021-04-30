@@ -91,6 +91,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val kill_w       = io.fb.bmfs.redirect_kill
   val bubble_w     = stall_x
   val regFile      = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
+  // val cp0          = Module(new CP0)
   val wbData       = Wire(Vec(3, UInt(len.W)))
   val wbReBranch   = RegInit(false.B)
 
@@ -221,8 +222,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
     )
   )
   mdu.io.req.op := exInsts(1).alu_op
-  hi := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DHi || exInsts(1).write_dest === MicroOpCtrl.DHiLo), 
-    mdu.io.resp.hi, hi
+  hi := Mux(!bubble_w, 
+    MuxLookup(exInsts(1).write_dest, hi, Seq(
+      MicroOpCtrl.DHi -> mdu.io.resp.lo,
+      MicroOpCtrl.DHiLo -> mdu.io.resp.hi
+    )),
+    hi
   )
   lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo), 
     mdu.io.resp.lo, lo
