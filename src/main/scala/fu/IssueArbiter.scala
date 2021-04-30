@@ -23,10 +23,10 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
 
   def isRAW(inst1: Mops, inst2: Mops): Bool = {
     inst1.rd =/= 0.U && (inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2) ||
-      inst1.write_dest === MicroOpCtrl.DHiLo && inst2.write_src === MicroOpCtrl.AHi ||
-      inst1.write_dest === MicroOpCtrl.DHiLo && inst2.write_src === MicroOpCtrl.ALo ||
-      inst1.write_dest === MicroOpCtrl.DHi && inst2.write_src === MicroOpCtrl.AHi ||
-      inst1.write_dest === MicroOpCtrl.DLo && inst2.write_src === MicroOpCtrl.ALo
+      inst1.write_dest === MicroOpCtrl.DHiLo && inst2.src_a === MicroOpCtrl.AHi ||
+      inst1.write_dest === MicroOpCtrl.DHiLo && inst2.src_a === MicroOpCtrl.ALo ||
+      inst1.write_dest === MicroOpCtrl.DHi && inst2.src_a === MicroOpCtrl.AHi ||
+      inst1.write_dest === MicroOpCtrl.DLo && inst2.src_a === MicroOpCtrl.ALo
   }
 
   def isDataHazard(inst1: Mops, inst2: Mops): Bool = {
