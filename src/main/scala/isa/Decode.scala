@@ -102,8 +102,8 @@ class Dec extends Module with InstType {
            
       MFHI       -> List(F ,  PC4     ,  toAMU.U,   BrXXX   ,  AHi    ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBALU     , IXX , IXX , IRD , UIMM),
       MFLO       -> List(F ,  PC4     ,  toAMU.U,   BrXXX   ,  ALo    ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBALU     , IXX , IXX , IRD , UIMM),
-      MTHI       -> List(F ,  PC4     ,  toAMU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
-      MTLO       -> List(F ,  PC4     ,  toAMU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
+      MTHI       -> List(F ,  PC4     ,  toMDU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
+      MTLO       -> List(F ,  PC4     ,  toMDU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
            
       BREAK      -> List(F ,  Trap    ,  toAMU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
       SYSCALL    -> List(F ,  Trap    ,  toAMU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),

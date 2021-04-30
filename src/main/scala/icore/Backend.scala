@@ -42,24 +42,24 @@ class Backend extends Module with Config with InstType with MemAccessType {
     _.write_src -> MicroOpCtrl.WBALU,
     _.pc -> 0.U
   )
+  val alu          = Module(new ALU)
+  val mdu          = Module(new MDU)
 
   // Issue
   val issueNum     = Wire(UInt(2.W))
   val issueInsts   = Wire(Vec(3, new Mops))
   val issueQueue   = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   val issueArbiter = Module(new IssueArbiter(queueSize))
-  val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid
+  val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
   val kill_i       = io.fb.bmfs.redirect_kill
 
   // Ex
+  val stall_x      = stall_i
+  val kill_x       = kill_i
   val exNum        = RegInit(0.U(2.W))
   val exInsts      = RegInit(VecInit(Seq.fill(4)(nop)))
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(4)(0.U(2.W)))) else Reg(Vec(4, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(4)(false.B)))
-  val stall_x      = stall_i
-  val kill_x       = io.fb.bmfs.redirect_kill
-  val alu          = Module(new ALU)
-  val mdu          = Module(new MDU())
   val fwdRsData    = Wire(Vec(4, UInt(len.W)))
   val fwdRtData    = Wire(Vec(4, UInt(len.W)))
   val isRsFwd      = Wire(Vec(4, Bool()))
@@ -194,7 +194,9 @@ class Backend extends Module with Config with InstType with MemAccessType {
   // alu execution
   alu.io.a := MuxLookup(exInsts(0).src_a, fwdRsData(0),
     Seq(
-      MicroOpCtrl.AShamt -> exInsts(0).imm(10, 6)
+      MicroOpCtrl.AShamt -> exInsts(0).imm(10, 6),
+      MicroOpCtrl.AHi    -> hi,
+      MicroOpCtrl.ALo    -> lo
     )
   )
   alu.io.b := MuxLookup(exInsts(0).src_b, fwdRtData(0),
@@ -205,9 +207,13 @@ class Backend extends Module with Config with InstType with MemAccessType {
   alu.io.aluOp := exInsts(0).alu_op
 
   // mdu execution
+  mdu.io.req.valid := mduValid
+  mdu.io.kill      := kill_x
   mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, fwdRsData(1),
     Seq(
-      MicroOpCtrl.AShamt -> exInsts(1).imm(10, 6)
+      MicroOpCtrl.AShamt -> exInsts(1).imm(10, 6),
+      MicroOpCtrl.AHi    -> hi,
+      MicroOpCtrl.ALo    -> lo
     )
   )
   mdu.io.req.in2 := MuxLookup(exInsts(1).src_b, fwdRtData(1),

@@ -12,6 +12,7 @@ trait MDUOperation extends AluOpType {
 }
 
 class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
+  val valid = Input(Bool())
   val op    = Input(Bits(SZ_MDU_OP.W))
   val in1   = Input(Bits(width.W))
   val in2   = Input(Bits(width.W))
@@ -27,7 +28,7 @@ class MDUResp(width: Int = 32) extends Bundle {
 class MDUIO(width: Int = 32) extends Bundle {
   val req  = new MDUReq(width)
   val resp = new MDUResp(width)
-  // TODO ADD val kill = Input(Bool())
+  val kill = Input(Bool())
   override def cloneType = (new MDUIO(width)).asInstanceOf[this.type]
 }
 
@@ -36,11 +37,11 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
 
   val mul_res = io.req.in1.asSInt * io.req.in2.asSInt
   val mulu_res = io.req.in1.asUInt * io.req.in2.asUInt
-  val diving = io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U
+  val diving = (io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U) && io.req.valid
 
   val divider = Module(new Div32)
   divider.io.vi   := diving
-  divider.io.kill := false.B // TODO ADD io.kill
+  divider.io.kill := io.kill
   divider.io.in1  := io.req.in1
   divider.io.in2  := io.req.in2
   divider.io.sign := io.req.op === MDU_DIV.U
@@ -88,7 +89,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   io.resp.hi := hi
 
   io.resp.except := diving && io.req.in2.asUInt === 0.U
-  io.resp.valid  := divider.io.vo
+  io.resp.valid  := Mux(diving, divider.io.vo, true.B)
 }
 
 class Div32 extends Module {
@@ -124,7 +125,7 @@ class Div32 extends Module {
     nstate := s_idle
   }.otherwise {
     when (state === s_idle) {
-      nstate := Mux(io.vi && num_nonz === 1.U, s_calc, s_idle)
+      nstate := Mux(io.vi && num_nonz =/= 1.U, s_calc, s_idle)
       remr := Cat(Fill(32, 0.U), io.in1)
     }.otherwise {
       nstate := Mux(step >> 2.U === num_nonz - 1.U, s_idle, s_calc)
