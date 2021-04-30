@@ -311,15 +311,15 @@ begin
     else if(|go && !debug_end && `CONFREG_OPEN_TRACE)
     begin
         if (debug_wb_rf_wen_0) begin
-            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2d, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_0, debug_wb_rf_wnum_0, debug_wb_rf_wdata_v_0);
         end
         if (debug_wb_rf_wen_1) begin
-            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2d, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_1, debug_wb_rf_wnum_1, debug_wb_rf_wdata_v_1);
         end
         if (debug_wb_rf_wen_2) begin
-            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2d, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_v_2);
         end
         if (

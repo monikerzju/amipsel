@@ -24,10 +24,6 @@ class StoreInfo extends Bundle with Config {
 
 class Backend extends Module with Config with InstType with MemAccessType {
   val io = IO(new BackendIO)
-  
-  val dcacheStall = WireDefault(false.B)
-  dcacheStall := !io.dcache.resp.valid && io.dcache.req.valid
-  
 
   // Global
   val nop = (new Mops).Lit(
@@ -75,14 +71,16 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val reBranch     = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
   val brPC         = exInsts(0).pc + (exInsts(0).imm << 2.U)(len - 1, 0) + 4.U
-  val mduValid     = exInstsValid(1) && !kill_x // && if waiting for slot, must be the smallsest one
-  val loadValid    = exInstsValid(2) && !kill_x // && if waiting for slot, must be the smallsest one
-  val storeValid   = exInstsValid(3) && !kill_x // && if waiting for slot, must be the smallsest one
+  val aluValid     = Wire(Bool())
+  val mduValid     = Wire(Bool())
+  val loadValid    = Wire(Bool())
+  val storeValid   = Wire(Bool())
   val loadAddr     = fwdRsData(2) + exInsts(2).imm
   val storeAddr    = fwdRsData(3) + exInsts(3).imm  
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
 
   // WB
+  val wfds         = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
   val reBranchPC   = RegInit(startAddr.U(len.W))
   val hi           = RegInit(0.U(len.W))
   val lo           = RegInit(0.U(len.W))
@@ -95,7 +93,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val regFile      = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
   val wbData       = Wire(Vec(3, UInt(len.W)))
   val wbReBranch   = RegInit(false.B)
-  val wbIsBrFinal  = RegNext(exIsBrFinal)
 
   /**
    *  [---------- IS stage -----------]
@@ -189,6 +186,11 @@ class Backend extends Module with Config with InstType with MemAccessType {
     fwdRtData(i) := Mux(isRtFwd(i), wbData(rtFwdIndex(i)), rtData(i))
   }
 
+  aluValid   := exInstsValid(0) && !kill_x && (!wfds || exInstsOrder(0) === 0.U)
+  mduValid   := exInstsValid(1) && !kill_x && (!wfds || exInstsOrder(1) === 0.U) // if waiting for slot, must be the smallsest one
+  loadValid  := exInstsValid(2) && !kill_x && (!wfds || exInstsOrder(2) === 0.U) // if waiting for slot, must be the smallsest one
+  storeValid := exInstsValid(3) && !kill_x && (!wfds || exInstsOrder(3) === 0.U) // if waiting for slot, must be the smallsest one
+
   // alu execution
   alu.io.a := MuxLookup(exInsts(0).src_a, fwdRsData(0),
     Seq(
@@ -247,10 +249,10 @@ class Backend extends Module with Config with InstType with MemAccessType {
       reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U,
         Seq(
           MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
-          MicroOpCtrl.BrGE -> (alu.io.r >= 0.U),
-          MicroOpCtrl.BrGT -> (alu.io.r > 0.U),
-          MicroOpCtrl.BrLE -> (alu.io.r <= 0.U),
-          MicroOpCtrl.BrLT -> (alu.io.r < 0.U)
+          MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
+          MicroOpCtrl.BrGT -> (alu.io.a.asSInt > 0.S),
+          MicroOpCtrl.BrLE -> (alu.io.a.asSInt <= 0.S),
+          MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
     }.elsewhen (exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump) {
@@ -282,18 +284,34 @@ class Backend extends Module with Config with InstType with MemAccessType {
   wbData(1) := wbResult(1)
   wbData(2) := luData
 
-  for(i <- 0 until 3) {
-    when (kill_w || bubble_w) {
+  when (!bubble_w) {
+    when (aluValid && exInstsValid(0) && exIsBrFinal && reBranch) {
+      wfds := true.B
+    }.elsewhen(exInstsValid.asUInt.orR) {
+      wfds := false.B
+    }
+  }
+
+  when (kill_w) {
+    for(i <- 0 until 3) {
       wbInstsValid(i) := false.B
-      wbReBranch      := false.B
-    }.otherwise {
-      wbInstsValid(i) := exInstsValid(i)
+    }
+    wbReBranch := false.B
+  }.elsewhen (bubble_w) {
+    for(i <- 0 until 3) {
+      wbInstsValid(i) := false.B
+    }
+  }.otherwise {
+    wbInstsValid(0) := aluValid
+    wbInstsValid(1) := mduValid
+    wbInstsValid(2) := loadValid
+    when (!wfds) {
       reBranchPC := Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
       wbReBranch := reBranch
     }
   }
 
-  io.fb.bmfs.redirect_kill := wbReBranch
+  io.fb.bmfs.redirect_kill := wbReBranch && !wfds
   io.fb.bmfs.redirect_pc   := reBranchPC
 
   for(i <- 0 until 3) {
