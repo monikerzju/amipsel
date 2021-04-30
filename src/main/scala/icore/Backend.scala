@@ -22,11 +22,12 @@ class StoreInfo extends Bundle with Config {
   val data = UInt(len.W)
 }
 
-class Backend extends Module with Config with InstType with MemAccessType {
+class Backend extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
   // Global
   val nop = (new Mops).Lit(
+    _.illegal -> false.B,
     _.rs1 -> 0.U,
     _.rs2 -> 0.U,
     _.rd -> 0.U,
@@ -282,7 +283,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   wbResult(1) := mdu.io.resp.lo
 
   // handle load-inst separately
-  val dataFromDcache = io.dcache.resp.bits.rdata(0)
+  val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
+  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
   val luData = WireDefault(dataFromDcache)
   switch(wbInsts(2).mem_width) {
     is(MicroOpCtrl.MemByte)  { luData := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0)) }
