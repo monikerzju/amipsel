@@ -80,7 +80,6 @@ class Backend extends Module with Config with InstType with MemAccessType with C
   val mduValid     = Wire(Bool())
   val loadValid    = Wire(Bool())
   val storeValid   = Wire(Bool())
-  val resValid     = Wire(Vec(4, Bool()))
   val loadAddr     = fwdRsData(2) + exInsts(2).imm
   val storeAddr    = fwdRsData(3) + exInsts(3).imm  
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
@@ -125,6 +124,27 @@ class Backend extends Module with Config with InstType with MemAccessType with C
   issueArbiter.io.insts_in    := issueInsts
   issueNum                    := issueArbiter.io.issue_num
 
+  for(i <- 0 until 4) {
+    isRsFwd(i) := false.B
+    isRtFwd(i) := false.B
+    rsFwdIndex(i) := 0.U
+    rtFwdIndex(i) := 0.U
+  }
+  for(i <- 0 until 3) {
+    when(exInstsValid(i) && exInsts(i).write_dest === MicroOpCtrl.DReg && exInsts(i).rd =/= 0.U) {
+      for(j <- 0 until 4) {
+        when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs1) {
+          isRsFwd(j) := true.B
+          rsFwdIndex(j) := i.U
+        }
+        when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs2) {
+          isRtFwd(j) := true.B
+          rtFwdIndex(j) := i.U
+        }
+      }
+    }
+  }
+
   /**
    *  [---------- EX stage -----------]
    */ 
@@ -144,18 +164,14 @@ class Backend extends Module with Config with InstType with MemAccessType with C
     exInstsOrder := issueArbiter.io.insts_order
     exInstsValid := issueArbiter.io.issue_fu_valid
     exInsts      := issueArbiter.io.insts_out
-    exIsRsFwd    := isRsFwd
-    exIsRtFwd    := isRtFwd
-    exRsFwdIndex := rsFwdIndex
-    exRtFwdIndex := rtFwdIndex
   }
 
-  when(stall_x) {
-    for(i <- 0 until 4) {
-      exIsRsFwd(i) := false.B
-      exIsRtFwd(i) := false.B
-    }
+  for (i <- 0 until 4) {
+    exIsRsFwd(i) := isRsFwd(i) && !stall_x
+    exIsRtFwd(i) := isRtFwd(i) && !stall_x
   }
+  exRsFwdIndex := rsFwdIndex
+  exRtFwdIndex := rtFwdIndex
 
   /*
     read port
@@ -175,63 +191,10 @@ class Backend extends Module with Config with InstType with MemAccessType with C
 
   // forward all the data here
   // assume I-type Inst replace rt with rd, and update rt = 0
-
-  for(i <- 0 until 4) {
-    isRsFwd(i) := false.B
-    isRtFwd(i) := false.B
-    rsFwdIndex(i) := 0.U
-    rtFwdIndex(i) := 0.U
-  }
-  for(i <- 0 until 3) {
-    when(resValid(i) && exInsts(i).write_dest === MicroOpCtrl.DReg && exInsts(i).rd =/= 0.U) {
-      for(j <- 0 until 4) {
-        when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs1) {
-          isRsFwd(j) := true.B
-          rsFwdIndex(j) := i.U
-        }
-        when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs2) {
-          isRtFwd(j) := true.B
-          rtFwdIndex(j) := i.U
-        }
-      }
-    }
-  }
-
-  /*
-  for(i <- 0 until 4) {
-    isRsFwd(i) := false.B
-    isRtFwd(i) := false.B
-    rsFwdIndex(i) := 0.U
-    rtFwdIndex(i) := 0.U
-  }
-  for(i <- 0 until 3) {
-    when(wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U) {
-      for(j <- 0 until 4) {
-        when(wbInsts(i).rd === exInsts(j).rs1) {
-          isRsFwd(j) := true.B
-          rsFwdIndex(j) := i.U
-        }
-        when(wbInsts(i).rd === exInsts(j).rs2) {
-          isRtFwd(j) := true.B
-          rtFwdIndex(j) := i.U
-        }
-      }
-    }
-  }
-
-   */
-
   for(i <- 0 until 4) {
     rsData(i) := regFile.io.rs_data_vec(2 * i)
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
-  /*
-  for(i <- 0 until 4) {
-    fwdRsData(i) := Mux(isRsFwd(i), wbData(rsFwdIndex(i)), rsData(i))
-    fwdRtData(i) := Mux(isRtFwd(i), wbData(rtFwdIndex(i)), rtData(i))
-  }
-
-   */
 
   for(i <- 0 until 4) {
     fwdRsData(i) := Mux(exIsRsFwd(i), wbData(exRsFwdIndex(i)), rsData(i))
@@ -243,10 +206,6 @@ class Backend extends Module with Config with InstType with MemAccessType with C
   mduValid   := exInstsValid(1) && !kill_x && (!wfds || exInstsOrder(1) === 0.U) // if waiting for slot, must be the smallsest one
   loadValid  := exInstsValid(2) && !kill_x && (!wfds || exInstsOrder(2) === 0.U) // if waiting for slot, must be the smallsest one
   storeValid := exInstsValid(3) && !kill_x && (!wfds || exInstsOrder(3) === 0.U) // if waiting for slot, must be the smallsest one
-  resValid(0) := aluValid
-  resValid(1) := mduValid
-  resValid(2) := loadValid
-  resValid(3) := storeValid
 
   // alu execution
   alu.io.a := MuxLookup(exInsts(0).src_a, fwdRsData(0),
@@ -386,33 +345,6 @@ class Backend extends Module with Config with InstType with MemAccessType with C
     regFile.io.rd_addr_vec(i) := wbInsts(i).rd
     regFile.io.rd_data_vec(i) := wbData(i)
   }
-  /*
-  for(i <- 0 until 3) {
-    when(wbInstsValid(i)) {
-      switch(wbInstsOrder(i)) {
-        is(0.U) {
-          regFile.io.wen_vec(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg
-          regFile.io.rd_addr_vec(0) := wbInsts(i).rd
-          regFile.io.rd_data_vec(0) := MuxLookup(i.U, wbResult(0),
-            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
-        }
-        is(1.U) {
-          regFile.io.wen_vec(1) := wbInsts(i).write_dest === MicroOpCtrl.DReg
-          regFile.io.rd_addr_vec(1) := wbInsts(i).rd
-          regFile.io.rd_data_vec(1) := MuxLookup(i.U, wbResult(0),
-            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
-        }
-        is(2.U) {
-          regFile.io.wen_vec(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg
-          regFile.io.rd_addr_vec(2) := wbInsts(i).rd
-          regFile.io.rd_data_vec(2) := MuxLookup(i.U, wbResult(0),
-            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
-        }
-      }
-    }
-  }
-
-   */
   
   // difftest
   if (diffTestV) {
