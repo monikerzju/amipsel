@@ -3,6 +3,8 @@ package fu
 import chisel3._
 import chisel3.util._
 
+import conf.Config
+
 trait MDUOperation extends AluOpType {
   val SZ_MDU_OP = aluOpWidth
   val MDU_MUL  = 16
@@ -28,7 +30,6 @@ class MDUResp(width: Int = 32) extends Bundle {
 class MDUIO(width: Int = 32) extends Bundle {
   val req  = new MDUReq(width)
   val resp = new MDUResp(width)
-  val kill = Input(Bool())
   override def cloneType = (new MDUIO(width)).asInstanceOf[this.type]
 }
 
@@ -40,11 +41,11 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   val diving = (io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U) && io.req.valid
 
   val divider = Module(new Div32)
+  val sign1   = io.req.in1(width - 1)
+  val sign2   = io.req.in2(width - 1)
   divider.io.vi   := diving
-  divider.io.kill := io.kill
-  divider.io.in1  := io.req.in1
-  divider.io.in2  := io.req.in2
-  divider.io.sign := io.req.op === MDU_DIV.U
+  divider.io.in1  := Mux(io.req.op === MDU_DIV.U && sign1.asBool, ((~io.req.in1) + 1.U), io.req.in1)
+  divider.io.in2  := Mux(io.req.op === MDU_DIV.U && sign2.asBool, ((~io.req.in2) + 1.U), io.req.in2)
 
   val shamt = io.req.in1(4, 0)
   val lo = Mux(
@@ -53,6 +54,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
       io.req.op,
       divider.io.div_res,
       Seq(
+        MDU_DIV.U  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res) + 1.U)),
         MDU_MUL.U  -> mul_res(31, 0).asUInt,
         MDU_MULU.U -> mulu_res(31, 0)
       )
@@ -80,6 +82,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     io.req.op,
     divider.io.rem_res,
     Seq(
+      MDU_DIV.U  -> Mux(sign1 === 0.U, divider.io.rem_res, ((~divider.io.rem_res) + 1.U)),
       MDU_MULU.U -> mulu_res(2 * width - 1, width),
       MDU_MUL.U  -> mul_res(2 * width - 1, width)
     )
@@ -92,13 +95,11 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   io.resp.valid  := Mux(diving, divider.io.vo, true.B)
 }
 
-class Div32 extends Module {
+class Div32 extends Module with Config {
   val io = IO(new Bundle {
     val vi      = Input(Bool())
-    val sign    = Input(Bool())
     val in1     = Input(UInt(32.W))
     val in2     = Input(UInt(32.W))
-    val kill    = Input(Bool())
     val vo      = Output(Bool())
     val div_res = Output(UInt(32.W))
     val rem_res = Output(UInt(32.W))
@@ -111,27 +112,28 @@ class Div32 extends Module {
 
   val isz = Wire(Vec(32 / 8 - 1, Bool()))
   val num_nonz = Wire(UInt(log2Ceil(32 / 8 + 1).W))
-  val s_idle :: s_calc :: Nil = Enum(2)
+  val s_idle :: s_calc :: s_fin :: Nil = Enum(3)
   val state  = RegInit(s_idle)
   val nstate = WireDefault(s_idle)
-  val step   = RegInit(0.U((log2Ceil(32 / 8) + 1).W))
+  val step   = RegInit(0.U((log2Ceil(32 / 2) + 1).W))
   state := nstate
 
   val remr  = Reg(UInt((2 * 32).W))
-  val remsa = Wire(Vec(2, UInt((2 * 32).W)))
   val rems  = Wire(Vec(2, UInt((2 * 32).W)))
 
-  when (io.kill) {
-    nstate := s_idle
-  }.otherwise {
-    when (state === s_idle) {
-      nstate := Mux(io.vi && num_nonz =/= 1.U, s_calc, s_idle)
-      remr := Cat(Fill(32, 0.U), io.in1)
-    }.otherwise {
-      nstate := Mux(step >> 2.U === num_nonz - 1.U, s_idle, s_calc)
-      step := Mux(step >> 2.U === num_nonz - 1.U, 0.U, step + 1.U)
+  when (state === s_idle) {
+    nstate := Mux(io.vi, s_calc, s_idle)
+    when (nstate === s_calc) {
+      step := step + 1.U
       remr := rems(1)
     }
+  }.elsewhen(state === s_calc) {
+    nstate := Mux(step === 4.U * num_nonz - 1.U, s_fin, s_calc)
+    step := step + 1.U
+    remr := rems(1)
+  }.otherwise {
+    step := 0.U
+    nstate := s_idle
   }
 
   for (i <- 32 / 8 - 1 to 1 by -1) {
@@ -148,15 +150,20 @@ class Div32 extends Module {
     4.U
   )
 
-  val true_rem = Mux(step === 0.U, io.in1 << 1.U, remr)
-  remsa(0) := true_rem - io.in2
-  rems(0)  := Mux(remsa(0).asSInt < 0.S, true_rem << 1.U, Cat(true_rem(32 - 2, 0), 1.U))
+  val true_rem = Wire(UInt((2 * 32).W))
+  true_rem := Mux(step === 0.U, io.in1 << (1.U + 8.U * (4.U - num_nonz)), remr)
+  rems(0)  := Mux(true_rem(63, 32) < io.in2, 
+    true_rem << 1.U, 
+    Cat((true_rem(63, 32) - io.in2)(30, 0), true_rem(31, 0), 1.U)
+  )
   for (i <- 1 until 2) {
-    remsa(i) := rems(i - 1) - io.in2
-    rems(i)  := Mux(remsa(i).asSInt < 0.S, rems(i - 1) << 1.U, Cat(rems(i - 1)(32 - 2, 0), 1.U))
+    rems(i)  := Mux(rems(i - 1)(63, 32) < io.in2, 
+      rems(i - 1) << 1.U, 
+      Cat((rems(i - 1)(63, 32) - io.in2)(30, 0), rems(i - 1)(31, 0), 1.U)
+    )
   }
 
-  io.vo      := RegNext(io.vi && step >> 2.U === num_nonz - 1.U)
+  io.vo      := state === s_fin
   io.div_res := RegNext(rems(1)(32 - 1, 0))
   io.rem_res := RegNext(rems(1)(32 * 2 - 1, 32) >> 1.U)
 }

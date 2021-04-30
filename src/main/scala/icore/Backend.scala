@@ -113,7 +113,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc === MicroOpCtrl.PCReg || 
                                      issueInsts(0).next_pc === MicroOpCtrl.Jump ||
                                      issueInsts(0).next_pc === MicroOpCtrl.Branch,
-                                 Mux(issueQueue.io.items === 3.U, 2.U, issueQueue.io.items),
+                                 Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items),
                                  issueQueue.io.items)
   issueArbiter.io.insts_in    := issueInsts
   issueNum                    := issueArbiter.io.issue_num
@@ -208,7 +208,6 @@ class Backend extends Module with Config with InstType with MemAccessType {
 
   // mdu execution
   mdu.io.req.valid := mduValid
-  mdu.io.kill      := kill_x
   mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, fwdRsData(1),
     Seq(
       MicroOpCtrl.AShamt -> exInsts(1).imm(10, 6),

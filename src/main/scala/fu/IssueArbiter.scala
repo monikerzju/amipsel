@@ -3,7 +3,7 @@ package fu
 import chisel3._
 import chisel3.util._
 import conf._
-import isa.Mops
+import isa.{MicroOpCtrl, Mops}
 import icore.InstType
 
 class IAIO(private val iq_size: Int) extends Bundle with Config {
@@ -17,8 +17,20 @@ class IAIO(private val iq_size: Int) extends Bundle with Config {
 
 class IssueArbiter(private val iq_size: Int) extends Module with InstType with Config {
 
+  def isWAW(inst1: Mops, inst2: Mops): Bool = {
+    inst1.rd =/= 0.U && inst1.rd === inst2.rd
+  }
+
+  def isRAW(inst1: Mops, inst2: Mops): Bool = {
+    inst1.rd =/= 0.U && (inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2) ||
+      inst1.write_dest === MicroOpCtrl.DHiLo && inst2.write_src === MicroOpCtrl.AHi ||
+      inst1.write_dest === MicroOpCtrl.DHiLo && inst2.write_src === MicroOpCtrl.ALo ||
+      inst1.write_dest === MicroOpCtrl.DHi && inst2.write_src === MicroOpCtrl.AHi ||
+      inst1.write_dest === MicroOpCtrl.DLo && inst2.write_src === MicroOpCtrl.ALo
+  }
+
   def isDataHazard(inst1: Mops, inst2: Mops): Bool = {
-    inst1.rd =/= 0.U && (inst1.rd === inst2.rs1 || inst1.rd === inst2.rs2)
+    isRAW(inst1, inst2) || isWAW(inst1, inst2)
   }
 
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {

@@ -125,9 +125,9 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   val int_en = (
     !statusr.asTypeOf(new StatusStruct).exl &&
     statusr.asTypeOf(new StatusStruct).ie.asBool &&
-    (Cat(io.except.hard_int_vec.asUInt | tim_int << 5.U,
+    (Cat(io.except.hard_int_vec.asUInt | (tim_int << 5.U).asUInt,
     causer.asTypeOf(new CauseStruct).ips) & 
-    (~ statusr.asTypeOf(new StatusStruct).im)).orR
+    (~statusr.asTypeOf(new StatusStruct).im).asUInt).orR
   )
   val real_except_vec = Vec(SZ_EXC_CODE, Bool())
   for (i <- 0 until SZ_EXC_CODE) {
@@ -172,11 +172,11 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   }.elsewhen (io.ftc.wen) {
     switch (io.ftc.code) {
       // BadVAddr is unwritable
-      is (Count.U)    { countr := Cat(io.ftc.din, 0.U(1.W))                                      }
-      is (Status.U)   { statusr := (statusr & (~StatusWMask.U)) | (io.ftc.din & StatusWMask.U)   }
-      is (Cause.U)    { io.ftc.dout := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))       }
-      is (EPC.U)      { epcr := io.ftc.din                                                       }
-      is (Compare.U)  { comparer := io.ftc.din                                                   }
+      is (Count.U)    { countr := Cat(io.ftc.din, 0.U(1.W))                                           }
+      is (Status.U)   { statusr := (statusr & (~StatusWMask.U).asUInt) | (io.ftc.din & StatusWMask.U) }
+      is (Cause.U)    { io.ftc.dout := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))            }
+      is (EPC.U)      { epcr := io.ftc.din                                                            }
+      is (Compare.U)  { comparer := io.ftc.din                                                        }
     }
   }
 }
