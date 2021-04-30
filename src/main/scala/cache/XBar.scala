@@ -215,7 +215,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   // AXI3 Write Channel
   val wtype = RegEnable(io.cache(wsel).req.mtype, wen)
   io.axi3.aw.bits.id    := 0.U
-  io.axi3.aw.bits.addr  := addr(wsel)
+  io.axi3.aw.bits.addr  := addr(wsel) & "hffff_fffc".U
   io.axi3.aw.bits.len   := Mux(wtype === MEM_DWORD.U, (bit_cacheline / 32 - 1).U, 0.U)
   io.axi3.aw.bits.size  := MuxLookup(
     wtype, "b10".U,
@@ -230,12 +230,19 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   io.axi3.aw.bits.prot  := 0.U
   io.axi3.aw.valid      := false.B
   io.axi3.w.bits.id     := 0.U
-  io.axi3.w.bits.data   := wbuff << (wptr << 5.U)
+  io.axi3.w.bits.data   := MuxLookup(
+    wtype,
+    wbuff << (wptr << 5.U),
+    Seq(
+      MEM_BYTE.U  -> (wbuff << (addr(wsel)(1, 0) << 3.U)),
+      MEM_HALF.U  -> (wbuff << (addr(wsel)(1, 0) << 3.U))
+    )
+  )
   io.axi3.w.bits.strb   := MuxLookup(
     wtype, "b1111".U,
     Seq(
-      MEM_BYTE.U ->"b0001".U,
-      MEM_HALF.U ->"b0011".U
+      MEM_BYTE.U -> ("b0001".U << addr(wsel)(1, 0)),
+      MEM_HALF.U -> ("b0011".U << addr(wsel)(1, 0))
     )
   )
   io.axi3.w.bits.last   := wtype =/= MEM_DWORD.U || wptr === (bit_cacheline / 32 - 1).U
