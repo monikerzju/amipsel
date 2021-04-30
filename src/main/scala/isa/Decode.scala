@@ -8,7 +8,7 @@ import MicroOpCtrl._
 import icore.InstType
 
 class Mops extends Bundle with Config with InstType {
-  // TODO ADD val illegal       = Bool()
+  val illegal       = Bool()
   val next_pc       = UInt(SZ_NEXT_PC.W)
   val alu_mdu_lsu   = UInt(typeLen.W)
   val branch_type   = UInt(SZ_BR_TYPE.W)
@@ -105,8 +105,8 @@ class Dec extends Module with InstType {
       MTHI       -> List(F ,  PC4     ,  toMDU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
       MTLO       -> List(F ,  PC4     ,  toMDU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
            
-      BREAK      -> List(F ,  Trap    ,  toAMU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
-      SYSCALL    -> List(F ,  Trap    ,  toAMU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
+      BREAK      -> List(F ,  Trap    ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
+      SYSCALL    -> List(F ,  Trap    ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
            
       LB         -> List(F ,  PC4     ,  toLU.U ,   BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd.U   , MemByte ,  WBMEM     , IRS , IXX , IRT , SIMM),
       LBU        -> List(F ,  PC4     ,  toLU.U ,   BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd.U   , MemByteU,  WBMEM     , IRS , IXX , IRT , SIMM),
@@ -117,12 +117,12 @@ class Dec extends Module with InstType {
       SH         -> List(F ,  PC4     ,  toSU.U ,   BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd.U   , MemHalf ,  WBXXX     , IRS , IRT , IXX , SIMM),
       SW         -> List(F ,  PC4     ,  toSU.U ,   BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd.U   , MemWord ,  WBXXX     , IRS , IRT , IXX , SIMM),
            
-      ERET       -> List(F ,  Ret     ,  toAMU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
-      MFC0       -> List(F ,  PC4     ,  toAMU.U,   BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBReg     , IRT , IXX , IRT , UIMM),
-      MTC0       -> List(F ,  PCSelf  ,  toAMU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IXX , IRT , IRD , UIMM)
+      ERET       -> List(F ,  Ret     ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
+      MFC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBReg     , IRT , IXX , IRT , UIMM),
+      MTC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IXX , IRT , IRD , UIMM)
   )) 
  
-  // TODO ADD io.mops.illegal       := control_signal(0)
+  io.mops.illegal       := control_signal(0)
   io.mops.next_pc       := control_signal(1)
   io.mops.alu_mdu_lsu   := control_signal(2)
   io.mops.branch_type   := control_signal(3)

@@ -118,11 +118,13 @@ class Div32 extends Module with Config {
   val step   = RegInit(0.U((log2Ceil(32 / 2) + 1).W))
   state := nstate
 
-  val remr  = Reg(UInt((2 * 32).W))
-  val rems  = Wire(Vec(2, UInt((2 * 32).W)))
+  val remr      = Reg(UInt((2 * 32 + 1).W))
+  val rems      = Wire(Vec(2, UInt((2 * 32 + 1).W)))
+  val divisible = io.in1 > io.in2
+  val eq        = io.in1 === io.in2
 
   when (state === s_idle) {
-    nstate := Mux(io.vi, s_calc, s_idle)
+    nstate := Mux(io.vi && divisible, s_calc, s_idle)
     when (nstate === s_calc) {
       step := step + 1.U
       remr := rems(1)
@@ -150,7 +152,7 @@ class Div32 extends Module with Config {
     4.U
   )
 
-  val true_rem = Wire(UInt((2 * 32).W))
+  val true_rem = Wire(UInt((2 * 32 + 1).W))
   true_rem := Mux(step === 0.U, io.in1 << (1.U + 8.U * (4.U - num_nonz)), remr)
   rems(0)  := Mux(true_rem(63, 32) < io.in2, 
     true_rem << 1.U, 
@@ -163,7 +165,7 @@ class Div32 extends Module with Config {
     )
   }
 
-  io.vo      := state === s_fin
-  io.div_res := RegNext(rems(1)(32 - 1, 0))
-  io.rem_res := RegNext(rems(1)(32 * 2 - 1, 32) >> 1.U)
+  io.vo      := state === s_fin || !divisible
+  io.div_res := Mux(divisible, RegNext(rems(1)(32 - 1, 0)), Mux(eq, 1.U, 0.U))
+  io.rem_res := Mux(divisible, RegNext(rems(1)(32 * 2, 32) >> 1.U), Mux(eq, 0.U, io.in1))
 }

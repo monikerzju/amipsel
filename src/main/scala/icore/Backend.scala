@@ -22,11 +22,12 @@ class StoreInfo extends Bundle with Config {
   val data = UInt(len.W)
 }
 
-class Backend extends Module with Config with InstType with MemAccessType {
+class Backend extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
   // Global
   val nop = (new Mops).Lit(
+    _.illegal -> false.B,
     _.rs1 -> 0.U,
     _.rs2 -> 0.U,
     _.rd -> 0.U,
@@ -96,6 +97,7 @@ class Backend extends Module with Config with InstType with MemAccessType {
   val kill_w       = io.fb.bmfs.redirect_kill
   val bubble_w     = stall_x
   val regFile      = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
+  // val cp0          = Module(new CP0)
   val wbData       = Wire(Vec(3, UInt(len.W)))
   val wbReBranch   = RegInit(false.B)
 
@@ -276,8 +278,12 @@ class Backend extends Module with Config with InstType with MemAccessType {
     )
   )
   mdu.io.req.op := exInsts(1).alu_op
-  hi := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DHi || exInsts(1).write_dest === MicroOpCtrl.DHiLo), 
-    mdu.io.resp.hi, hi
+  hi := Mux(!bubble_w, 
+    MuxLookup(exInsts(1).write_dest, hi, Seq(
+      MicroOpCtrl.DHi -> mdu.io.resp.lo,
+      MicroOpCtrl.DHiLo -> mdu.io.resp.hi
+    )),
+    hi
   )
   lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo), 
     mdu.io.resp.lo, lo
@@ -332,7 +338,8 @@ class Backend extends Module with Config with InstType with MemAccessType {
   wbResult(1) := mdu.io.resp.lo
 
   // handle load-inst separately
-  val dataFromDcache = io.dcache.resp.bits.rdata(0)
+  val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
+  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
   val luData = WireDefault(dataFromDcache)
   switch(wbInsts(2).mem_width) {
     is(MicroOpCtrl.MemByte)  { luData := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0)) }
