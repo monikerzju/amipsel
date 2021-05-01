@@ -106,7 +106,7 @@ class Backend extends Module with Config with InstType with MemAccessType with C
   io.fb.fmbs.please_wait := !issueQueue.io.sufficient
   issueQueue.io.flush   := kill_i
   issueQueue.io.deqStep := issueNum
-  issueQueue.io.deqReq  := !stall_i
+  issueQueue.io.deqReq  := !stall_i && !(issueQueue.io.items.orR && issueNum === 0.U)
   issueQueue.io.enqReq  := io.fb.fmbs.instn =/= 0.U
   issueQueue.io.enqStep := io.fb.fmbs.instn
   issueInsts(0)         := issueQueue.io.dout(0)
