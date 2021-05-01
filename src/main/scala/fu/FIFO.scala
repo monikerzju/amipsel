@@ -36,17 +36,12 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
   val deqPtr = counter(do_deq, io.deqStep)
   val ptr_match = enqPtr === deqPtr
   val empty = ptr_match && !maybe_full | io.flush
-  val full = ptr_match && maybe_full && !io.flush
+  val full = ptr_match && maybe_full // && !io.flush
   do_enq := io.enqReq && io.sufficient
   do_deq := io.deqReq && !empty
   val ptr_diff = enqPtr - deqPtr
   io.sufficient := !full && (enqN.U <= size.U - io.items)
-
-  if(isPow2(size)) {
-    io.items := Mux(maybe_full && ptr_match, size.U, 0.U) | ptr_diff
-  } else {
-    io.items := Mux(ptr_match, Mux(maybe_full, size.U, 0.U), Mux(deqPtr > enqPtr, size.U + ptr_diff, ptr_diff))
-  }
+  io.items := Mux(ptr_match, Mux(maybe_full, size.U, 0.U), Mux(deqPtr > enqPtr, size.U + ptr_diff, ptr_diff))
 
   when(do_enq) {
     for(i <- 0 until enqN) {
