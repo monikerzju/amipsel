@@ -10,6 +10,7 @@ class IAIO(private val iq_size: Int) extends Bundle with Config {
   val insts_in = Input(Vec(backendIssueN, new Mops))
   val queue_items = Input(UInt(log2Ceil(iq_size + 1).W))
   val ld_dest_ex = Input(UInt(log2Ceil(len).W))
+  val mtc0_ex = Input(Bool())
   val insts_out = Output(Vec(fuN, new Mops))
   val issue_num = Output(UInt(log2Ceil(fuN + 1).W))
   val issue_fu_valid = Output(Vec(fuN, Bool()))
@@ -34,8 +35,8 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
     isRAW(inst1, inst2) || isWAW(inst1, inst2)
   }
 
-  def isSimpleCompatible(inst1: Mops, dest: UInt): Bool = {
-    dest === 0.U || (inst1.rs1 =/= dest && inst1.rs2 =/= dest)
+  def isSimpleCompatible(inst1: Mops, dest: UInt, mtc0: Bool): Bool = {
+    (dest === 0.U || (inst1.rs1 =/= dest && inst1.rs2 =/= dest)) && (!mtc0 || inst1.src_a =/= MicroOpCtrl.ACP0)
   }
 
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {

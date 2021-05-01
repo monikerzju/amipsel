@@ -96,7 +96,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val kill_w       = io.fb.bmfs.redirect_kill
   val bubble_w     = stall_x
   val regFile      = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
-  // val cp0          = Module(new CP0)
+  val cp0          = Module(new CP0)
   val wbData       = Wire(Vec(3, UInt(len.W)))
   val wbReBranch   = RegInit(false.B)
 
@@ -116,20 +116,19 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     issueQueue.io.din(i) := io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
   }
 
-  val trap_ret_items1 = Mux(issueInsts(1).next_pc === MicroOpCtrl.Trap || issueInsts(1).next_pc === MicroOpCtrl.Ret,
+  val trap_ret_items1 = Mux(issueInsts(1).next_pc(2).andR,  // break syscall eret
     Mux(issueQueue.io.items >= 2.U, 2.U, issueQueue.io.items),
     issueQueue.io.items
   )
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, issueQueue.io.items)
-  issueArbiter.io.queue_items := MuxLookup (
-    issueInsts(0).next_pc, Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items),
-    Seq(
-      MicroOpCtrl.PC4  -> trap_ret_items1,
-      MicroOpCtrl.Trap -> trap_ret_items0,
-      MicroOpCtrl.Ret  -> trap_ret_items0
-    )
+  issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR, trap_ret_items0,
+    Mux(issueInsts(0).next_pc =/= MicroOpCtrl.PC4, 
+      Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items), 
+      trap_ret_items1
+    )  
   )
   issueArbiter.io.ld_dest_ex  := Fill(32, exInstsValid(2)) & exInsts(2).rd
+  issueArbiter.io.mtc0_ex     := exInstsValid(0) & exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.insts_in    := issueInsts
   issueNum                    := issueArbiter.io.issue_num
 
@@ -222,7 +221,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     Seq(
       MicroOpCtrl.AShamt -> exInsts(0).imm(10, 6),
       MicroOpCtrl.AHi    -> hi,
-      MicroOpCtrl.ALo    -> lo
+      MicroOpCtrl.ALo    -> lo,
+      MicroOpCtrl.ACP0   -> cp0.io.ftc.dout
     )
   )
   alu.io.b := MuxLookup(exInsts(0).src_b, fwdRtData(0),
@@ -278,7 +278,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     exInsts(0).next_pc === MicroOpCtrl.Jump, 
     Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)),
     fwdRsData(0)
-  ) // TODO: check jump(31, 28) == ds(31, 28)
+  )
   when(exInstsValid(0)) {
     when (exInsts(0).next_pc === MicroOpCtrl.Branch) {
       reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U,
@@ -320,6 +320,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wbData(1) := wbResult(1)
   wbData(2) := luData
 
+  // delay slot
   when (!bubble_w) {
     when (aluValid && exInstsValid(0) && exIsBrFinal && reBranch) {
       wfds := true.B
@@ -347,14 +348,46 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     }
   }
 
-  io.fb.bmfs.redirect_kill := wbReBranch && !wfds
-  io.fb.bmfs.redirect_pc   := reBranchPC
+  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
+  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
 
+  // regfile
   for(i <- 0 until 3) {
     regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
     regFile.io.rd_addr_vec(i) := wbInsts(i).rd
     regFile.io.rd_data_vec(i) := wbData(i)
   }
+
+  // cp0
+  // TODO MTC0 -> MFC0 Stall as Load
+  val sys   = wbInsts(0).next_pc === MicroOpCtrl.Trap
+  val bp    = wbInsts(0).next_pc === MicroOpCtrl.Break
+  val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
+  wb_ev(Interrupt   ) := false.B
+  wb_ev(TLBModify   ) := false.B
+  wb_ev(TLBLoad     ) := false.B
+  wb_ev(TLBStore    ) := false.B
+  wb_ev(AddrErrLoad ) := false.B
+  wb_ev(AddrErrStore) := false.B
+  wb_ev(Syscall     ) := sys
+  wb_ev(Breakpoint  ) := bp
+  wb_ev(ReservedInst) := false.B
+  wb_ev(Overflow    ) := false.B
+  wb_ev(Trap        ) := false.B
+  wb_ev(Res0        ) := false.B
+  wb_ev(Res1        ) := false.B
+  wb_ev(Res2        ) := false.B
+  cp0.io.except.except_vec    := wb_ev
+  cp0.io.except.valid_inst    := wbInstsValid(0)
+  cp0.io.except.hard_int_vec  := io.interrupt
+  cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret
+  cp0.io.except.epc           := wbInsts(0).pc
+  cp0.io.except.in_delay_slot := false.B // TODO
+  cp0.io.except.bad_addr      := 0.U // TODO  
+  cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
+  cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
+  cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
+  cp0.io.ftc.din              := wbData(0)
   
   // difftest
   if (diffTestV) {

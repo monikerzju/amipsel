@@ -118,8 +118,8 @@ class Dec extends Module with InstType {
       SW         -> List(F ,  PC4     ,  toSU.U ,   BrXXX   ,  AReg   ,  BImm   ,  DMem   , aluAdd.U   , MemWord ,  WBXXX     , IRS , IRT , IXX , SIMM),
            
       ERET       -> List(F ,  Ret     ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DXXX   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
-      MFC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBReg     , IRT , IXX , IRT , UIMM),
-      MTC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IXX , IRT , IRD , UIMM)
+      MFC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  ACP0   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBReg     , IRD , IXX , IRT , UIMM),
+      MTC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAdd.U   , MemXXX  ,  WBReg     , IRT , IXX , IRD , UIMM)
   )) 
  
   io.mops.illegal       := control_signal(0)
