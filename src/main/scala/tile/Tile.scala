@@ -43,7 +43,7 @@ class Tile(diffTestV: Boolean) extends Module with Config with CacheParameters {
   val core = Module(new Core(diffTestV))
   val icache = Module(new ICacheSimple)
   val dcache = Module(new DCacheSimple)
-  val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 4, "Seq", len))
+  val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 4, "Seq", len, 1, 0))
 
   core.io.interrupt := io.intr
   core.io.icache <> icache.io.cpu

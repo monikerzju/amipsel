@@ -121,7 +121,8 @@ class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1
   override def cloneType = (new AXI3ServerIO(nclient, bit_cacheline, id_width, len)).asInstanceOf[this.type]
 }
 
-class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", len: Int = 32) extends Module with MemAccessType{
+class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", 
+  len: Int = 32, nwrite: Int = 1, writer: Int = 0) extends Module with MemAccessType{
   val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
   def mapAddr(addr: UInt): UInt = {
@@ -138,7 +139,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   val wstate = RegInit(ws_idle)
   val next_wstate = WireDefault(wstate)
 
-  val w_arbiter = Module(new CacheArbiter(nclient, policy))
+  val w_arbiter = if (nwrite != 1) Module(new CacheArbiter(nclient, policy)) else null
   val r_arbiter = Module(new CacheArbiter(nclient, policy))
   val cache_wen = RegInit(VecInit(Seq.fill(nclient)(false.B)))
   val cache_valid = RegInit(VecInit(Seq.fill(nclient)(false.B)))
@@ -148,16 +149,18 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     addr(i) := mapAddr(io.cache(i).req.addr)
     cache_wen(i) := io.cache(i).req.wen
     cache_valid(i) := io.cache(i).req.valid
-    w_arbiter.io.valid(i) := cache_valid(i) && cache_wen(i)
+    if (nwrite != 1)
+      w_arbiter.io.valid(i) := cache_valid(i) && cache_wen(i)
     r_arbiter.io.valid(i) := cache_valid(i) && !cache_wen(i)
   }
-  w_arbiter.io.lock := wstate =/= ws_idle
+  if (nwrite != 1)
+    w_arbiter.io.lock := wstate =/= ws_idle
   r_arbiter.io.lock := rstate =/= rs_idle
  
   val INCR: String = "b01"
 
   val rsel = r_arbiter.io.chosen
-  val wsel = w_arbiter.io.chosen
+  val wsel = if (nwrite != 1) w_arbiter.io.chosen else writer.U
   val rbuff = new RBuff(bit_cacheline)
   val wptr = RegInit(0.U(log2Ceil(bit_cacheline / 8).W))
   val wbuff = RegNext(io.cache(wsel).req.data)
@@ -166,7 +169,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   wstate := next_wstate
 
   val ren = r_arbiter.io.en
-  val wen = w_arbiter.io.en
+  val wen = if (nwrite != 1) w_arbiter.io.en else io.cache(writer).req.valid && io.cache(writer).req.wen
   
   for (i <- 0 until nclient) {
     io.cache(i).resp.valid := Mux(i.U === rsel, rstate === rs_finish, Mux(i.U === wsel, wstate === ws_finish, false.B))

@@ -83,6 +83,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val loadAddr     = fwdRsData(2) + exInsts(2).imm
   val storeAddr    = fwdRsData(3) + exInsts(3).imm  
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
+  val ldMisaligned = Wire(Bool())
+  val stMisaligned = Wire(Bool())
 
   // WB
   val wfds         = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
@@ -90,7 +92,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val hi           = RegInit(0.U(len.W))
   val lo           = RegInit(0.U(len.W))
   val wbResult     = RegInit(VecInit(Seq.fill(4)(0.U(len.W))))
-  val wbInstsValid = RegNext(exInstsValid)
+  val wbInstsValid = Reg(Vec(4, Bool()))
   val wbInstsOrder = RegNext(exInstsOrder)
   val wbInsts      = RegInit(VecInit(Seq.fill(4)(nop)))
   val kill_w       = io.fb.bmfs.redirect_kill
@@ -99,6 +101,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val cp0          = Module(new CP0)
   val wbData       = Wire(Vec(3, UInt(len.W)))
   val wbReBranch   = RegInit(false.B)
+  val wbMisaligned = RegInit(false.B) // TODO
+  val wbMisalignedAddr = RegNext(io.dcache.req.bits.addr)
 
   /**
    *  [---------- IS stage -----------]
@@ -247,18 +251,34 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     )
   )
   mdu.io.req.op := exInsts(1).alu_op
-  hi := Mux(!bubble_w, 
+  hi := Mux(!bubble_w && mduValid, 
     MuxLookup(exInsts(1).write_dest, hi, Seq(
       MicroOpCtrl.DHi -> mdu.io.resp.lo,
       MicroOpCtrl.DHiLo -> mdu.io.resp.hi
     )),
     hi
   )
-  lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo), 
+  lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo) &&
+    mduValid, 
     mdu.io.resp.lo, lo
   )
 
   // initialize lsu
+  ldMisaligned := MuxLookup(
+    exInsts(2).mem_width, false.B,
+    Seq(
+      MicroOpCtrl.MemHalf  -> loadAddr(0).asBool,
+      MicroOpCtrl.MemHalfU -> loadAddr(0).asBool,
+      MicroOpCtrl.MemWord  -> loadAddr(1, 0).orR
+    )
+  )
+  stMisaligned := MuxLookup(
+    exInsts(3).mem_width, false.B,
+    Seq(
+      MicroOpCtrl.MemHalf  -> storeAddr(0).asBool,
+      MicroOpCtrl.MemWord  -> storeAddr(1, 0).orR
+    )
+  )
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
   io.dcache.req.valid := loadValid || storeValid
@@ -330,18 +350,19 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   when (kill_w) {
-    for(i <- 0 until 3) {
+    for(i <- 0 until 4) {
       wbInstsValid(i) := false.B
     }
     wbReBranch := false.B
   }.elsewhen (bubble_w) {
-    for(i <- 0 until 3) {
+    for(i <- 0 until 4) {
       wbInstsValid(i) := false.B
     }
   }.otherwise {
     wbInstsValid(0) := aluValid
     wbInstsValid(1) := mduValid
     wbInstsValid(2) := loadValid
+    wbInstsValid(3) := storeValid
     when (!wfds) {
       reBranchPC := Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
       wbReBranch := reBranch
@@ -367,8 +388,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wb_ev(TLBModify   ) := false.B
   wb_ev(TLBLoad     ) := false.B
   wb_ev(TLBStore    ) := false.B
-  wb_ev(AddrErrLoad ) := false.B
-  wb_ev(AddrErrStore) := false.B
+  wb_ev(AddrErrLoad ) := wbMisaligned && wbInstsValid(2)
+  wb_ev(AddrErrStore) := wbMisaligned && wbInstsValid(3)
   wb_ev(Syscall     ) := sys
   wb_ev(Breakpoint  ) := bp
   wb_ev(ReservedInst) := false.B
@@ -378,12 +399,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wb_ev(Res1        ) := false.B
   wb_ev(Res2        ) := false.B
   cp0.io.except.except_vec    := wb_ev
-  cp0.io.except.valid_inst    := wbInstsValid(0)
+  cp0.io.except.valid_inst    := wbInstsValid.asUInt.orR
   cp0.io.except.hard_int_vec  := io.interrupt
   cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret
   cp0.io.except.epc           := wbInsts(0).pc
   cp0.io.except.in_delay_slot := false.B // TODO
-  cp0.io.except.bad_addr      := 0.U // TODO  
+  cp0.io.except.bad_addr      := wbMisalignedAddr
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux

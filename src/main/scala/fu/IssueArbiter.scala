@@ -68,16 +68,16 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
   // decide the true issue num
   val issue_valid = WireDefault(VecInit(Seq.fill(4)(false.B)))
   io.issue_num := 0.U
-  when(io.queue_items > 0.U && isSimpleCompatible(io.insts_in(0), io.ld_dest_ex)) {
+  when(io.queue_items > 0.U && isSimpleCompatible(io.insts_in(0), io.ld_dest_ex, io.mtc0_ex)) {
     issue_valid(0) := true.B
     io.issue_num := 1.U
     when(io.queue_items > 1.U && isCompatible(io.insts_in(0), io.insts_in(1)) && 
-      isSimpleCompatible(io.insts_in(1), io.ld_dest_ex)) {
+      isSimpleCompatible(io.insts_in(1), io.ld_dest_ex, io.mtc0_ex)) {
       // do not have data hazard and structural hazard
       issue_valid(1) := true.B
       io.issue_num := 2.U
       when(io.queue_items > 2.U && isUglyCompatible(io.insts_in(0), io.insts_in(1), io.insts_in(2)) && 
-        isSimpleCompatible(io.insts_in(2), io.ld_dest_ex)) {
+        isSimpleCompatible(io.insts_in(2), io.ld_dest_ex, io.mtc0_ex)) {
         issue_valid(2) := true.B
         io.issue_num := 3.U
       }

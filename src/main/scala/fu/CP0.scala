@@ -27,7 +27,8 @@ trait CP0Code {
   val SZ_CP0_CODE = log2Ceil(TagLo)
   val SZ_CP0_SEL  = 1
 
-  val StatusWMask = "b00000000000000001111111100000011"
+  val StatusWMask  = "b00000000000000001111111100000011"
+  val nStatusWMask = "b11111111111111110000000011111100"
 }
 
 trait CauseExcCode {
@@ -56,6 +57,7 @@ trait CauseExcCode {
     ReservedInst,
     Overflow,
     Trap,
+    Breakpoint,
     Syscall,
     AddrErrStore
   )
@@ -141,7 +143,7 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   }
   val has_except = real_except_vec.asUInt.orR && io.except.valid_inst
   val except_code = ExceptPriority.foldRight(0.U)((i: Int, sum: UInt) => Mux(real_except_vec(i), i.U, sum))
-  val ret = io.except.ret
+  val ret = io.except.ret && io.except.valid_inst
 
   io.ftc.dout := badvaddrr
   switch (io.ftc.code) {
@@ -172,14 +174,16 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 0.U
     statusr := new_status.asUInt
-  }.elsewhen (io.ftc.wen) {
+  }.elsewhen (io.ftc.wen && io.except.valid_inst) {
+    val status_imut = statusr & nStatusWMask.U
+    val status_mut  = io.ftc.din & StatusWMask.U
     switch (io.ftc.code) {
       // BadVAddr is unwritable
-      is (Count.U)    { countr := Cat(io.ftc.din, 0.U(1.W))                                           }
-      is (Status.U)   { statusr := (statusr & (~StatusWMask.U).asUInt) | (io.ftc.din & StatusWMask.U) }
-      is (Cause.U)    { io.ftc.dout := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))            }
-      is (EPC.U)      { epcr := io.ftc.din                                                            }
-      is (Compare.U)  { comparer := io.ftc.din                                                        }
+      is (Count.U)    { countr := Cat(io.ftc.din, 0.U(1.W))                                }
+      is (Status.U)   { statusr := status_imut | status_mut                                }
+      is (Cause.U)    { io.ftc.dout := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0)) }
+      is (EPC.U)      { epcr := io.ftc.din                                                 }
+      is (Compare.U)  { comparer := io.ftc.din                                             }
     }
   }
 }
