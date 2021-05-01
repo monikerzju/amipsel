@@ -21,7 +21,7 @@ class FIFO[T <: Data](size: Int, gen: T, readN: Int, enqN: Int) extends Module {
   val mem = Reg(Vec(size, gen))
 
   def counter(incr: Bool, step: UInt): UInt = {
-    val cntReg = RegInit(0.U(log2Ceil(size).W))
+    val cntReg = RegInit(0.U(log2Ceil(size + 1).W))
     val cntNext = cntReg + step
     when(incr) {
       cntReg := Mux(cntNext >= size.U, cntNext - size.U, cntNext)
