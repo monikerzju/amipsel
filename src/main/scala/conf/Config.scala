@@ -24,8 +24,6 @@ trait Config {
   var withBS: Boolean = false 
   var BSEntryN: Int = 3
   var BSWayN: Int = 2
-  // Test
-  var diffTestV: Boolean = true
   // Assertions ---- Dont Change!!!
   assert(frontendIssueN == 1 || frontendIssueN == 2)
   assert(backendIssueN == 3)

@@ -19,14 +19,15 @@ class DiffTestVIO extends Bundle with Config {
 
 // AXI3 Protocol according to Loongson
 // Interrupt(s)
-class TileIO extends Bundle with Config with CauseExcCode {
+class TileIO(diffTestV: Boolean) extends Bundle with Config with CauseExcCode {
   val axi3 = new AXI3(4, len)
   val intr = Input(Vec(SZ_HARD_INT, Bool()))
   val debug = if (diffTestV) new DiffTestVIO else null
+  override def cloneType = (new TileIO(diffTestV)).asInstanceOf[this.type]
 }
 
-class Tile extends Module with Config with CacheParameters {
-  val io = IO(new TileIO)
+class Tile(diffTestV: Boolean) extends Module with Config with CacheParameters {
+  val io = IO(new TileIO(diffTestV))
 
   if (diffTestV) {
     val debug = WireInit(0.U.asTypeOf(new DiffTestVIO))
@@ -39,10 +40,8 @@ class Tile extends Module with Config with CacheParameters {
     io.debug := debug
   }
 
-  val core = Module(new Core)
+  val core = Module(new Core(diffTestV))
   val icache = Module(new ICacheSimple)
-
-  // TODO FIX DCACHE = ICACHE
   val dcache = Module(new DCacheSimple)
   val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 4, "Seq", len))
 
@@ -60,10 +59,9 @@ class Tile extends Module with Config with CacheParameters {
 object GenT {
   def main(args: Array[String]): Unit = {
     val packageName = this.getClass.getPackage.getName
-
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new Tile)))
+      Seq(ChiselGeneratorAnnotation(() => new Tile(args.contains("-diff")))))
   }
 }
 
@@ -74,25 +72,6 @@ object GenC {
 
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new  Core)))
-  }
-}
-
-object GenB {
-  def main(args: Array[String]): Unit = {
-    val packageName = this.getClass.getPackage.getName
-
-    (new chisel3.stage.ChiselStage).execute(
-      Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new Backend)))
-  }
-}
-object GenD {
-  def main(args: Array[String]): Unit = {
-    val packageName = this.getClass.getPackage.getName
-
-    (new chisel3.stage.ChiselStage).execute(
-      Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new DCacheSimple)))
+      Seq(ChiselGeneratorAnnotation(() => new Core(args.contains("-diff")))))
   }
 }

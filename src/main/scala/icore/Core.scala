@@ -86,11 +86,11 @@ class CoreIO extends Bundle with Config with CauseExcCode {
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
 }
 
-class Core extends Module with Config {
+class Core(diffTestV: Boolean) extends Module with Config {
   val io = IO(new CoreIO)
 
   val fe = Module(new Frontend)
-  val be = Module(new Backend)
+  val be = Module(new Backend(diffTestV))
 
   fe.io.fb <> be.io.fb
   be.io.interrupt := io.interrupt.map((i: Bool) => RegNext(i))

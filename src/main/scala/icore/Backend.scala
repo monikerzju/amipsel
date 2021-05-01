@@ -22,7 +22,7 @@ class StoreInfo extends Bundle with Config {
   val data = UInt(len.W)
 }
 
-class Backend extends Module with Config with InstType with MemAccessType with CauseExcCode {
+class Backend(diffTestV: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
   // Global
@@ -395,7 +395,6 @@ class Backend extends Module with Config with InstType with MemAccessType with C
         }
       }
     }
-
 
     BoringUtils.addSource(debug_pc,   "dt_pc"    )
     BoringUtils.addSource(debug_wen,  "dt_wen"   )
