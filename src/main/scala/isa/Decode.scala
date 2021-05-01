@@ -105,7 +105,7 @@ class Dec extends Module with InstType {
       MTHI       -> List(F ,  PC4     ,  toMDU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DHi    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
       MTLO       -> List(F ,  PC4     ,  toMDU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DLo    , aluAdd.U   , MemXXX  ,  WBALU     , IRS , IXX , IXX , UIMM),
            
-      BREAK      -> List(F ,  Trap    ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
+      BREAK      -> List(F ,  Break   ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
       SYSCALL    -> List(F ,  Trap    ,  toALU.U,   BrXXX   ,  AXXX   ,  BXXX   ,  DReg   , aluAdd.U   , MemXXX  ,  WBXXX     , IXX , IXX , IXX , UIMM),
            
       LB         -> List(F ,  PC4     ,  toLU.U ,   BrXXX   ,  AReg   ,  BImm   ,  DReg   , aluAdd.U   , MemByte ,  WBMEM     , IRS , IXX , IRT , SIMM),
