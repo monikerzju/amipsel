@@ -55,8 +55,8 @@ class Backend extends Module with Config with InstType with MemAccessType with C
   val kill_i       = io.fb.bmfs.redirect_kill
   val isRsFwd      = Wire(Vec(4, Bool()))
   val isRtFwd      = Wire(Vec(4, Bool()))
-  val rsFwdIndex   = Wire(Vec(4, UInt(2.W)))
-  val rtFwdIndex   = Wire(Vec(4, UInt(2.W)))
+  val rsFwdIndex   = Wire(Vec(4, UInt(1.W)))
+  val rtFwdIndex   = Wire(Vec(4, UInt(1.W)))
 
   // Ex
   val stall_x      = stall_i
@@ -69,8 +69,8 @@ class Backend extends Module with Config with InstType with MemAccessType with C
   val fwdRtData    = Wire(Vec(4, UInt(len.W)))
   val exIsRsFwd    = RegInit(VecInit(Seq.fill(4)(false.B)))
   val exIsRtFwd    = RegInit(VecInit(Seq.fill(4)(false.B)))
-  val exRsFwdIndex = RegInit(VecInit(Seq.fill(4)(0.U(2.W))))
-  val exRtFwdIndex = RegInit(VecInit(Seq.fill(4)(0.U(2.W))))
+  val exRsFwdIndex = RegInit(VecInit(Seq.fill(4)(0.U(1.W))))
+  val exRtFwdIndex = RegInit(VecInit(Seq.fill(4)(0.U(1.W))))
   val rsData       = Wire(Vec(4, UInt(len.W)))
   val rtData       = Wire(Vec(4, UInt(len.W)))
   val reBranch     = Wire(Bool())
@@ -116,21 +116,31 @@ class Backend extends Module with Config with InstType with MemAccessType with C
     issueQueue.io.din(i) := io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
   }
 
-  issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc === MicroOpCtrl.PCReg || 
-                                     issueInsts(0).next_pc === MicroOpCtrl.Jump ||
-                                     issueInsts(0).next_pc === MicroOpCtrl.Branch,
-                                 Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items),
-                                 issueQueue.io.items)
+  val trap_ret_items1 = Mux(issueInsts(1).next_pc === MicroOpCtrl.Trap || issueInsts(1).next_pc === MicroOpCtrl.Ret,
+    Mux(issueQueue.io.items >= 2.U, 2.U, issueQueue.io.items),
+    issueQueue.io.items
+  )
+  val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, issueQueue.io.items)
+  issueArbiter.io.queue_items := MuxLookup (
+    issueInsts(0).next_pc, Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items),
+    Seq(
+      MicroOpCtrl.PC4  -> trap_ret_items1,
+      MicroOpCtrl.Trap -> trap_ret_items0,
+      MicroOpCtrl.Ret  -> trap_ret_items0
+    )
+  )
+  issueArbiter.io.ld_dest_ex  := Fill(32, exInstsValid(2)) & exInsts(2).rd
   issueArbiter.io.insts_in    := issueInsts
   issueNum                    := issueArbiter.io.issue_num
 
+  // load to something fwd is canceled, just stall
   for(i <- 0 until 4) {
     isRsFwd(i) := false.B
     isRtFwd(i) := false.B
     rsFwdIndex(i) := 0.U
     rtFwdIndex(i) := 0.U
   }
-  for(i <- 0 until 3) {
+  for(i <- 0 until 2) {
     when(exInstsValid(i) && exInsts(i).write_dest === MicroOpCtrl.DReg && exInsts(i).rd =/= 0.U) {
       for(j <- 0 until 4) {
         when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs1) {

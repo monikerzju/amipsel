@@ -10,7 +10,7 @@ trait Config {
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 3    // 3
   var fuN: Int = 4
-  val queueSize: Int = 20
+  val queueSize: Int = 8
   // Cache
   var withRealCache: Boolean = false
   var metaZeroLatency: Boolean = true
