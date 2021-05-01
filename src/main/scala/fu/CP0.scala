@@ -37,9 +37,12 @@ trait CauseExcCode {
   val TLBStore     = 0x3
   val AddrErrLoad  = 0x4
   val AddrErrStore = 0x5
+  val Res0         = 0x6
+  val Res1         = 0x7
   val Syscall      = 0x8
   val Breakpoint   = 0x9
   val ReservedInst = 0xa
+  val Res2         = 0xb
   val Overflow     = 0xc
   val Trap         = 0xd
 
@@ -129,7 +132,7 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
     causer.asTypeOf(new CauseStruct).ips) & 
     (~statusr.asTypeOf(new StatusStruct).im).asUInt).orR
   )
-  val real_except_vec = Vec(SZ_EXC_CODE, Bool())
+  val real_except_vec = Wire(Vec(SZ_EXC_CODE, Bool()))
   for (i <- 0 until SZ_EXC_CODE) {
     if (i != Interrupt)
       real_except_vec(i) := io.except.except_vec(i)
@@ -161,7 +164,7 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
     new_cause.bd := Mux(io.except.in_delay_slot, 1.U, 0.U)
     new_cause.exc := except_code
     when (statusr.asTypeOf(new StatusStruct).exl === 0.U) {
-      causer := new_cause
+      causer := new_cause.asUInt
       epcr := Mux(io.except.in_delay_slot, io.except.epc - 4.U, io.except.epc)
     }
     badvaddrr := Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U, io.except.bad_addr, badvaddrr)
