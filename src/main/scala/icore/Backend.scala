@@ -140,7 +140,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     issueQueue.io.items
   )
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, issueQueue.io.items)
-  issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(1).illegal, trap_ret_items0,
+  issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
     Mux(issueInsts(0).next_pc =/= MicroOpCtrl.PC4, 
       Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items), 
       trap_ret_items1

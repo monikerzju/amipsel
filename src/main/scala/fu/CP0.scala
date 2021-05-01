@@ -135,15 +135,18 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
     (~statusr.asTypeOf(new StatusStruct).im).asUInt).orR
   )
   val real_except_vec = Wire(Vec(SZ_EXC_CODE, Bool()))
-  for (i <- 0 until SZ_EXC_CODE) {
-    if (i != Interrupt)
-      real_except_vec(i) := io.except.except_vec(i)
-    else
-      real_except_vec(Interrupt) := io.except.except_vec(Interrupt) && int_en
-  }
   val has_except = real_except_vec.asUInt.orR && io.except.valid_inst
   val except_code = ExceptPriority.foldRight(0.U)((i: Int, sum: UInt) => Mux(real_except_vec(i), i.U, sum))
   val ret = io.except.ret && io.except.valid_inst
+  val error_ret = ret && epcr(1, 0).orR
+  for (i <- 0 until SZ_EXC_CODE) {
+    if (i != Interrupt && i != AddrErrLoad)
+      real_except_vec(i) := io.except.except_vec(i)
+    else if (i == AddrErrLoad)
+      real_except_vec(AddrErrLoad) := io.except.except_vec(AddrErrLoad) || error_ret
+    else
+      real_except_vec(Interrupt) := io.except.except_vec(Interrupt) && int_en
+  }
 
   io.ftc.dout := badvaddrr
   switch (io.ftc.code) {
@@ -156,20 +159,20 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   }
 
   io.except.except_kill := has_except || ret
-  io.except.except_redirect := Mux(ret, epcr, trapAddr.U)
+  io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   countr := countr + 1.U
-  when (has_except) {
+  when (has_except || error_ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 1.U
     statusr := new_status.asUInt
     val new_cause = WireInit(causer.asTypeOf(new CauseStruct))
-    new_cause.bd := Mux(io.except.in_delay_slot, 1.U, 0.U)
-    new_cause.exc := except_code
-    when (statusr.asTypeOf(new StatusStruct).exl === 0.U) {
+    new_cause.bd := Mux(error_ret, 0.U, Mux(io.except.in_delay_slot, 1.U, 0.U))
+    new_cause.exc := Mux(error_ret, AddrErrLoad.U, except_code)
+    when (statusr.asTypeOf(new StatusStruct).exl === 0.U || error_ret) {
       causer := new_cause.asUInt
-      epcr := Mux(io.except.in_delay_slot, io.except.epc - 4.U, io.except.epc)
+      epcr := Mux(error_ret, epcr, Mux(io.except.in_delay_slot, io.except.epc - 4.U, io.except.epc))
     }
-    badvaddrr := Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U, io.except.bad_addr, badvaddrr)
+    badvaddrr := Mux(error_ret, epcr, Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U, io.except.bad_addr, badvaddrr))
   }.elsewhen (ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 0.U
