@@ -31,7 +31,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     _.rs1 -> 0.U,
     _.rs2 -> 0.U,
     _.rd -> 0.U,
-    _.alu_op -> 0.U,
+    _.alu_op -> 1.U,  // addu will never cause except
     _.imm -> 0.U,
     _.alu_mdu_lsu -> toALU.U,
     _.write_dest -> MicroOpCtrl.DXXX,
@@ -85,23 +85,35 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
+  val exInstsTrueValid = Wire(Vec(4, Bool()))
+  val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
+                          exInstsValid(2) && ldMisaligned && exInstsOrder(2) < exInstsOrder(0) ||
+                          exInstsValid(3) && stMisaligned && exInstsOrder(3) < exInstsOrder(0))
+  val mduExptMask      = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(1) ||
+                          exInstsValid(2) && ldMisaligned && exInstsOrder(2) < exInstsOrder(1) ||
+                          exInstsValid(3) && stMisaligned && exInstsOrder(3) < exInstsOrder(1))
+  val ldExptMask       = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
+                          exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
+  val stExptMask       = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(3) ||
+                          exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(3))  // ld st cannot be simultaneously issued
 
   // WB
-  val wfds         = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
-  val reBranchPC   = RegInit(startAddr.U(len.W))
-  val hi           = RegInit(0.U(len.W))
-  val lo           = RegInit(0.U(len.W))
-  val wbResult     = RegInit(VecInit(Seq.fill(4)(0.U(len.W))))
-  val wbInstsValid = Reg(Vec(4, Bool()))
-  val wbInstsOrder = RegNext(exInstsOrder)
-  val wbInsts      = RegInit(VecInit(Seq.fill(4)(nop)))
-  val kill_w       = io.fb.bmfs.redirect_kill
-  val bubble_w     = stall_x
-  val regFile      = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
-  val cp0          = Module(new CP0)
-  val wbData       = Wire(Vec(3, UInt(len.W)))
-  val wbReBranch   = RegInit(false.B)
-  val wbMisaligned = RegInit(false.B) // TODO
+  val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
+  val reBranchPC       = RegInit(startAddr.U(len.W))
+  val hi               = RegInit(0.U(len.W))
+  val lo               = RegInit(0.U(len.W))
+  val wbResult         = RegInit(VecInit(Seq.fill(4)(0.U(len.W))))
+  val wbInstsValid     = Reg(Vec(4, Bool()))
+  val wbInstsOrder     = RegNext(exInstsOrder)
+  val wbInsts          = RegInit(VecInit(Seq.fill(4)(nop)))
+  val kill_w           = io.fb.bmfs.redirect_kill
+  val bubble_w         = stall_x
+  val regFile          = Module(new RegFile(nread = 8, nwrite = 3)) // 8 read port, 3 write port
+  val cp0              = Module(new CP0)
+  val wbData           = Wire(Vec(3, UInt(len.W)))
+  val wbReBranch       = RegInit(false.B)
+  val wbExceptReg      = Reg(Vec(4, Bool()))
+  val wbExceptReal     = Wire(Vec(4, Bool())) // except reg && inst valid
   val wbMisalignedAddr = RegNext(io.dcache.req.bits.addr)
 
   /**
@@ -214,11 +226,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     fwdRtData(i) := Mux(exIsRtFwd(i), wbData(exRtFwdIndex(i)), rtData(i))
   }
 
-
+  // if waiting for slot, must be the smallsest one
   aluValid   := exInstsValid(0) && !kill_x && (!wfds || exInstsOrder(0) === 0.U)
-  mduValid   := exInstsValid(1) && !kill_x && (!wfds || exInstsOrder(1) === 0.U) // if waiting for slot, must be the smallsest one
-  loadValid  := exInstsValid(2) && !kill_x && (!wfds || exInstsOrder(2) === 0.U) // if waiting for slot, must be the smallsest one
-  storeValid := exInstsValid(3) && !kill_x && (!wfds || exInstsOrder(3) === 0.U) // if waiting for slot, must be the smallsest one
+  mduValid   := exInstsValid(1) && !kill_x && (!wfds || exInstsOrder(1) === 0.U)
+  loadValid  := exInstsValid(2) && !kill_x && (!wfds || exInstsOrder(2) === 0.U)
+  storeValid := exInstsValid(3) && !kill_x && (!wfds || exInstsOrder(3) === 0.U)
 
   // alu execution
   alu.io.a := MuxLookup(exInsts(0).src_a, fwdRsData(0),
@@ -251,7 +263,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     )
   )
   mdu.io.req.op := exInsts(1).alu_op
-  hi := Mux(!bubble_w && mduValid, 
+  hi := Mux(!bubble_w && exInstsTrueValid(1), 
     MuxLookup(exInsts(1).write_dest, hi, Seq(
       MicroOpCtrl.DHi -> mdu.io.resp.lo,
       MicroOpCtrl.DHiLo -> mdu.io.resp.hi
@@ -259,7 +271,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     hi
   )
   lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo) &&
-    mduValid, 
+    exInstsTrueValid(1), 
     mdu.io.resp.lo, lo
   )
 
@@ -281,7 +293,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   )
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
-  io.dcache.req.valid := loadValid || storeValid
+  io.dcache.req.valid := (loadValid && !ldMisaligned) || (exInstsTrueValid(3) && !stMisaligned)
   io.dcache.req.bits.mtype := Mux(
     loadValid,
     exInsts(2).mem_width,
@@ -299,7 +311,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)),
     fwdRsData(0)
   )
-  when(exInstsValid(0)) {
+  when(exInstsTrueValid(0)) {
     when (exInsts(0).next_pc === MicroOpCtrl.Branch) {
       reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U,
         Seq(
@@ -314,6 +326,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       reBranch := true.B
     }
   }
+
+  // not valid if exception before the inst
+  exInstsTrueValid(0) := aluValid && !aluExptMask
+  exInstsTrueValid(1) := mduValid && !mduExptMask
+  exInstsTrueValid(2) := loadValid && !ldExptMask
+  exInstsTrueValid(3) := storeValid && !stExptMask
 
   /**
    *  [---------- WB stage -----------]
@@ -359,10 +377,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       wbInstsValid(i) := false.B
     }
   }.otherwise {
-    wbInstsValid(0) := aluValid
-    wbInstsValid(1) := mduValid
-    wbInstsValid(2) := loadValid
-    wbInstsValid(3) := storeValid
+    for (i <- 0 until 4) {
+      wbInstsValid(i) := exInstsTrueValid(i)
+    }
     when (!wfds) {
       reBranchPC := Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
       wbReBranch := reBranch
@@ -374,13 +391,20 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // regfile
   for(i <- 0 until 3) {
-    regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg
+    regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && !wbExceptReg(i)
     regFile.io.rd_addr_vec(i) := wbInsts(i).rd
     regFile.io.rd_data_vec(i) := wbData(i)
   }
 
   // cp0
-  // TODO MTC0 -> MFC0 Stall as Load
+  wbExceptReg(0) := alu.io.ovf
+  wbExceptReg(1) := mdu.io.resp.except
+  wbExceptReg(2) := ldMisaligned
+  wbExceptReg(3) := stMisaligned
+  for (i <- 0 until 4) {
+    wbExceptReal(i) := wbExceptReg(i) && wbInstsValid(i)
+  }
+  // TODO WRITE BACK LOGIC and chosenExceptionFrom
   val sys   = wbInsts(0).next_pc === MicroOpCtrl.Trap
   val bp    = wbInsts(0).next_pc === MicroOpCtrl.Break
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
@@ -388,12 +412,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wb_ev(TLBModify   ) := false.B
   wb_ev(TLBLoad     ) := false.B
   wb_ev(TLBStore    ) := false.B
-  wb_ev(AddrErrLoad ) := wbMisaligned && wbInstsValid(2)
-  wb_ev(AddrErrStore) := wbMisaligned && wbInstsValid(3)
+  wb_ev(AddrErrLoad ) := wbExceptReal(2)
+  wb_ev(AddrErrStore) := wbExceptReal(3)
   wb_ev(Syscall     ) := sys
   wb_ev(Breakpoint  ) := bp
   wb_ev(ReservedInst) := false.B
-  wb_ev(Overflow    ) := false.B
+  wb_ev(Overflow    ) := wbExceptReal(0) || wbExceptReal(1)
   wb_ev(Trap        ) := false.B
   wb_ev(Res0        ) := false.B
   wb_ev(Res1        ) := false.B
@@ -402,7 +426,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   cp0.io.except.valid_inst    := wbInstsValid.asUInt.orR
   cp0.io.except.hard_int_vec  := io.interrupt
   cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret
-  cp0.io.except.epc           := wbInsts(0).pc
+  cp0.io.except.epc           := Mux(sys || bp, wbInsts(0).pc, 
+                                   Mux(wbExceptReal(0), wbInsts(0).pc,
+                                     Mux(wbExceptReal(1), wbInsts(1).pc,
+                                       Mux(wbExceptReal(2), wbInsts(2).pc, wbInsts(3).pc)))
+                                 )
   cp0.io.except.in_delay_slot := false.B // TODO
   cp0.io.except.bad_addr      := wbMisalignedAddr
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
@@ -427,21 +455,21 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
         switch(wbInstsOrder(i)) {
           is(0.U) {
             debug_pc(0) := wbInsts(i).pc
-            debug_wen(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U
+            debug_wen(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !wbExceptReg(i)
             debug_data(0) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(0) := wbInsts(i).rd
           }
           is(1.U) {
             debug_pc(1) := wbInsts(i).pc
-            debug_wen(1) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U
+            debug_wen(1) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !wbExceptReg(i)
             debug_data(1) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(1) := wbInsts(i).rd
           }
           is(2.U) {
             debug_pc(2) := wbInsts(i).pc
-            debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U
+            debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !wbExceptReg(i)
             debug_data(2) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(2) := wbInsts(i).rd

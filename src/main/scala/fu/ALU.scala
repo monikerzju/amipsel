@@ -9,32 +9,38 @@ trait AluOpType{
   val aluAdd  = 0
   val aluAddu = 1
   val aluSub  = 2
-  val aluSlt  = 3
-  val aluSltu = 4
-  val aluXor  = 5
-  val aluAnd  = 6
-  val aluOr   = 7
-  val aluNor  = 8
-  val aluSll  = 9
-  val aluSrl  = 10
-  val aluSra  = 11
-  val aluLui  = 12
+  val aluSubu = 3
+  val aluSlt  = 4
+  val aluSltu = 5
+  val aluXor  = 6
+  val aluAnd  = 7
+  val aluOr   = 8
+  val aluNor  = 9
+  val aluSll  = 10
+  val aluSrl  = 11
+  val aluSra  = 12
+  val aluLui  = 13
 }
 
 class ALU extends Module with Config with AluOpType {
   val io = IO(new Bundle {
-    val a, b = Input(UInt(len.W))
+    val a, b  = Input(UInt(len.W))
     val aluOp = Input(UInt(aluOpWidth.W))
-    val r = Output(UInt(len.W))
-    val zero = Output(UInt(len.W))
+    val r     = Output(UInt(len.W))
+    val zero  = Output(UInt(len.W))
+    val ovf   = Output(Bool())
   })
 
+
+  val addResult = io.a + io.b
+  val subResult = io.a - io.b
   val shamt = io.a(4, 0)
   io.r := MuxLookup(
     io.aluOp,
-    (io.a + io.b),
+    addResult,
     Seq(
-      aluSub.U  -> (io.a - io.b),
+      aluSub.U  -> subResult,
+      aluSubu.U -> subResult,
       aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
       aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
       aluXor.U  -> (io.a ^ io.b),
@@ -49,4 +55,7 @@ class ALU extends Module with Config with AluOpType {
   )
 
   io.zero := ~io.r.orR()
+  io.ovf  := Mux(io.aluOp === aluAdd.U, io.a(len - 1) === io.b(len - 1) && io.a(len - 1) =/= addResult(len - 1), 
+    Mux(io.aluOp === aluSub.U, io.a(len - 1) =/= io.b(len - 1) && io.a(len - 1) =/= subResult(len - 1), false.B)
+  )
 }

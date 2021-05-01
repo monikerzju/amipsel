@@ -23,7 +23,7 @@ class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
 class MDUResp(width: Int = 32) extends Bundle {
   val hi     = Output(Bits(width.W))
   val lo     = Output(Bits(width.W))
-  val except = Output(Bits(1.W))
+  val except = Output(Bool())
   val valid  = Output(Bool())
 }
 
@@ -48,6 +48,8 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   divider.io.in2  := Mux(io.req.op === MDU_DIV.U && sign2.asBool, ((~io.req.in2) + 1.U), io.req.in2)
 
   val shamt = io.req.in1(4, 0)
+  val addResult = io.req.in1 + io.req.in2
+  val subResult = io.req.in1 - io.req.in2
   val lo = Mux(
     io.req.op(4).andR,
     MuxLookup(
@@ -61,9 +63,10 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     ),
     MuxLookup(
       io.req.op,
-      io.req.in1 + io.req.in2,
+      addResult,
       Seq(
-        aluSub.U   -> (io.req.in1 - io.req.in2),
+        aluSub.U   -> subResult,
+        aluSubu.U  -> subResult,
         aluSlt.U   -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
         aluSltu.U  -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
         aluXor.U   -> (io.req.in1 ^ io.req.in2),
@@ -91,7 +94,11 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   io.resp.lo := lo
   io.resp.hi := hi
 
-  io.resp.except := diving && io.req.in2.asUInt === 0.U
+  io.resp.except := Mux(io.req.op === aluAdd.U, 
+    io.req.in1(width - 1) === io.req.in2(width - 1) && io.req.in1(width - 1) =/= addResult(width - 1), 
+    Mux(io.req.op === aluSub.U, 
+      io.req.in1(width - 1) =/= io.req.in2(width - 1) && io.req.in1(width - 1) =/= subResult(width - 1), false.B)
+  )
   io.resp.valid  := Mux(diving, divider.io.vo, true.B)
 }
 
