@@ -76,6 +76,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val reBranch     = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
   val brPC         = exInsts(0).pc + (exInsts(0).imm << 2.U)(len - 1, 0) + 4.U
+  val exReBranchPC = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
   val aluValid     = Wire(Bool())
   val mduValid     = Wire(Bool())
   val loadValid    = Wire(Bool())
@@ -86,9 +87,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exInterruptd = RegInit(false.B)
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
-  val ifMisaligned = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC(1, 0).orR, Mux(
+  val ifMisaligned = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch ||
                      exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump,
-                     jumpPc(1, 0).orR, false.B))
+                     exReBranchPC(1, 0).orR, false.B)
   val exptALU      = alu.io.ovf || ifMisaligned
   val exInstsTrueValid = Wire(Vec(4, Bool()))
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
@@ -117,6 +118,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val cp0              = Module(new CP0)
   val wbData           = Wire(Vec(3, UInt(len.W)))
   val wbReBranch       = RegInit(false.B)
+  val latestBJPC       = RegInit(startAddr.U) // cannot deal with the second is Exception and the first is non-bj
   val wbExcepts        = Wire(Vec(4, Bool()))
   val wbMisalignedAddr = RegNext(io.dcache.req.bits.addr)
   val wbInterruptd     = RegNext(exInterruptd)
@@ -329,6 +331,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   io.dcache.resp.ready := true.B
 
   // jump br
+  val isExPCJump = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
+  val isExPCBr   = exInsts(0).next_pc === MicroOpCtrl.Branch
   reBranch := false.B
   jumpPc := Mux(
     exInsts(0).next_pc === MicroOpCtrl.Jump, 
@@ -336,7 +340,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     fwdRsData(0)
   )
   when(exInstsTrueValid(0)) {
-    when (exInsts(0).next_pc === MicroOpCtrl.Branch) {
+    when (isExPCBr) {
       reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U,
         Seq(
           MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
@@ -346,7 +350,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
-    }.elsewhen (exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump) {
+    }.elsewhen (isExPCJump) {
       reBranch := true.B
     }
   }
@@ -382,9 +386,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wbData(1) := wbResult(1)
   wbData(2) := luData
 
-  // delay slot
+  // delay slot and then just jump
   when (!bubble_w) {
-    when (aluValid && exInstsValid(0) && exIsBrFinal && reBranch) {
+    when (exInstsTrueValid(0) && exIsBrFinal && reBranch && !exReBranchPC(1, 0).orR) {
       wfds := true.B
     }.elsewhen(exInstsValid.asUInt.orR) {
       wfds := false.B
@@ -401,11 +405,14 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       wbInstsValid(i) := false.B
     }
   }.otherwise {
+    latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump), 
+      exInsts(0).pc, latestBJPC
+    )
     for (i <- 0 until 4) {
       wbInstsValid(i) := exInstsTrueValid(i)
     }
     when (!wfds) {
-      reBranchPC := Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
+      reBranchPC := exReBranchPC
       wbReBranch := reBranch
     }
   }
@@ -458,7 +465,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
                                      Mux(wbMDUOvfReal, wbInsts(1).pc,
                                        Mux(wbLdMaReal, wbInsts(2).pc, wbInsts(3).pc)))
                                  )
-  cp0.io.except.in_delay_slot := Mux(respInt, !wfds && RegNext(wfds), false.B) // TODO exception
+  cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
   cp0.io.except.bad_addr      := Mux(wbFetchMaReal, reBranchPC,  wbMisalignedAddr)
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0

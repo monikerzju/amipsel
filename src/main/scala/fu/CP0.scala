@@ -117,8 +117,8 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   val io = IO(new CP0IO)
 
   val badvaddrr = Reg(UInt(len.W))
-  val countr    = Reg(UInt((len + 1).W))
-  val comparer  = Reg(UInt(len.W))
+  val countr    = RegInit(0.U((len + 1).W))
+  val comparer  = RegInit("hffffffff".U(len.W))
   val statusr   = RegInit(statusVal.U(len.W))
   val causer    = RegInit(0.U(len.W))
   val epcr      = Reg(UInt(len.W))
@@ -129,10 +129,11 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   }.elsewhen (countr === comparer) {
     tim_int := true.B
   }
+  val real_hard_int_vec = io.except.hard_int_vec.asUInt | Cat(tim_int, Fill(5, 0.U))
   val int_en = (
     !statusr.asTypeOf(new StatusStruct).exl &&
     statusr.asTypeOf(new StatusStruct).ie.asBool &&
-    (Cat(io.except.hard_int_vec.asUInt | (tim_int << 5.U).asUInt,
+    (Cat(real_hard_int_vec,
     causer.asTypeOf(new CauseStruct).ips) & 
     statusr.asTypeOf(new StatusStruct).im.asUInt).orR
   )
@@ -151,13 +152,14 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   }
 
   io.ftc.dout := badvaddrr
+  val read_causer = Cat(causer(len - 1), tim_int, causer(29, 16), real_hard_int_vec, causer(9, 0))
   switch (io.ftc.code) {
-    is (BadVAddr.U) { io.ftc.dout := badvaddrr                                                                        }
-    is (Count.U)    { io.ftc.dout := countr(len, 1)                                                                   }
-    is (Status.U)   { io.ftc.dout := statusr                                                                          }
-    is (Cause.U)    { io.ftc.dout := Cat(false.B, tim_int, causer(29, 16), io.except.except_vec.asUInt, causer(9, 0)) }
-    is (EPC.U)      { io.ftc.dout := epcr                                                                             }
-    is (Compare.U)  { io.ftc.dout := comparer                                                                         }
+    is (BadVAddr.U) { io.ftc.dout := badvaddrr      }
+    is (Count.U)    { io.ftc.dout := countr(len, 1) }
+    is (Status.U)   { io.ftc.dout := statusr        }
+    is (Cause.U)    { io.ftc.dout := read_causer    }
+    is (EPC.U)      { io.ftc.dout := epcr           }
+    is (Compare.U)  { io.ftc.dout := comparer       }
   }
 
   io.except.except_kill     := has_except || ret
