@@ -32,6 +32,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   val repc           = RegInit(startAddr.U(len.W))
   val stall_f        = Wire(Bool())
   val kill_f         = Wire(Bool())
+  val illegal_pc     = pc_gen.io.pc_o(1, 0).orR
 
   // ID
   val decode_pc_low_reg = RegInit(UInt(len.W), startAddr.U)
@@ -53,9 +54,10 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
 
   repc := Mux(stall_f, repc, pc_gen.io.pc_o)
 
+  val may_illegal_req_addr = Mux(stall_f, repc, pc_gen.io.pc_o)
   io.icache.req.valid      := true.B
   io.icache.resp.ready     := true.B 
-  io.icache.req.bits.addr  := Mux(stall_f, repc, pc_gen.io.pc_o)
+  io.icache.req.bits.addr  := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen   := false.B
   if (frontendIssueN == 1) {
@@ -73,7 +75,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   when (kill_d) {
     decode_valid_reg  := false.B
   }.elsewhen (!stall_d && !cache_stall) {
-    decode_pc_low_reg := io.icache.req.bits.addr
+    decode_pc_low_reg := may_illegal_req_addr
     decode_valid_reg  := io.icache.req.valid
   }
 

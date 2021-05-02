@@ -323,9 +323,9 @@ begin
                       debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_v_2);
         end
         if (
-            three_bad
+            three_bad && ref_wb_pc_1 != `END_PC && ref_wb_pc_0 != `END_PC
             ||
-            two_bad
+            two_bad && ref_wb_pc_0 != `END_PC
             ||
             one_bad
         )

@@ -87,20 +87,16 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exInterruptd = RegInit(false.B)
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
-  val ifMisaligned = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch ||
-                     exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump,
-                     exReBranchPC(1, 0).orR, false.B)
-  val exptALU      = alu.io.ovf || ifMisaligned
   val exInstsTrueValid = Wire(Vec(4, Bool()))
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
                           exInstsValid(2) && ldMisaligned && exInstsOrder(2) < exInstsOrder(0) ||
                           exInstsValid(3) && stMisaligned && exInstsOrder(3) < exInstsOrder(0))
-  val mduExptMask      = (exInstsValid(0) && exptALU && exInstsOrder(0) < exInstsOrder(1) ||
+  val mduExptMask      = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(1) ||
                           exInstsValid(2) && ldMisaligned && exInstsOrder(2) < exInstsOrder(1) ||
                           exInstsValid(3) && stMisaligned && exInstsOrder(3) < exInstsOrder(1))
-  val ldExptMask       = (exInstsValid(0) && exptALU && exInstsOrder(0) < exInstsOrder(2) ||
+  val ldExptMask       = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
-  val stExptMask       = (exInstsValid(0) && exptALU && exInstsOrder(0) < exInstsOrder(3) ||
+  val stExptMask       = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(3) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(3))  // ld st cannot be simultaneously issued
 
   // WB
@@ -388,7 +384,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // delay slot and then just jump
   when (!bubble_w) {
-    when (exInstsTrueValid(0) && exIsBrFinal && reBranch && !exReBranchPC(1, 0).orR) {
+    when (exInstsTrueValid(0) && exIsBrFinal && reBranch) {
       wfds := true.B
     }.elsewhen(exInstsValid.asUInt.orR) {
       wfds := false.B
@@ -418,7 +414,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
-  io.fb.bmfs.redirect_pc   := Cat(Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)(len - 1, 2), Fill(2, 0.U))
+  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
 
   // regfile
   for(i <- 0 until 3) {
@@ -428,16 +424,16 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   // cp0
-  val wbFetchMaReal = wbInstsValid(0) && RegNext(ifMisaligned)
   val wbALUOvfReal  = wbInstsValid(0) && RegNext(alu.io.ovf)
   val wbMDUOvfReal  = wbInstsValid(1) && RegNext(mdu.io.resp.except)
   val wbLdMaReal    = wbInstsValid(2) && RegNext(ldMisaligned)
   val wbStMaReal    = wbInstsValid(3) && RegNext(stMisaligned)
   val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
-  val illegal       = wbInsts(0).illegal && wbInstsValid(0)
+  val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
+  val wbFetchMaReal = wbInsts(0).pc(1, 0).orR && wbInstsValid(0)  // will be in mops.illegal = 1
   val respInt       = wbInterruptd && wbInstsValid(0)
-  wbExcepts(0) := wbFetchMaReal || wbALUOvfReal
+  wbExcepts(0) := wbALUOvfReal
   wbExcepts(1) := wbMDUOvfReal
   wbExcepts(2) := wbLdMaReal
   wbExcepts(3) := wbStMaReal
@@ -461,12 +457,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   cp0.io.except.hard_int_vec  := io.interrupt
   cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret
   cp0.io.except.epc           := Mux(wbALUSysReal || wbALUBpReal || wbALUOvfReal || illegal || respInt, wbInsts(0).pc, 
-                                   Mux(wbFetchMaReal, reBranchPC,
-                                     Mux(wbMDUOvfReal, wbInsts(1).pc,
-                                       Mux(wbLdMaReal, wbInsts(2).pc, wbInsts(3).pc)))
+                                  Mux(wbMDUOvfReal, wbInsts(1).pc,
+                                    Mux(wbLdMaReal, wbInsts(2).pc, wbInsts(3).pc))
                                  )
   cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
-  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, reBranchPC,  wbMisalignedAddr)
+  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, wbInsts(0).pc,  wbMisalignedAddr)
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)

@@ -122,7 +122,7 @@ class Dec extends Module with InstType {
       MTC0       -> List(F ,  PC4     ,  toALU.U,   BrXXX   ,  AReg   ,  BXXX   ,  DCP0   , aluAddu.U  , MemXXX  ,  WBReg     , IRT , IXX , IRD , UIMM)
   )) 
  
-  io.mops.illegal       := control_signal(0)
+  io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
   io.mops.next_pc       := control_signal(1)
   io.mops.alu_mdu_lsu   := control_signal(2)
   io.mops.branch_type   := control_signal(3)
