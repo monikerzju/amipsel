@@ -350,7 +350,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   // handle load-inst separately
   val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
   val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
-  val luData = WireDefault(dataFromDcache)
+//  val luData = WireDefault(dataFromDcache)
+  val luData = Wire(UInt(32.W))
+  luData := dataFromDcache
   switch(wbInsts(2).mem_width) {
     is(MicroOpCtrl.MemByte)  { luData := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0)) }
     is(MicroOpCtrl.MemByteU) { luData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
