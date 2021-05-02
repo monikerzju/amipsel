@@ -18,6 +18,7 @@ class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
   val op    = Input(Bits(SZ_MDU_OP.W))
   val in1   = Input(Bits(width.W))
   val in2   = Input(Bits(width.W))
+  val reg1  = Input(Bits(width.W))
 }
 
 class MDUResp(width: Int = 32) extends Bundle {
@@ -50,8 +51,10 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   divider.io.in2  := Mux(io.req.op === MDU_DIV.U && sign2.asBool, ((~io.req.in2).asUInt + 1.U), io.req.in2)
 
   val shamt = io.req.in1(4, 0)
-  val addResult = io.req.in1 + io.req.in2
-  val subResult = io.req.in1 - io.req.in2
+  val addrResult = io.req.reg1 + io.req.in2
+  val subrResult = io.req.reg1 - io.req.in2
+  val addResult  = io.req.in1 + io.req.in2
+  val subResult  = io.req.in1 - io.req.in2
   val lo = Mux(
     io.req.op(4).andR,
     MuxLookup(
@@ -97,9 +100,9 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   io.resp.hi := hi
 
   io.resp.except := Mux(io.req.op === aluAdd.U, 
-    io.req.in1(width - 1) === io.req.in2(width - 1) && io.req.in1(width - 1) =/= addResult(width - 1), 
+    io.req.reg1(width - 1) === io.req.in2(width - 1) && io.req.reg1(width - 1) =/= addrResult(width - 1), 
     Mux(io.req.op === aluSub.U, 
-      io.req.in1(width - 1) =/= io.req.in2(width - 1) && io.req.in1(width - 1) =/= subResult(width - 1), false.B)
+      io.req.reg1(width - 1) =/= io.req.in2(width - 1) && io.req.reg1(width - 1) =/= subrResult(width - 1), false.B)
   )
   last_valid := io.resp.valid
   io.resp.valid  := Mux(diving, divider.io.vo, Mux(multing, !last_valid && RegNext(multing), true.B))
@@ -130,11 +133,9 @@ class Div32 extends Module with Config {
 
   val remr      = Reg(UInt((2 * 32 + 1).W))
   val rems      = Wire(Vec(2, UInt((2 * 32 + 1).W)))
-  val divisible = io.in1 > io.in2
-  val eq        = io.in1 === io.in2
 
   when (state === s_idle) {
-    nstate := Mux(io.vi && divisible, s_calc, s_idle)
+    nstate := Mux(io.vi, s_calc, s_idle)
   }.elsewhen(state === s_calc) {
     nstate := Mux(step === 8.U * num_nonz - 1.U, s_fin, s_calc)
     step := step + 1.U
@@ -166,8 +167,8 @@ class Div32 extends Module with Config {
   )
   rems(1) := 0.U
 
-  io.vo      := state === s_fin || !divisible
+  io.vo      := state === s_fin
 
-  io.div_res := Mux(divisible, RegNext(rems(0)(32 - 1, 0)), Mux(eq, 1.U, 0.U))
-  io.rem_res := Mux(divisible, RegNext(rems(0)(32 * 2, 32) >> 1.U), Mux(eq, 0.U, io.in1))
+  io.div_res := RegNext(rems(0)(32 - 1, 0))
+  io.rem_res := RegNext(rems(0)(32 * 2, 32) >> 1.U)
 }

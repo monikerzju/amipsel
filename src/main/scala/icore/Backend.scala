@@ -268,10 +268,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       MicroOpCtrl.BImm -> exInsts(0).imm
     )
   )
+  alu.io.rega  := fwdRsData(0)
   alu.io.aluOp := exInsts(0).alu_op
 
   // mdu execution
   mdu.io.req.valid := mduValid
+  mdu.io.req.reg1  := fwdRsData(1)
   mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, fwdRsData(1),
     Seq(
       MicroOpCtrl.AShamt -> exInsts(1).imm(10, 6),
@@ -371,7 +373,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   // handle load-inst separately
   val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
   val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
-//  val luData = WireDefault(dataFromDcache)
   val luData = Wire(UInt(32.W))
   luData := dataFromDcache
   switch(wbInsts(2).mem_width) {
