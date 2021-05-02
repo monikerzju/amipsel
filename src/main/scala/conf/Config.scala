@@ -13,10 +13,14 @@ trait Config {
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = true
+  var tagBits = 19
+  var indexBits = 8   // 8KB now
+  var offsetBits = 5
+  var dataBits = 256
   // BPU
   var withBPU: Boolean = false 
   var BPUEntryN: Int = 512
-  var BPUOffset: Int = 2
+  var BPUoffset: Int = 2
   var enableRAS: Boolean = true
   val withRAS: Boolean = enableRAS && withBPU
   var RASEntryN: Int = 6
@@ -26,4 +30,5 @@ trait Config {
   // Assertions ---- Dont Change!!!
   assert(frontendIssueN == 1 || frontendIssueN == 2)
   assert(backendIssueN == 3)
+  assert(tagBits + indexBits + offsetBits == len)
 }

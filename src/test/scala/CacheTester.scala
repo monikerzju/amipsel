@@ -10,7 +10,7 @@ import cache._
 import icore._
 import conf._
 
-class MetaTester extends FreeSpec with ChiselScalatestTester with CacheParameters{
+class MetaTester extends FreeSpec with ChiselScalatestTester{
     "test the direct mapped meta" in{
         test(new MetaSimple(256)){c=>
             c.io.tags_in.poke(0.U)
@@ -197,7 +197,7 @@ class MetaTester extends FreeSpec with ChiselScalatestTester with CacheParameter
 ***************************************************************/
 // WARNING#2: DON'T run this test unless following the steps below
 // WARNING#3: DON'T run this test unless following the steps below
-class DcacheTester extends FreeSpec with ChiselScalatestTester with CacheParameters{
+class DcacheTester extends FreeSpec with ChiselScalatestTester{
     "test dcache" in{
         test(new DCacheSimple_test){c=>
             c.io.cpu.req.initSource()
@@ -223,7 +223,7 @@ class DcacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
 
             val cpu_request_vector_replace=Seq.tabulate(10){i => 
                 // test replacement, half write, half read
-                new MemReq().Lit(_.addr->((i+1)<<(OffsetBits+IndexBits)).U,_.wdata->"h0fffffff".U,_.wen->(i%2==1).B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
+                new MemReq().Lit(_.addr->((i+1)<<(offsetBits+indexBits)).U,_.wdata->"h0fffffff".U,_.wen->(i%2==1).B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
             }
             // val expected_replace=Seq.tabulate(5){i=>
 
@@ -316,14 +316,14 @@ class DcacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
                     c.io.bar.req.valid.expect(false.B)
                 else {
                     c.io.bar.req.valid.expect(true.B)// not dirty, refill
-                    c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.addr.expect(((i+1)<<(offsetBits+indexBits)).U)
                     c.io.bar.req.wen.expect(false.B)
                 }
                 if(i%2==0){
                     // read replace
                     c.clock.step()
                     c.io.data.douta.poke("hdeadbeef".U)
-                    c.io.bar.req.addr.expect((i<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.addr.expect((i<<(offsetBits+indexBits)).U)
                     c.io.bar.req.valid.expect(true.B)
                     c.io.bar.req.wen.expect(true.B)
                     c.io.bar.req.data.expect("hdeadbeef".U)
@@ -333,7 +333,7 @@ class DcacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
                     // evicted, refill started
                     c.io.bar.req.valid.expect(true.B)
                     c.io.bar.req.wen.expect(false.B)
-                    c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.addr.expect(((i+1)<<(offsetBits+indexBits)).U)
                     c.clock.step()
                     c.io.bar.resp.data.poke("h2000_00001000".U)
                     c.io.bar.resp.valid.poke(true.B)
@@ -358,7 +358,7 @@ class DcacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
         }
     }
 }
-class ICacheTester extends FreeSpec with ChiselScalatestTester with CacheParameters{
+class ICacheTester extends FreeSpec with ChiselScalatestTester{
     "test icache" in{
         test(new ICacheSimple_test){c=>
             c.io.cpu.req.initSource()
@@ -378,7 +378,7 @@ class ICacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
 
             val cpu_request_vector_replace=Seq.tabulate(10){i => 
                 // test replacement, half write, half read
-                new MemReq().Lit(_.addr->((i+1)<<(OffsetBits+IndexBits)).U,_.wdata->"h0fffffff".U,_.wen->false.B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
+                new MemReq().Lit(_.addr->((i+1)<<(offsetBits+indexBits)).U,_.wdata->"h0fffffff".U,_.wen->false.B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
             }
             c.io.cpu.req.valid.poke(true.B)
             c.io.cpu.req.bits.poke(cpu_request_vector(0))
@@ -426,7 +426,7 @@ class ICacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
                 c.io.cpu.resp.valid.expect(false.B)
                 c.io.data.we.expect(false.B)
                 c.io.bar.req.valid.expect(true.B)// not dirty, refill
-                c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                c.io.bar.req.addr.expect(((i+1)<<(offsetBits+indexBits)).U)
                 c.io.bar.req.wen.expect(false.B)
                 c.clock.step()
 
@@ -440,7 +440,7 @@ class ICacheTester extends FreeSpec with ChiselScalatestTester with CacheParamet
         }
     }
 }
-class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
+class dev extends FreeSpec with ChiselScalatestTester{
     "test dcache" in{
         test(new DCacheSimple_test){c=>
             c.io.cpu.req.initSource()
@@ -466,7 +466,7 @@ class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
 
             val cpu_request_vector_replace=Seq.tabulate(10){i => 
                 // test replacement, half write, half read
-                new MemReq().Lit(_.addr->((i+1)<<(OffsetBits+IndexBits)).U,_.wdata->"h0fffffff".U,_.wen->(i%2==1).B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
+                new MemReq().Lit(_.addr->((i+1)<<(offsetBits+indexBits)).U,_.wdata->"h0fffffff".U,_.wen->(i%2==1).B,_.flush->false.B,_.invalidate->false.B,_.mtype->2.U)
             }
             // val expected_replace=Seq.tabulate(5){i=>
 
@@ -559,14 +559,14 @@ class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
                     c.io.bar.req.valid.expect(false.B)
                 else {
                     c.io.bar.req.valid.expect(true.B)// not dirty, refill
-                    c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.addr.expect(((i+1)<<(offsetBits+indexBits)).U)
                     c.io.bar.req.wen.expect(false.B)
                 }
                 if(i%2==0){
                     // read replace
                     c.clock.step()
                     c.io.data.douta.poke("hdeadbeef".U)
-                    c.io.bar.req.addr.expect((i<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.addr.expect((i<<(offsetBits+indexBits)).U)
                     c.io.bar.req.valid.expect(true.B)
                     c.io.bar.req.wen.expect(true.B)
                     c.io.bar.req.data.expect("hdeadbeef".U)
@@ -576,7 +576,7 @@ class dev extends FreeSpec with ChiselScalatestTester with CacheParameters{
                     // evicted, refill started
                     c.io.bar.req.valid.expect(true.B)
                     c.io.bar.req.wen.expect(false.B)
-                    c.io.bar.req.addr.expect(((i+1)<<(OffsetBits+IndexBits)).U)
+                    c.io.bar.req.addr.expect(((i+1)<<(offsetBits+indexBits)).U)
                     c.clock.step()
                     c.io.bar.resp.data.poke("h2000_00001000".U)
                     c.io.bar.resp.valid.poke(true.B)

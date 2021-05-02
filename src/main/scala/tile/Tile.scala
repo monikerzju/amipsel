@@ -6,7 +6,6 @@ import fu._
 import icore._
 import cache._
 import conf.Config
-import cache.CacheParameters
 import fu.CauseExcCode
 import chisel3.util.experimental.BoringUtils
 
@@ -26,7 +25,7 @@ class TileIO(diffTestV: Boolean) extends Bundle with Config with CauseExcCode {
   override def cloneType = (new TileIO(diffTestV)).asInstanceOf[this.type]
 }
 
-class Tile(diffTestV: Boolean) extends Module with Config with CacheParameters {
+class Tile(diffTestV: Boolean) extends Module with Config {
   val io = IO(new TileIO(diffTestV))
 
   if (diffTestV) {
@@ -43,7 +42,7 @@ class Tile(diffTestV: Boolean) extends Module with Config with CacheParameters {
   val core = Module(new Core(diffTestV))
   val icache = Module(new ICacheSimple)
   val dcache = Module(new DCacheSimple)
-  val xbar = Module(new AXI3Server(2, 1 << (OffsetBits + 3), 4, "Seq", len, 1, 0))
+  val xbar = Module(new AXI3Server(2, 1 << (offsetBits + 3), 4, "Seq", len, 1, 0))
 
   core.io.interrupt := io.intr
   core.io.icache <> icache.io.cpu

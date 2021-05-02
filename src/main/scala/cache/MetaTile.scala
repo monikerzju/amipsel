@@ -3,9 +3,12 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
-class Meta_4Way(nline:Int) extends Module with CacheParameters_4Way{
+
+import conf.Config
+
+class Meta_4Way(nline:Int) extends Module with Config{
     val io=IO(new MetaIOI4Way)
-    val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((TagBits+5).W).asTypeOf(new MetaBundleI))))))
+    val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((tagBits+5).W).asTypeOf(new MetaBundleI))))))
     val latest=VecInit(Seq.fill(4)(true.B))
     val idx=io.aux_index
     val sid=groups(idx).indexWhere({c:MetaBundleI=> c.b.asUInt===0.U})
@@ -32,25 +35,25 @@ class Meta_4Way(nline:Int) extends Module with CacheParameters_4Way{
         }
     }
 }
-class Meta_Data(nline:Int) extends Module with CacheParameters{
+class Meta_Data(nline:Int) extends Module with Config{
 
     val io=IO(new Bundle{
-        val index_in=Input(UInt(IndexBits.W))
-        val tags_in=Input(UInt(TagBits.W))
+        val index_in=Input(UInt(indexBits.W))
+        val tags_in=Input(UInt(tagBits.W))
         val update=Input(Bool())
         val invalidate=Input(Bool())
-        val aux_index=Input(UInt(IndexBits.W))
-        val aux_tag=Input(UInt(TagBits.W))
+        val aux_index=Input(UInt(indexBits.W))
+        val aux_tag=Input(UInt(tagBits.W))
         val write_hit=Input(Bool())
         val hit=Output(Bool())
         val dirty=Output(Bool())
-        val tag=Output(UInt(TagBits.W))
+        val tag=Output(UInt(tagBits.W))
         // for dual-port non-blocking access; 
     })
     io.tag:=tags(io.tags_in)
     val reg_tag=RegNext(io.tags_in)
     val reg_index=RegNext(io.index_in)
-    val tags= RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
+    val tags= RegInit(VecInit(Seq.fill(nline)(0.U(tagBits.W))))
     val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
     val dirty=RegInit(VecInit(Seq.fill(nline)(false.B)))
     io.hit:= !(io.aux_index===io.index_in&&io.invalidate)&&(io.tags_in===tags(io.index_in)&&valid(io.index_in))
@@ -68,9 +71,9 @@ class Meta_Data(nline:Int) extends Module with CacheParameters{
         dirty(reg_index):=true.B
     }
 }
-class MetaDataSimple(nline:Int) extends Module with CacheParameters{
+class MetaDataSimple(nline:Int) extends Module with Config{
     val io=IO(new MetaIODSimple)
-    val tags= RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
+    val tags= RegInit(VecInit(Seq.fill(nline)(0.U(tagBits.W))))
     val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
     val dirty=RegInit(VecInit(Seq.fill(nline)(false.B)))
     io.dirty:=dirty(io.index_in)
@@ -85,9 +88,9 @@ class MetaDataSimple(nline:Int) extends Module with CacheParameters{
         dirty(io.aux_index):=false.B
     }
 }
-class MetaData_4Way(nline:Int) extends Module with CacheParameters_4Way{
+class MetaData_4Way(nline:Int) extends Module with Config{
     val io=IO(new MetaIOD4Way)
-    val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((TagBits+5).W).asTypeOf(new MetaBundleI))))))
+    val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((tagBits+5).W).asTypeOf(new MetaBundleI))))))
     val dirty=RegInit(VecInit(Seq.fill(nline)(false.B)))
     val latest=VecInit(Seq.fill(4)(true.B))
     val idx=io.aux_index

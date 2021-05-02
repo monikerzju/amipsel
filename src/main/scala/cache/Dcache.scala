@@ -34,34 +34,34 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class DCacheSimple extends Module with CacheParameters with MemAccessType with Config{
+class DCacheSimple extends Module with MemAccessType with Config{
     val io=IO(new Bundle{
         val cpu=new MemIO(1)
-        val bar=new CacheIO(1<<(OffsetBits+3))
-        // val data=Flipped(new DPBRAMSyncReadMemIO(8*(1<<OffsetBits),1<<IndexBits))
+        val bar=new CacheIO(1<<(offsetBits+3))
+        // val data=Flipped(new DPBRAMSyncReadMemIO(8*(1<<offsetBits),1<<indexBits))
     })
-    val nline=1<<IndexBits
-    val data=Module(new DPBRAMSyncReadMem(nline,1<<(OffsetBits+3)))
+    val nline=1<<indexBits
+    val data=Module(new DPBRAMSyncReadMem(nline,1<<(offsetBits+3)))
     val meta=Module(new MetaDataSimple(nline));
     val unmaped=io.cpu.req.bits.addr(31,29)==="b100".U
     // 0x80000000-0xa000000
     // translate virtual addr from start
-    val tag_raw=Cat(Mux(unmaped,0.U(3.W),io.cpu.req.bits.addr(31,29)),io.cpu.req.bits.addr(28,32-TagBits))
-    val index_raw=io.cpu.req.bits.addr(len-TagBits-1,len-TagBits-IndexBits)
+    val tag_raw=Cat(Mux(unmaped,0.U(3.W),io.cpu.req.bits.addr(31,29)),io.cpu.req.bits.addr(28,32-tagBits))
+    val index_raw=io.cpu.req.bits.addr(len-tagBits-1,len-tagBits-indexBits)
     io.bar.req.valid:=false.B
     io.bar.req.wen:=false.B
-    io.bar.req.addr:=Cat(Seq(tag_raw,index_raw,0.U(OffsetBits.W)))
+    io.bar.req.addr:=Cat(Seq(tag_raw,index_raw,0.U(offsetBits.W)))
     io.bar.req.data:=0.U
     // TODO: [ ] set the content during the test 
     // TODO: [ ] dual-port BRAM
-    val line=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
+    val line=Wire(Vec(1<<(offsetBits-2),UInt(len.W)))
     val index=RegNext(index_raw)
     var i=0
-    for(i<- 0 until 1<<(OffsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
-    val tag_refill=RegInit(0.U(TagBits.W))
-    val word1=RegNext(io.cpu.req.bits.addr(OffsetBits-1,2))
+    for(i<- 0 until 1<<(offsetBits-2)){line(i):=data.io.douta(i*len+31,i*len)}
+    val tag_refill=RegInit(0.U(tagBits.W))
+    val word1=RegNext(io.cpu.req.bits.addr(offsetBits-1,2))
     // val word2=word1+1.U
-    val index_refill=RegInit(0.U(IndexBits.W))
+    val index_refill=RegInit(0.U(indexBits.W))
     data.io.wea:=false.B
     data.io.addra:=index_raw
     data.io.dina:=io.bar.resp.data
@@ -72,7 +72,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     meta.io.aux_index:=index_refill
     meta.io.aux_tag:=tag_refill
     meta.io.write:=io.cpu.req.bits.wen
-    val writeline=Wire(Vec(1<<(OffsetBits-2),UInt(len.W)))
+    val writeline=Wire(Vec(1<<(offsetBits-2),UInt(len.W)))
     writeline:=line
     val mask=Wire(UInt(32.W))
     val shift=io.cpu.req.bits.addr(1,0)<<3
@@ -100,7 +100,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
     io.cpu.resp.bits.respn:= 0.U
     io.cpu.resp.bits.rdata(0):=line(word1)
     // io.cpu.resp.bits.rdata(1):=line(word2)
-    val tag_evict_reg=RegInit(0.U(TagBits.W))
+    val tag_evict_reg=RegInit(0.U(tagBits.W))
     data.io.web:=reg_wen && (state===s_normal || state===s_refill && io.bar.resp.valid)
     // FIXME: [ ] write miss?
     data.io.addrb:=index
@@ -137,7 +137,7 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
                         state:=s_evict
                         tag_evict_reg:=meta.io.tag
                         // NOTE:如果路径过长可以从此处切开并把寄存器移到meta内部
-                        // io.bar.req.addr:=Cat(Seq(meta.io.tag,index_raw,0.U(OffsetBits.W)))
+                        // io.bar.req.addr:=Cat(Seq(meta.io.tag,index_raw,0.U(offsetBits.W)))
                         // FIXME: align? register?
                         // io.bar.req.wen:=true.B
                     }
@@ -158,10 +158,10 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             }
         }
         is(s_refill){
-            io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
+            io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(offsetBits.W)))
             when(io.bar.resp.valid){
                 state:=s_normal
-                for(i<- 0 until 1<<(OffsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
+                for(i<- 0 until 1<<(offsetBits-2)){line(i):=io.bar.resp.data(i*len+31,i*len)}
                 io.cpu.resp.valid:=true.B
                 meta.io.update:=true.B
                 data.io.addra:=index_refill
@@ -178,10 +178,10 @@ class DCacheSimple extends Module with CacheParameters with MemAccessType with C
             io.bar.req.wen:=true.B
             io.bar.req.data:=line.asUInt
             // FIXME: [ ] register for line?
-            io.bar.req.addr:=Cat(Seq(tag_evict_reg,index_refill,0.U(OffsetBits.W)))
+            io.bar.req.addr:=Cat(Seq(tag_evict_reg,index_refill,0.U(offsetBits.W)))
             when(io.bar.resp.valid){
                 state:=s_refill
-                io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(OffsetBits.W)))
+                io.bar.req.addr:=Cat(Seq(tag_refill,index_refill,0.U(offsetBits.W)))
                 io.bar.req.wen:=false.B
             }.otherwise {
                 io.bar.req.valid := true.B
