@@ -44,82 +44,67 @@ class ICacheSimple
     val bar = new CacheIO(1 << (OffsetBits + 3))
   })
   val nline = 1 << IndexBits
+
   val data = Module(new BRAMSyncReadMem(nline, 1 << (OffsetBits + 3)))
-  val meta = Module(new MetaSimple(nline));
-  data.io.we := false.B
+  val meta = Module(new BRAMSyncReadMem(nline, TagBits + 1))
+  val tag_req   = io.cpu.req.bits.addr(len - 1, len - TagBits)
+  val index_req = io.cpu.req.bits.addr(len - TagBits - 1, len - TagBits - IndexBits)
 
-  io.bar.req.valid := false.B
-  io.bar.req.wen   := false.B
-  io.bar.req.addr  := Cat(
-    io.cpu.req.bits.addr(len - 1, OffsetBits),
-    Fill(OffsetBits, 0.U)
-  )
-  io.bar.req.data  := 0.U
-  io.bar.req.mtype := MEM_DWORD.U
-  // TODO: [ ] set the content during the test
-  // TODO: [ ] dual-port BRAM
-
-  val tag_raw = io.cpu.req.bits.addr(len - 1, len - TagBits)
-  val index_raw =
-    io.cpu.req.bits.addr(len - TagBits - 1, len - TagBits - IndexBits)
-
-  val line = Wire(Vec(1 << (OffsetBits - 2), UInt(len.W)))
-  val fillline = RegInit(VecInit(Seq.fill(1 << (OffsetBits - 2))(0.U(len.W))))
-  val index = RegNext(index_raw)
-  data.io.addr := index_raw
-  data.io.din := io.bar.resp.data
-  var i = 0
+  // Data Tile
+  val refill_data = Reg(Vec(1 << (OffsetBits - 2), UInt(len.W)))
+  val line        = Wire(Vec(1 << (OffsetBits - 2), UInt(len.W)))
+  data.io.addr := index_req
+  data.io.din  := io.bar.resp.data
+  data.io.we   := false.B
   for (i <- 0 until 1 << (OffsetBits - 2)) {
     line(i) := data.io.dout(i * len + 31, i * len)
   }
 
-  val tag_refill = RegInit(0.U(TagBits.W))
-  val word1 = RegNext(io.cpu.req.bits.addr(OffsetBits - 1, 2))
+  // Meta Tile
+  val req_addr = RegNext(io.cpu.req.bits.addr)
+  val word1 = req_addr(OffsetBits - 1, 2)
   val word2 = word1 + 1.U
-  val index_refill = RegInit(0.U(IndexBits.W))
-  meta.io.tags_in := tag_raw
-  meta.io.index_in := index_raw
-  meta.io.update := false.B
-  meta.io.aux_index := index_refill
-  meta.io.aux_tag := tag_refill
-  val s_normal :: s_refill :: Nil = Enum(2)
-  val state = RegInit(s_normal)
-  io.cpu.req.ready := io.cpu.resp.valid
+  val hit   = meta.io.dout(TagBits).asBool && meta.io.dout(TagBits - 1, 0) === req_addr(len - 1, len - TagBits)
+  meta.io.we   := false.B
+  meta.io.addr := index_req
+  meta.io.din  := Cat(true.B, tag_req)
 
-  io.cpu.resp.valid := io.bar.resp.valid || (state === s_normal && meta.io.hit)
-  val dual_issue = io.cpu.req.bits.mtype === 3.U && io.cpu.req.bits
-    .addr(OffsetBits - 1, 2) + 1.U =/= 0.U
-  io.cpu.resp.bits.respn := dual_issue
-  val reg_rdata = Reg(Vec(2, UInt(len.W)))
-  val reg_wait = RegInit(false.B)
-  reg_wait := false.B
-  io.cpu.resp.bits.rdata(0) := line(word1)
-  io.cpu.resp.bits.rdata(1) := line(word2)
-  when(state === s_normal) {
-    when(reg_wait) {
-      io.cpu.resp.bits.rdata := reg_rdata
-    }
-    when(io.cpu.req.valid && !meta.io.hit) {
-      state := s_refill
-      io.bar.req.valid := true.B
-      tag_refill := tag_raw
-      index_refill := index_raw
-    }
-  }.elsewhen(state === s_refill) {
-    when(io.bar.resp.valid) {
-      state := s_normal
-      for (i <- 0 until 1 << (OffsetBits - 2)) {
-        line(i) := io.bar.resp.data(i * len + 31, i * len)
-      }
-      io.cpu.resp.valid := true.B
-      meta.io.update := true.B
-      data.io.addr := index_refill
+  // Cache states
+  val s_normal :: s_fetch :: s_refill :: Nil = Enum(3)
+  val state = RegInit(s_normal)
+  val nstate = WireDefault(state)
+  state := nstate
+
+  io.cpu.req.ready  := io.cpu.resp.valid
+  io.cpu.resp.valid := state === s_refill || hit
+  io.cpu.resp.bits.respn := (io.cpu.req.bits.mtype === 3.U && io.cpu.req.bits
+    .addr(OffsetBits - 1, 2) + 1.U =/= 0.U)
+  io.cpu.resp.bits.rdata(0) := Mux(state === s_refill, refill_data(word1), line(word1))
+  io.cpu.resp.bits.rdata(1) := Mux(state === s_refill, refill_data(word2), line(word2))
+  
+  io.bar.req.valid := false.B
+  io.bar.req.wen   := false.B
+  io.bar.req.addr  := Cat(
+    req_addr(len - 1, OffsetBits),
+    Fill(OffsetBits, 0.U)
+  )
+  io.bar.req.data  := 0.U
+  io.bar.req.mtype := MEM_DWORD.U
+  when (state === s_normal && !hit) {
+    nstate := s_fetch
+    io.bar.req.valid := true.B
+  }.elsewhen (state === s_fetch) {
+    io.bar.req.valid := !io.bar.resp.valid
+    when (io.bar.resp.valid) {
+      nstate := s_refill
+      meta.io.we := true.B
       data.io.we := true.B
-      reg_wait := true.B
-      reg_rdata(0) := line(word1)
-      reg_rdata(1) := line(word2)
-    }.otherwise {
-      io.bar.req.valid := true.B
+      for (i <- 0 until 1 << (OffsetBits - 2)) {
+        refill_data(i) := io.bar.resp.data(i * len + 31, i * len)
+      }
     }
+  }.otherwise {
+    nstate := s_normal
   }
+
 }

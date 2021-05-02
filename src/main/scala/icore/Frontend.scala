@@ -45,7 +45,7 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
   stall_f        := stall_d || cache_stall
   kill_f         := kill_d
   fetch_half     := io.icache.resp.bits.respn === 0.U
-  cache_stall    := (if (metaZeroLatency) RegNext(!io.icache.resp.valid) else !io.icache.resp.valid) && last_req_valid
+  cache_stall    := !io.icache.resp.valid && last_req_valid
   last_req_valid := io.icache.req.valid
 
   pc_gen.io.please_wait := stall_f

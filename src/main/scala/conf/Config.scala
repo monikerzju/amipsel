@@ -12,8 +12,7 @@ trait Config {
   var fuN: Int = 4
   val queueSize: Int = 8
   // Cache
-  var withRealCache: Boolean = false
-  var metaZeroLatency: Boolean = true
+  var dcacheMetaZeroLatency: Boolean = true
   // BPU
   var withBPU: Boolean = false 
   var BPUEntryN: Int = 512

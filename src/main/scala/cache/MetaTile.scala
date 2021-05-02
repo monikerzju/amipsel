@@ -3,29 +3,6 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
-class Meta(nline:Int) extends Module with CacheParameters{
-    val io=IO(new MetaIOI)
-    val tags=RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
-    val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
-    io.hit:= !(io.aux_index===io.index_in&&io.invalidate)&&(io.tags_in===tags(io.index_in)&&valid(io.index_in))
-    when(io.update){
-        tags(io.aux_index):=io.aux_tag
-        valid(io.aux_index):=true.B
-    }.elsewhen(io.invalidate){
-        valid(io.aux_index):=false.B
-    }
-}
-class MetaSimple(nline:Int) extends Module with CacheParameters{
-    // auto set valid bit to false when miss
-    val io=IO(new MetaIOISimple)
-    val tags=RegInit(VecInit(Seq.fill(nline)(0.U(TagBits.W))))
-    val valid=RegInit(VecInit(Seq.fill(nline)(false.B)))
-    io.hit:= io.tags_in===tags(io.index_in)&&valid(io.index_in)
-    when(io.update){
-        tags(io.aux_index):=io.aux_tag
-        valid(io.aux_index):=true.B
-    }
-}
 class Meta_4Way(nline:Int) extends Module with CacheParameters_4Way{
     val io=IO(new MetaIOI4Way)
     val groups=RegInit(VecInit(Seq.fill(nline/4)(VecInit(Seq.fill(4)(0.U((TagBits+5).W).asTypeOf(new MetaBundleI))))))
