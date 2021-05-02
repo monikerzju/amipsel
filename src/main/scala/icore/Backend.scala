@@ -83,6 +83,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val loadAddr     = fwdRsData(2) + exInsts(2).imm
   val storeAddr    = fwdRsData(3) + exInsts(3).imm  
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
+  val exInterruptd = RegInit(false.B)
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
   val ifMisaligned = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC(1, 0).orR, Mux(
@@ -118,6 +119,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbReBranch       = RegInit(false.B)
   val wbExcepts        = Wire(Vec(4, Bool()))
   val wbMisalignedAddr = RegNext(io.dcache.req.bits.addr)
+  val wbInterruptd     = RegNext(exInterruptd)
 
   /**
    *  [---------- IS stage -----------]
@@ -182,16 +184,35 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     exInsts(2) -> LU
     exInsts(3) -> SU
    */
+  // when call for int, only alu will be valid no matter which fu will be valid normally,
+  // so exInstsValid(0) := issueArbiter.io.issue_fu_valid.asUInt.orR
+  // exInsts.pc must be the pc with the smallest order
+  // so nopPC.pc := issueInsts(0).pc
   exNum := Mux(stall_x, exNum, Mux(kill_x, 0.U, issueNum))
   when (kill_x) {
+    exInterruptd := false.B
     for(i <- 0 until 4) {
       exInsts(i) := nop
       exInstsValid(i) := false.B
     }
   }.elsewhen(!stall_x) {
     exInstsOrder := issueArbiter.io.insts_order
-    exInstsValid := issueArbiter.io.issue_fu_valid
-    exInsts      := issueArbiter.io.insts_out
+    when (cp0.io.except.call_for_int) {
+      exInstsValid(0) := issueArbiter.io.issue_fu_valid.asUInt.orR
+      val nopPC = WireInit(nop)
+      nopPC.pc := issueInsts(0).pc
+      exInsts(0) := nopPC
+      for (i <- 1 until 4) {
+        exInstsValid(i) := false.B
+      }
+    }.otherwise {
+      exInstsValid := issueArbiter.io.issue_fu_valid
+      exInsts(0)   := issueArbiter.io.insts_out(0)
+    }
+    for (i <- 1 until 4) {
+      exInsts(i) := issueArbiter.io.insts_out(i)
+    }
+    exInterruptd := cp0.io.except.call_for_int
   }
 
   for (i <- 0 until 4) {
@@ -408,6 +429,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0)
+  val respInt       = wbInterruptd && wbInstsValid(0)
   wbExcepts(0) := wbFetchMaReal || wbALUOvfReal
   wbExcepts(1) := wbMDUOvfReal
   wbExcepts(2) := wbLdMaReal
@@ -431,13 +453,14 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   cp0.io.except.valid_inst    := wbInstsValid.asUInt.orR
   cp0.io.except.hard_int_vec  := io.interrupt
   cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret
-  cp0.io.except.epc           := Mux(wbALUSysReal || wbALUBpReal || wbALUOvfReal || illegal, wbInsts(0).pc, 
+  cp0.io.except.epc           := Mux(wbALUSysReal || wbALUBpReal || wbALUOvfReal || illegal || respInt, wbInsts(0).pc, 
                                    Mux(wbFetchMaReal, reBranchPC,
                                      Mux(wbMDUOvfReal, wbInsts(1).pc,
                                        Mux(wbLdMaReal, wbInsts(2).pc, wbInsts(3).pc)))
                                  )
-  cp0.io.except.in_delay_slot := false.B // TODO
+  cp0.io.except.in_delay_slot := Mux(respInt, !wfds && RegNext(wfds), false.B) // TODO exception
   cp0.io.except.bad_addr      := Mux(wbFetchMaReal, reBranchPC,  wbMisalignedAddr)
+  cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux

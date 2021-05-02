@@ -64,22 +64,24 @@ trait CauseExcCode {
 }
 
 class FromToCIO extends Bundle with Config with CP0Code {
-  val wen = Input(Bool())
+  val wen  = Input(Bool())
   val code = Input(UInt(SZ_CP0_CODE.W))
-  val sel = Input(UInt(SZ_CP0_SEL.W))
-  val din = Input(UInt(len.W))
+  val sel  = Input(UInt(SZ_CP0_SEL.W))
+  val din  = Input(UInt(len.W))
   val dout = Output(UInt(len.W))
 }
 
 class ExceptIO extends Bundle with Config with CauseExcCode {
-  val valid_inst = Input(Bool())
-  val except_vec = Input(Vec(SZ_EXC_CODE, Bool()))
-  val hard_int_vec = Input(Vec(SZ_HARD_INT, Bool()))
-  val ret = Input(Bool())
-  val epc = Input(UInt(len.W))
-  val in_delay_slot = Input(Bool())
-  val bad_addr = Input(UInt(len.W))
-  val except_kill = Output(Bool())
+  val valid_inst      = Input(Bool())
+  val except_vec      = Input(Vec(SZ_EXC_CODE, Bool()))
+  val hard_int_vec    = Input(Vec(SZ_HARD_INT, Bool()))
+  val ret             = Input(Bool())
+  val epc             = Input(UInt(len.W))
+  val in_delay_slot   = Input(Bool())
+  val bad_addr        = Input(UInt(len.W))
+  val resp_for_int    = Input(Bool())
+  val call_for_int    = Output(Bool())
+  val except_kill     = Output(Bool())
   val except_redirect = Output(UInt(len.W))
 }
 
@@ -115,24 +117,24 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
   val io = IO(new CP0IO)
 
   val badvaddrr = Reg(UInt(len.W))
-  val countr = Reg(UInt((len + 1).W))
-  val comparer = Reg(UInt(len.W))
-  val statusr = RegInit(statusVal.U(len.W))
-  val causer = RegInit(0.U(len.W))
-  val epcr = Reg(UInt(len.W))
+  val countr    = Reg(UInt((len + 1).W))
+  val comparer  = Reg(UInt(len.W))
+  val statusr   = RegInit(statusVal.U(len.W))
+  val causer    = RegInit(0.U(len.W))
+  val epcr      = Reg(UInt(len.W))
 
   val tim_int = RegInit(false.B)
-  when (countr === comparer) {
-    tim_int := true.B
-  }.elsewhen (io.ftc.wen && io.ftc.code === Compare.U) {
+  when (io.ftc.wen && io.ftc.code === Compare.U && io.except.valid_inst) {
     tim_int := false.B
+  }.elsewhen (countr === comparer) {
+    tim_int := true.B
   }
   val int_en = (
     !statusr.asTypeOf(new StatusStruct).exl &&
     statusr.asTypeOf(new StatusStruct).ie.asBool &&
     (Cat(io.except.hard_int_vec.asUInt | (tim_int << 5.U).asUInt,
     causer.asTypeOf(new CauseStruct).ips) & 
-    (~statusr.asTypeOf(new StatusStruct).im).asUInt).orR
+    statusr.asTypeOf(new StatusStruct).im.asUInt).orR
   )
   val real_except_vec = Wire(Vec(SZ_EXC_CODE, Bool()))
   val has_except = real_except_vec.asUInt.orR && io.except.valid_inst
@@ -145,7 +147,7 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
     else if (i == AddrErrLoad)
       real_except_vec(AddrErrLoad) := io.except.except_vec(AddrErrLoad) || error_ret
     else
-      real_except_vec(Interrupt) := io.except.except_vec(Interrupt) && int_en
+      real_except_vec(Interrupt) := int_en && io.except.resp_for_int
   }
 
   io.ftc.dout := badvaddrr
@@ -158,8 +160,9 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
     is (Compare.U)  { io.ftc.dout := comparer                                                                         }
   }
 
-  io.except.except_kill := has_except || ret
+  io.except.except_kill     := has_except || ret
   io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
+  io.except.call_for_int    := int_en
   countr := countr + 1.U
   when (has_except || error_ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
@@ -184,7 +187,7 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
       // BadVAddr is unwritable
       is (Count.U)    { countr := Cat(io.ftc.din, 0.U(1.W))                                }
       is (Status.U)   { statusr := status_imut | status_mut                                }
-      is (Cause.U)    { io.ftc.dout := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0)) }
+      is (Cause.U)    { causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
       is (EPC.U)      { epcr := io.ftc.din                                                 }
       is (Compare.U)  { comparer := io.ftc.din                                             }
     }
