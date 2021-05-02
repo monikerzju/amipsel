@@ -36,16 +36,17 @@ class MDUIO(width: Int = 32) extends Bundle {
 class MDU(width: Int = 32) extends Module with MDUOperation {
   val io = IO(new MDUIO(width))
 
-  val mul_res = io.req.in1.asSInt * io.req.in2.asSInt
-  val mulu_res = io.req.in1.asUInt * io.req.in2.asUInt
+  val mul_res = RegNext(io.req.in1.asSInt * io.req.in2.asSInt)
+  val mulu_res = RegNext(io.req.in1.asUInt * io.req.in2.asUInt)
   val diving = (io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U) && io.req.valid
+  val multing = (io.req.op === MDU_MUL.U || io.req.op === MDU_MULU.U) && io.req.valid
 
   val divider = Module(new Div32)
   val sign1   = io.req.in1(width - 1)
   val sign2   = io.req.in2(width - 1)
   divider.io.vi   := diving
-  divider.io.in1  := Mux(io.req.op === MDU_DIV.U && sign1.asBool, ((~io.req.in1) + 1.U), io.req.in1)
-  divider.io.in2  := Mux(io.req.op === MDU_DIV.U && sign2.asBool, ((~io.req.in2) + 1.U), io.req.in2)
+  divider.io.in1  := Mux(io.req.op === MDU_DIV.U && sign1.asBool, ((~io.req.in1).asUInt + 1.U), io.req.in1)
+  divider.io.in2  := Mux(io.req.op === MDU_DIV.U && sign2.asBool, ((~io.req.in2).asUInt + 1.U), io.req.in2)
 
   val shamt = io.req.in1(4, 0)
   val addResult = io.req.in1 + io.req.in2
@@ -56,7 +57,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
       io.req.op,
       divider.io.div_res,
       Seq(
-        MDU_DIV.U  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res) + 1.U)),
+        MDU_DIV.U  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res).asUInt + 1.U)),
         MDU_MUL.U  -> mul_res(31, 0).asUInt,
         MDU_MULU.U -> mulu_res(31, 0)
       )
@@ -85,7 +86,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     io.req.op,
     divider.io.rem_res,
     Seq(
-      MDU_DIV.U  -> Mux(sign1 === 0.U, divider.io.rem_res, ((~divider.io.rem_res) + 1.U)),
+      MDU_DIV.U  -> Mux(sign1 === 0.U, divider.io.rem_res, ((~divider.io.rem_res).asUInt + 1.U)),
       MDU_MULU.U -> mulu_res(2 * width - 1, width),
       MDU_MUL.U  -> mul_res(2 * width - 1, width)
     )
@@ -99,7 +100,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     Mux(io.req.op === aluSub.U, 
       io.req.in1(width - 1) =/= io.req.in2(width - 1) && io.req.in1(width - 1) =/= subResult(width - 1), false.B)
   )
-  io.resp.valid  := Mux(diving, divider.io.vo, true.B)
+  io.resp.valid  := Mux(diving, divider.io.vo, Mux(multing, RegNext(multing), true.B))
 }
 
 class Div32 extends Module with Config {
