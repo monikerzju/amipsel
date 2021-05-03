@@ -11,10 +11,10 @@ class IAIO(private val iq_size: Int) extends Bundle with Config {
   val queue_items = Input(UInt(log2Ceil(iq_size + 1).W))
   val ld_dest_ex = Input(UInt(log2Ceil(len).W))
   val mtc0_ex = Input(Bool())
-  val insts_out = Output(Vec(fuN, new Mops))
-  val issue_num = Output(UInt(log2Ceil(fuN + 1).W))
-  val issue_fu_valid = Output(Vec(fuN, Bool()))
-  val insts_order = Output(Vec(fuN, UInt(log2Ceil(backendIssueN + 1).W)))
+  val insts_out = Output(Vec(backendFuN, new Mops))
+  val issue_num = Output(UInt(log2Ceil(backendFuN + 1).W))
+  val issue_fu_valid = Output(Vec(backendFuN, Bool()))
+  val insts_order = Output(Vec(backendFuN, UInt(log2Ceil(backendIssueN + 1).W)))
 }
 
 class IssueArbiter(private val iq_size: Int) extends Module with InstType with Config {
@@ -41,32 +41,31 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
 
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {
     !isDataHazard(inst1, inst2) &&
-      (inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu &&
-        !(inst1.alu_mdu_lsu === toLU.U && inst2.alu_mdu_lsu === toSU.U ||
-          inst1.alu_mdu_lsu === toSU.U && inst2.alu_mdu_lsu === toLU.U) ||
+      (inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu ||
           inst1.alu_mdu_lsu === toAMU.U && inst2.alu_mdu_lsu === toAMU.U)
   }
 
   def isUglyCompatible(inst1: Mops, inst2: Mops, inst3: Mops): Bool = {
-    val isLUorSU = inst3.alu_mdu_lsu === toLU.U || inst3.alu_mdu_lsu === toSU.U
+    val isLSU = inst3.alu_mdu_lsu === toLSU.U
     isCompatible(inst1, inst3) && isCompatible(inst2, inst3) &&
       MuxLookup(
         Cat(inst1.alu_mdu_lsu, inst2.alu_mdu_lsu),
         true.B,
         Seq(
-          Cat(toAMU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLUorSU,
-          Cat(toAMU.U(typeLen.W), toALU.U(typeLen.W)) -> isLUorSU,
-          Cat(toALU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLUorSU,
-          Cat(toAMU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLUorSU,
-          Cat(toMDU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLUorSU,
-          Cat(toALU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLUorSU,
-          Cat(toMDU.U(typeLen.W), toALU.U(typeLen.W)) -> isLUorSU
+          Cat(toAMU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLSU,
+          Cat(toAMU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU,
+          Cat(toALU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLSU,
+          Cat(toAMU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLSU,
+          Cat(toMDU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLSU,
+          Cat(toALU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLSU,
+          Cat(toMDU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU
         )
       )
   }
+
   val io = IO(new IAIO(iq_size))
   // decide the true issue num
-  val issue_valid = WireDefault(VecInit(Seq.fill(4)(false.B)))
+  val issue_valid = WireDefault(VecInit(Seq.fill(backendFuN)(false.B)))
   io.issue_num := 0.U
   when(io.queue_items > 0.U && isSimpleCompatible(io.insts_in(0), io.ld_dest_ex, io.mtc0_ex)) {
     issue_valid(0) := true.B
@@ -90,7 +89,7 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
   val mdu_occupy = Wire(Bool())
   alu_occupy := false.B
   mdu_occupy := false.B
-  for(i <- 0 until fuN) {
+  for(i <- 0 until backendFuN) {
     io.insts_out(i) := 0.U.asTypeOf(new Mops)
     io.insts_order(i) := 0.U
     io.issue_fu_valid(i) := false.B
@@ -98,7 +97,6 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
   for(i <- 0 until backendIssueN) {
     when(issue_valid(i)) {
       switch(io.insts_in(i).alu_mdu_lsu) {
-        // TODO:
         is(toALU.U) {
           io.insts_out(0) := io.insts_in(i)
           io.insts_order(0) := i.U
@@ -111,15 +109,10 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
           io.issue_fu_valid(1) := true.B
           mdu_occupy := true.B
         }
-        is(toLU.U) {
+        is(toLSU.U) {
           io.insts_out(2) := io.insts_in(i)
           io.insts_order(2) := i.U
           io.issue_fu_valid(2) := true.B
-        }
-        is(toSU.U) {
-          io.insts_out(3) := io.insts_in(i)
-          io.insts_order(3) := i.U
-          io.issue_fu_valid(3) := true.B
         }
       }
     }

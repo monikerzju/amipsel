@@ -8,8 +8,8 @@ trait Config {
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"
   var frontendIssueN: Int = 2   // 1 or 2
-  var backendIssueN: Int = 3    // 3
-  var fuN: Int = 4
+  var backendIssueN: Int = 3    // 3 backend issue num only affect issue stage
+  var backendFuN: Int = 3
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = true
@@ -29,6 +29,7 @@ trait Config {
   var BSWayN: Int = 2
   // Assertions ---- Dont Change!!!
   assert(frontendIssueN == 1 || frontendIssueN == 2)
-  assert(backendIssueN == 3)
+  assert(backendIssueN == 1 || backendIssueN == 2 || backendIssueN == 3)
   assert(tagBits + indexBits + offsetBits == len)
+  assert(backendFuN == 3)
 }
