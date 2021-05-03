@@ -456,6 +456,21 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   
   // difftest
   if (diffTestV) {
+    val instret    = RegInit(0.U(64.W))
+    val counter    = RegInit(0.U(64.W))
+    val dstall     = RegInit(0.U(64.W))
+    val istallw    = WireDefault(false.B)
+    val istall     = RegInit(0.U(64.W))
+
+    dstall  := dstall + Mux(io.dcache.req.valid && !io.dcache.resp.valid, 1.U, 0.U)
+    istall  := istall + Mux(istallw, 1.U, 0.U)
+    counter := counter + 1.U
+    instret := instret + (wbInstsValid(0) && !wbExcepts(0)).asUInt + (wbInstsValid(1) && !wbExcepts(1)).asUInt + (wbInstsValid(2) && !wbExcepts(2)).asUInt
+    when (wbInsts(0).pc === endAddr.U || wbInsts(1).pc === endAddr.U || wbInsts(2).pc === endAddr.U) {
+      printf("%d insts, %d cycles, %d d$ stalls, %d i$ stalls\n", instret + 1.U, counter, dstall, istall)
+      // TODO BPU mis-prediction, icache miss, dcache miss, mdu stall
+    }
+
     val debug_pc   = Wire(Vec(backendIssueN, UInt(len.W)))
     val debug_wen  = Wire(Vec(backendIssueN, Bool()))
     val debug_data = Wire(Vec(backendIssueN, UInt(len.W)))
@@ -494,9 +509,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       }
     }
 
-    BoringUtils.addSource(debug_pc,   "dt_pc"    )
-    BoringUtils.addSource(debug_wen,  "dt_wen"   )
-    BoringUtils.addSource(debug_data, "dt_data"  )
-    BoringUtils.addSource(debug_nreg, "dt_nreg"  )
+    BoringUtils.addSink  (istallw,    "icache_stall")
+    BoringUtils.addSource(debug_pc,   "dt_pc"       )
+    BoringUtils.addSource(debug_wen,  "dt_wen"      )
+    BoringUtils.addSource(debug_data, "dt_data"     )
+    BoringUtils.addSource(debug_nreg, "dt_nreg"     )
   }
 }

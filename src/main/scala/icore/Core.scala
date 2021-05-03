@@ -89,7 +89,7 @@ class CoreIO extends Bundle with Config with CauseExcCode {
 class Core(diffTestV: Boolean) extends Module with Config {
   val io = IO(new CoreIO)
 
-  val fe = Module(new Frontend)
+  val fe = Module(new Frontend(diffTestV))
   val be = Module(new Backend(diffTestV))
 
   fe.io.fb <> be.io.fb

@@ -191,6 +191,7 @@ Session.vim
 .vscode/
 .metals/
 .bloop/
+src/test/
 metals.sbt
 # if you remove the above rule, at least ignore the following:
 

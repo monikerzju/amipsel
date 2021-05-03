@@ -5,6 +5,7 @@ import chisel3._
 trait Config {
   var len: Int = 32
   var startAddr: String = "hbfc00000"
+  var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"
   var frontendIssueN: Int = 2   // 1 or 2
@@ -13,10 +14,11 @@ trait Config {
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = true
-  var tagBits = 19
-  var indexBits = 8   // 8KB now
-  var offsetBits = 5
-  var dataBits = 256
+  var icachePref: Boolean = false
+  var tagBits: Int = 19
+  var indexBits: Int = 8   // 8KB now
+  var offsetBits: Int = 5
+  var dataBits: Int = 256
   // BPU
   var withBPU: Boolean = false 
   var BPUEntryN: Int = 512

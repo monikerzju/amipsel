@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import conf.Config
 import isa._
+import chisel3.util.experimental.BoringUtils
 
 // PCGen is can be non-project-specific, no with Config
 class PCGenIO(va_width: Int = 32) extends Bundle {
@@ -21,7 +22,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   io.pc_o := pc
 }
 
-class Frontend extends Module with Config with MemAccessType with FrontToBack {
+class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType with FrontToBack {
   val io = IO(new FrontendIO)
 
   // IF
@@ -86,6 +87,10 @@ class Frontend extends Module with Config with MemAccessType with FrontToBack {
     decs(i).inst           := io.icache.resp.bits.rdata(i)
     decs(i).pc             := decode_pc_low_reg + (i.U << 2.U)
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
+  }
+
+  if (diffTestV) {
+    BoringUtils.addSource(cache_stall, "icache_stall")
   }
 
 }
