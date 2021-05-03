@@ -23,6 +23,8 @@ class StoreInfo extends Bundle with Config {
   val data = UInt(len.W)
 }
 
+// TODO ex dont care expt mask, move kill expt to wb, dcache sw need to be confirmed at wb
+// TODO fwd dont need to care wb or not, valid -> ok, because expt will just cause redirecting
 class Backend(diffTestV: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
