@@ -8,6 +8,8 @@ trait Config {
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"
+  var withBigCore: Boolean = false   // big core for final
+  // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 3    // 3 backend issue num only affect issue stage
   var backendFuN: Int = 3

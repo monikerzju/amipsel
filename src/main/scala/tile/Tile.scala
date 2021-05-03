@@ -40,7 +40,7 @@ class Tile(diffTestV: Boolean) extends Module with Config {
   }
 
   val core = Module(new Core(diffTestV))
-  val icache = Module(new ICacheSimple)
+  val icache = Module(new ICache)
   val dcache = Module(new DCacheSimple)
   val xbar = Module(new AXI3Server(2, 1 << (offsetBits + 3), 4, "Seq", len, 1, 0))
 
