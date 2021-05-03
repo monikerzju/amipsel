@@ -123,6 +123,8 @@ class Div32 extends Module with Config {
   // step | s0  | s1   | s2   | s3   | s0
   // stat | id  | ca   | ca   | ca   | id
 
+  val in1d = RegNext(io.in1)
+  val in2d = RegNext(io.in2)
   val isz = Wire(Vec(32 / 8 - 1, Bool()))
   val num_nonz = Wire(UInt(log2Ceil(32 / 8 + 1).W))
   val s_idle :: s_calc :: s_fin :: Nil = Enum(3)
@@ -146,7 +148,7 @@ class Div32 extends Module with Config {
   }
 
   for (i <- 32 / 8 - 1 to 1 by -1) {
-    isz(i - 1) := !io.in1(8 * i + 7, 8 * i).orR
+    isz(i - 1) := !in1d(8 * i + 7, 8 * i).orR
   }
 
   num_nonz := Mux(
@@ -160,10 +162,10 @@ class Div32 extends Module with Config {
   )
 
   val true_rem = Wire(UInt((2 * 32 + 1).W))
-  true_rem := Mux(step === 0.U, io.in1 << (1.U + 8.U * (4.U - num_nonz)), remr)
-  rems(0)  := Mux(true_rem(63, 32) < io.in2, 
+  true_rem := Mux(step === 0.U, in1d << (1.U + 8.U * (4.U - num_nonz)), remr)
+  rems(0)  := Mux(true_rem(63, 32) < in2d, 
     true_rem << 1.U, 
-    Cat((true_rem(63, 32) - io.in2)(30, 0), true_rem(31, 0), 1.U)
+    Cat((true_rem(63, 32) - in2d)(30, 0), true_rem(31, 0), 1.U)
   )
   rems(1) := 0.U
 
