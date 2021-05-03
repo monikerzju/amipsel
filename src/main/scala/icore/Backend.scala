@@ -461,13 +461,15 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     val dstall     = RegInit(0.U(64.W))
     val istallw    = WireDefault(false.B)
     val istall     = RegInit(0.U(64.W))
+    val common     = RegInit(0.U(64.W))
 
     dstall  := dstall + Mux(io.dcache.req.valid && !io.dcache.resp.valid, 1.U, 0.U)
     istall  := istall + Mux(istallw, 1.U, 0.U)
+    common  := common + Mux(io.dcache.req.valid && !io.dcache.resp.valid && istallw, 1.U, 0.U)
     counter := counter + 1.U
     instret := instret + (wbInstsValid(0) && !wbExcepts(0)).asUInt + (wbInstsValid(1) && !wbExcepts(1)).asUInt + (wbInstsValid(2) && !wbExcepts(2)).asUInt
     when (wbInsts(0).pc === endAddr.U || wbInsts(1).pc === endAddr.U || wbInsts(2).pc === endAddr.U) {
-      printf("%d insts, %d cycles, %d d$ stalls, %d i$ stalls\n", instret + 1.U, counter, dstall, istall)
+      printf("%d insts, %d cycles, %d d$ stalls, %d i$ stalls, %d common stalls\n", instret + 1.U, counter, dstall, istall, common)
       // TODO BPU mis-prediction, icache miss, dcache miss, mdu stall
     }
 

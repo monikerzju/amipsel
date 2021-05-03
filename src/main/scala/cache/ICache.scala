@@ -100,8 +100,16 @@ class ICache extends Module with Config with MemAccessType {
   io.cpu.resp.valid := state === s_refill || hit
   io.cpu.resp.bits.respn := (io.cpu.req.bits.mtype === 3.U && io.cpu.req.bits
     .addr(offsetBits - 1, 2) + 1.U =/= 0.U)
-  io.cpu.resp.bits.rdata(0) := Mux(state === s_refill, Mux(lstate === s_normal, prefill_data(word1), refill_data(word1)), line(word1))
-  io.cpu.resp.bits.rdata(1) := Mux(state === s_refill, Mux(lstate === s_normal, prefill_data(word2), refill_data(word2)), line(word2))
+  if (icachePref) {
+    io.cpu.resp.bits.rdata(0) := Mux(state === s_refill, 
+        Mux(lstate === s_normal, prefill_data(word1), refill_data(word1)), line(word1))
+    io.cpu.resp.bits.rdata(1) := Mux(state === s_refill, 
+        Mux(lstate === s_normal, prefill_data(word2), refill_data(word2)), line(word2))
+  } else {
+    io.cpu.resp.bits.rdata(0) := Mux(state === s_refill, refill_data(word1), line(word1))
+    io.cpu.resp.bits.rdata(1) := Mux(state === s_refill, refill_data(word2), line(word2))
+  }
+
   
   io.bar.req.valid := false.B
   io.bar.req.wen   := false.B
