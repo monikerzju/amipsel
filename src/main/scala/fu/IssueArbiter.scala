@@ -10,6 +10,10 @@ class IAIO(private val iq_size: Int) extends Bundle with Config {
   val insts_in = Input(Vec(backendIssueN, new Mops))
   val queue_items = Input(UInt(log2Ceil(iq_size + 1).W))
   val ld_dest_ex = Input(UInt(log2Ceil(len).W))
+  val rss_in  = Input(Vec(backendIssueN, UInt(len.W)))
+  val rts_in  = Input(Vec(backendIssueN, UInt(len.W)))
+  val rss_out = Output(Vec(backendFuN, UInt(len.W)))
+  val rts_out = Output(Vec(backendFuN, UInt(len.W)))
   val mtc0_ex = Input(Bool())
   val insts_out = Output(Vec(backendFuN, new Mops))
   val issue_num = Output(UInt(log2Ceil(backendFuN + 1).W))
@@ -75,10 +79,12 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
       // do not have data hazard and structural hazard
       issue_valid(1) := true.B
       io.issue_num := 2.U
-      when(io.queue_items > 2.U && isUglyCompatible(io.insts_in(0), io.insts_in(1), io.insts_in(2)) && 
-        isSimpleCompatible(io.insts_in(2), io.ld_dest_ex, io.mtc0_ex)) {
-        issue_valid(2) := true.B
-        io.issue_num := 3.U
+      if (backendIssueN == 3) {
+        when(io.queue_items > 2.U && isUglyCompatible(io.insts_in(0), io.insts_in(1), io.insts_in(2)) && 
+          isSimpleCompatible(io.insts_in(2), io.ld_dest_ex, io.mtc0_ex)) {
+          issue_valid(2) := true.B
+          io.issue_num := 3.U
+        }
       }
     }
   }
@@ -91,6 +97,8 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
   mdu_occupy := false.B
   for(i <- 0 until backendFuN) {
     io.insts_out(i) := 0.U.asTypeOf(new Mops)
+    io.rss_out(i) := 0.U
+    io.rts_out(i) := 0.U
     io.insts_order(i) := 0.U
     io.issue_fu_valid(i) := false.B
   }
@@ -99,18 +107,24 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
       switch(io.insts_in(i).alu_mdu_lsu) {
         is(toALU.U) {
           io.insts_out(0) := io.insts_in(i)
+          io.rss_out(0) := io.rss_in(i)
+          io.rts_out(0) := io.rts_in(i)
           io.insts_order(0) := i.U
           io.issue_fu_valid(0) := true.B
           alu_occupy := true.B
         }
         is(toMDU.U) {
           io.insts_out(1) := io.insts_in(i)
+          io.rss_out(1) := io.rss_in(i)
+          io.rts_out(1) := io.rts_in(i)
           io.insts_order(1) := i.U
           io.issue_fu_valid(1) := true.B
           mdu_occupy := true.B
         }
         is(toLSU.U) {
           io.insts_out(2) := io.insts_in(i)
+          io.rss_out(2) := io.rss_in(i)
+          io.rts_out(2) := io.rts_in(i)
           io.insts_order(2) := i.U
           io.issue_fu_valid(2) := true.B
         }
@@ -121,38 +135,71 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
       when(issue_valid(i) && io.insts_in(i).alu_mdu_lsu === toAMU.U) {
         when(!alu_occupy) {
           io.insts_out(0) := io.insts_in(i)
+          io.rss_out(0) := io.rss_in(i)
+          io.rts_out(0) := io.rts_in(i)
           io.insts_order(0) := i.U
           io.issue_fu_valid(0) := true.B
         } .elsewhen(!mdu_occupy) {
           io.insts_out(1) := io.insts_in(i)
+          io.rss_out(1) := io.rss_in(i)
+          io.rts_out(1) := io.rts_in(i)
           io.insts_order(1) := i.U
           io.issue_fu_valid(1) := true.B
         }
       }
     }
   }
+
   // process toAMU
-  when(issue_valid(0) && issue_valid(1) && io.insts_in(0).alu_mdu_lsu === io.insts_in(1).alu_mdu_lsu) {
-    io.insts_out(0) := io.insts_in(0)
-    io.insts_order(0) := 0.U
-    io.issue_fu_valid(0) := true.B
-    io.insts_out(1) := io.insts_in(1)
-    io.insts_order(1) := 1.U
-    io.issue_fu_valid(1) := true.B
-  } .elsewhen(issue_valid(0) && issue_valid(2) && io.insts_in(0).alu_mdu_lsu === io.insts_in(2).alu_mdu_lsu) {
-    io.insts_out(0) := io.insts_in(0)
-    io.insts_order(0) := 0.U
-    io.issue_fu_valid(0) := true.B
-    io.insts_out(1) := io.insts_in(2)
-    io.insts_order(1) := 2.U
-    io.issue_fu_valid(1) := true.B
-  } .elsewhen(issue_valid(1) && issue_valid(2) && io.insts_in(1).alu_mdu_lsu === io.insts_in(2).alu_mdu_lsu) {
-    io.insts_out(0) := io.insts_in(1)
-    io.insts_order(0) := 1.U
-    io.issue_fu_valid(0) := true.B
-    io.insts_out(1) := io.insts_in(2)
-    io.insts_order(1) := 2.U
-    io.issue_fu_valid(1) := true.B
+  if (backendIssueN == 3) {
+    when(issue_valid(0) && issue_valid(1) && io.insts_in(0).alu_mdu_lsu === io.insts_in(1).alu_mdu_lsu) {
+      io.insts_out(0) := io.insts_in(0)
+      io.rss_out(0) := io.rss_in(0)
+      io.rts_out(0) := io.rts_in(0)
+      io.insts_order(0) := 0.U
+      io.issue_fu_valid(0) := true.B
+      io.insts_out(1) := io.insts_in(1)
+      io.rss_out(1) := io.rss_in(1)
+      io.rts_out(1) := io.rts_in(1)
+      io.insts_order(1) := 1.U
+      io.issue_fu_valid(1) := true.B
+    }.elsewhen(issue_valid(0) && issue_valid(2) && io.insts_in(0).alu_mdu_lsu === io.insts_in(2).alu_mdu_lsu) {
+      io.insts_out(0) := io.insts_in(0)
+      io.rss_out(0) := io.rss_in(0)
+      io.rts_out(0) := io.rts_in(0)
+      io.insts_order(0) := 0.U
+      io.issue_fu_valid(0) := true.B
+      io.insts_out(1) := io.insts_in(2)
+      io.rss_out(1) := io.rss_in(2)
+      io.rts_out(1) := io.rts_in(2)
+      io.insts_order(1) := 2.U
+      io.issue_fu_valid(1) := true.B
+    }.elsewhen(issue_valid(1) && issue_valid(2) && io.insts_in(1).alu_mdu_lsu === io.insts_in(2).alu_mdu_lsu) {
+      io.insts_out(0) := io.insts_in(1)
+      io.rss_out(0) := io.rss_in(1)
+      io.rts_out(0) := io.rts_in(1)
+      io.insts_order(0) := 1.U
+      io.issue_fu_valid(0) := true.B
+      io.insts_out(1) := io.insts_in(2)
+      io.rss_out(1) := io.rss_in(2)
+      io.rts_out(1) := io.rts_in(2)
+      io.insts_order(1) := 2.U
+      io.issue_fu_valid(1) := true.B
+    }
+  } else {
+    when(issue_valid(0) && issue_valid(1) && io.insts_in(0).alu_mdu_lsu === io.insts_in(1).alu_mdu_lsu) {
+      io.insts_out(0) := io.insts_in(0)
+      io.rss_out(0) := io.rss_in(0)
+      io.rts_out(0) := io.rts_in(0)
+      io.insts_order(0) := 0.U
+      io.issue_fu_valid(0) := true.B
+      io.insts_out(1) := io.insts_in(1)
+      io.rss_out(1) := io.rss_in(1)
+      io.rts_out(1) := io.rts_in(1)
+      io.insts_order(1) := 1.U
+      io.issue_fu_valid(1) := true.B
+    }    
   }
+
 
 }

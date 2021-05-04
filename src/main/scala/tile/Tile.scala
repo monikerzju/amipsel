@@ -10,10 +10,10 @@ import fu.CauseExcCode
 import chisel3.util.experimental.BoringUtils
 
 class DiffTestVIO extends Bundle with Config {
-  val wb_pc   = Output(Vec(backendIssueN, UInt(len.W)))
-  val wb_wen  = Output(Vec(backendIssueN, Bool()))
-  val wb_data = Output(Vec(backendIssueN, UInt(len.W)))
-  val wb_nreg = Output(Vec(backendIssueN, UInt(5.W)))
+  val wb_pc   = Output(Vec(backendFuN, UInt(len.W)))
+  val wb_wen  = Output(Vec(backendFuN, Bool()))
+  val wb_data = Output(Vec(backendFuN, UInt(len.W)))
+  val wb_nreg = Output(Vec(backendFuN, UInt(5.W)))
 }
 
 // AXI3 Protocol according to Loongson

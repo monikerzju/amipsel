@@ -51,13 +51,17 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // Issue
   val issueNum     = Wire(UInt(2.W))
-  val issueInsts   = Wire(Vec(backendFuN, new Mops))
+  val issueInsts   = Wire(Vec(backendIssueN, new Mops))
+  val issueRss     = Wire(Vec(backendFuN, UInt(len.W)))
+  val issueRts     = Wire(Vec(backendFuN, UInt(len.W)))
   val issueQueue   = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   val issueArbiter = Module(new IssueArbiter(queueSize))
   val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
   val kill_i       = io.fb.bmfs.redirect_kill
-  val rsFwdData    = Wire(Vec(backendFuN, UInt(len.W)))
-  val rtFwdData    = Wire(Vec(backendFuN, UInt(len.W)))
+  val rsFwdData    = Wire(Vec(backendIssueN, UInt(len.W)))
+  val rtFwdData    = Wire(Vec(backendIssueN, UInt(len.W)))
+  val rsData       = Wire(Vec(backendIssueN, UInt(len.W)))
+  val rtData       = Wire(Vec(backendIssueN, UInt(len.W)))
 
   // Ex
   val stall_x      = stall_i
@@ -68,8 +72,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exInstsValid = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
   val exFwdRsData  = Reg(Vec(backendFuN, UInt(len.W)))
   val exFwdRtData  = Reg(Vec(backendFuN, UInt(len.W)))
-  val rsData       = Wire(Vec(backendFuN, UInt(len.W)))
-  val rtData       = Wire(Vec(backendFuN, UInt(len.W)))
   val reBranch     = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
   val brPC         = exInsts(0).pc + (exInsts(0).imm << 2.U)(len - 1, 0) + 4.U
@@ -110,7 +112,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbInsts          = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val kill_w           = io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
-  val regFile          = Module(new RegFile(nread = 2 * backendFuN, nwrite = backendFuN)) // 6 read port, 3 write port
+  val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN)) // 4 read port, 2 write port
   val cp0              = Module(new CP0)
   val wbData           = Wire(Vec(backendFuN, UInt(len.W)))
   val wbReBranch       = RegInit(false.B)
@@ -128,9 +130,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   issueQueue.io.deqReq  := !stall_i && !(issueQueue.io.items.orR && issueNum === 0.U)
   issueQueue.io.enqReq  := io.fb.fmbs.instn =/= 0.U
   issueQueue.io.enqStep := io.fb.fmbs.instn
-  issueInsts(0)         := issueQueue.io.dout(0)
-  issueInsts(1)         := issueQueue.io.dout(1)
-  issueInsts(2)         := issueQueue.io.dout(2)
+  for (i <- 0 until backendIssueN) {
+    issueInsts(i) := issueQueue.io.dout(i)
+  }
   for(i <- 0 until frontendIssueN) {
     issueQueue.io.din(i) := io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
   }
@@ -140,31 +142,41 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     issueQueue.io.items
   )
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, issueQueue.io.items)
-  issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
-    Mux(issueInsts(0).next_pc =/= MicroOpCtrl.PC4, 
-      Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items), 
-      trap_ret_items1
-    )  
-  )
+  if (backendIssueN == 3) {
+    issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
+      Mux(issueInsts(0).next_pc =/= MicroOpCtrl.PC4, 
+        Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items), 
+        trap_ret_items1
+      )  
+    )
+  } else {
+    issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
+      issueQueue.io.items
+    )
+  }
   issueArbiter.io.ld_dest_ex  := Fill(32, exInstsValid(2)) & exInsts(2).rd
   issueArbiter.io.mtc0_ex     := exInstsValid(0) & exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.insts_in    := issueInsts
+  issueArbiter.io.rss_in      := rsFwdData
+  issueArbiter.io.rts_in      := rtFwdData
   issueNum                    := issueArbiter.io.issue_num
+  issueRss                    := issueArbiter.io.rss_out
+  issueRts                    := issueArbiter.io.rts_out
 
-  // load to something fwd is canceled, just stall
+  // load to something and mtc0 to mfc0 fwd is canceled, just stall
   // default to regfile
-  for(i <- 0 until backendFuN) {
+  for(i <- 0 until backendIssueN) {
     rsFwdData(i) := rsData(i)
     rtFwdData(i) := rtData(i)
   }
   // wb to is
   for (j <- 0 until backendFuN) {
     when(wbInstsValid(j) && wbInsts(j).write_dest === MicroOpCtrl.DReg && wbInsts(j).rd =/= 0.U) {
-      for(i <- 0 until backendFuN) {
-        when(wbInsts(j).rd === issueArbiter.io.insts_out(i).rs1) {
+      for(i <- 0 until backendIssueN) {
+        when(wbInsts(j).rd === issueInsts(i).rs1) {
           rsFwdData(i) := wbData(j)
         }
-        when(wbInsts(j).rd === issueArbiter.io.insts_out(i).rs2) {
+        when(wbInsts(j).rd === issueInsts(i).rs2) {
           rtFwdData(i) := wbData(j)
         }
       }
@@ -172,21 +184,21 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
   // ex to is
   when(exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DReg && exInsts(0).rd =/= 0.U) {
-    for(i <- 0 until backendFuN) {
-      when(exInsts(0).rd === issueArbiter.io.insts_out(i).rs1) {
+    for(i <- 0 until backendIssueN) {
+      when(exInsts(0).rd === issueInsts(i).rs1) {
         rsFwdData(i) := aluWbData
       }
-      when(exInsts(0).rd === issueArbiter.io.insts_out(i).rs2) {
+      when(exInsts(0).rd === issueInsts(i).rs2) {
         rtFwdData(i) := aluWbData
       }
     }
   }
   when(exInstsValid(1) && exInsts(1).write_dest === MicroOpCtrl.DReg && exInsts(1).rd =/= 0.U) {
-    for(i <- 0 until backendFuN) {
-      when(exInsts(1).rd === issueArbiter.io.insts_out(i).rs1) {
+    for(i <- 0 until backendIssueN) {
+      when(exInsts(1).rd === issueInsts(i).rs1) {
         rsFwdData(i) := mdu.io.resp.lo
       }
-      when(exInsts(1).rd === issueArbiter.io.insts_out(i).rs2) {
+      when(exInsts(1).rd === issueInsts(i).rs2) {
         rtFwdData(i) := mdu.io.resp.lo
       }
     }
@@ -195,14 +207,14 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   /*
     read port rs_1 rt_1 rs_2 rt_2 rs_3 rt_3 rs_4 rs_4
    */
-  for(i <- 0 until backendFuN) {
-    regFile.io.rs_addr_vec(2 * i) := issueArbiter.io.insts_out(i).rs1
-    regFile.io.rs_addr_vec(2 * i + 1) := issueArbiter.io.insts_out(i).rs2
+  for(i <- 0 until backendIssueN) {
+    regFile.io.rs_addr_vec(2 * i) := issueInsts(i).rs1
+    regFile.io.rs_addr_vec(2 * i + 1) := issueInsts(i).rs2
   }
 
   // forward all the data here
   // assume I-type Inst replace rt with rd, and update rt = 0
-  for(i <- 0 until backendFuN) {
+  for(i <- 0 until backendIssueN) {
     rsData(i) := regFile.io.rs_data_vec(2 * i)
     rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
@@ -248,8 +260,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   when (!stall_x) {
     for (i <- 0 until backendFuN) {
-      exFwdRsData(i) := rsFwdData(i)
-      exFwdRtData(i) := rtFwdData(i)
+      exFwdRsData(i) := issueRss(i)
+      exFwdRtData(i) := issueRts(i)
     }
   }
 
@@ -262,9 +274,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   alu.io.a := MuxLookup(exInsts(0).src_a, exFwdRsData(0),
     Seq(
       MicroOpCtrl.AShamt -> exInsts(0).imm(10, 6),
-      MicroOpCtrl.AHi    -> hi,
-      MicroOpCtrl.ALo    -> lo,
-      MicroOpCtrl.ACP0   -> cp0.io.ftc.dout
     )
   )
   alu.io.b := MuxLookup(exInsts(0).src_b, exFwdRtData(0),
@@ -349,9 +358,16 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
    *  [---------- WB stage -----------]
    */
   wbInsts := exInsts
-  aluWbData :=Mux(exInsts(0).write_src === MicroOpCtrl.WBPC,
+  aluWbData :=Mux(exInsts(0).write_src === MicroOpCtrl.WBPC || exInsts(0).next_pc =/= MicroOpCtrl.PC4,
     exInsts(0).pc + 8.U,
-    Mux(exInsts(0).next_pc === MicroOpCtrl.PC4, alu.io.r, exInsts(0).pc + 8.U)
+    MuxLookup(
+      exInsts(0).src_a, alu.io.r,
+      Seq(
+        MicroOpCtrl.AHi  -> hi,
+        MicroOpCtrl.ALo  -> lo,
+        MicroOpCtrl.ACP0 -> cp0.io.ftc.dout
+      )
+    )
   )
   wbResult(0) := aluWbData
   wbResult(1) := mdu.io.resp.lo
@@ -406,10 +422,25 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
 
   // regfile
-  for(i <- 0 until backendFuN) {
-    regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && !wbExcepts(i)
-    regFile.io.rd_addr_vec(i) := wbInsts(i).rd
-    regFile.io.rd_data_vec(i) := wbData(i)
+  if (backendIssueN == 3) {
+    for(i <- 0 until backendFuN) {
+      regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && !wbExcepts(i)
+      regFile.io.rd_addr_vec(i) := wbInsts(i).rd
+      regFile.io.rd_data_vec(i) := wbData(i)
+    }
+  } else {
+    regFile.io.wen_vec(0) := Mux(
+      wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0), 
+      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+    )
+    regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
+    regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
+    regFile.io.wen_vec(1) := Mux(
+      wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2), 
+      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+    )
+    regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
+    regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
   }
 
   // cp0
@@ -474,10 +505,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       // TODO BPU mis-prediction, icache miss, dcache miss, mdu stall
     }
 
-    val debug_pc   = Wire(Vec(backendIssueN, UInt(len.W)))
-    val debug_wen  = Wire(Vec(backendIssueN, Bool()))
-    val debug_data = Wire(Vec(backendIssueN, UInt(len.W)))
-    val debug_nreg = Wire(Vec(backendIssueN, UInt(5.W)))
+    val debug_pc   = Wire(Vec(backendFuN, UInt(len.W)))
+    val debug_wen  = Wire(Vec(backendFuN, Bool()))
+    val debug_data = Wire(Vec(backendFuN, UInt(len.W)))
+    val debug_nreg = Wire(Vec(backendFuN, UInt(5.W)))
     for(i <- 0 until backendFuN) {
       debug_pc(i) := 0.U
       debug_wen(i) := false.B

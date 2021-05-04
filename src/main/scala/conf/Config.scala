@@ -11,7 +11,7 @@ trait Config {
   var withBigCore: Boolean = false   // big core for final
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
-  var backendIssueN: Int = 3    // 3 backend issue num only affect issue stage
+  var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
   var backendFuN: Int = 3
   val queueSize: Int = 8
   // Cache
@@ -33,7 +33,7 @@ trait Config {
   var BSWayN: Int = 2
   // Assertions ---- Dont Change!!!
   assert(frontendIssueN == 1 || frontendIssueN == 2)
-  assert(backendIssueN == 1 || backendIssueN == 2 || backendIssueN == 3)
+  assert(backendIssueN == 2 || backendIssueN == 3)
   assert(tagBits + indexBits + offsetBits == len)
   assert(backendFuN == 3)
 }
