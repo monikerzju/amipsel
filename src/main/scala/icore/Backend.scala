@@ -56,10 +56,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val issueArbiter = Module(new IssueArbiter(queueSize))
   val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
   val kill_i       = io.fb.bmfs.redirect_kill
-  val isRsFwd      = Wire(Vec(backendFuN, Bool()))
-  val isRtFwd      = Wire(Vec(backendFuN, Bool()))
-  val rsFwdIndex   = Wire(Vec(backendFuN, UInt(1.W)))
-  val rtFwdIndex   = Wire(Vec(backendFuN, UInt(1.W)))
+  val rsFwdData    = Wire(Vec(backendFuN, UInt(len.W)))
+  val rtFwdData    = Wire(Vec(backendFuN, UInt(len.W)))
 
   // Ex
   val stall_x      = stall_i
@@ -68,12 +66,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exInsts      = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(backendFuN)(0.U(2.W)))) else Reg(Vec(backendFuN, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
-  val fwdRsData    = Wire(Vec(backendFuN, UInt(len.W)))
-  val fwdRtData    = Wire(Vec(backendFuN, UInt(len.W)))
-  val exIsRsFwd    = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
-  val exIsRtFwd    = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
-  val exRsFwdIndex = RegInit(VecInit(Seq.fill(backendFuN)(0.U(1.W))))
-  val exRtFwdIndex = RegInit(VecInit(Seq.fill(backendFuN)(0.U(1.W))))
+  val exFwdRsData  = Reg(Vec(backendFuN, UInt(len.W)))
+  val exFwdRtData  = Reg(Vec(backendFuN, UInt(len.W)))
   val rsData       = Wire(Vec(backendFuN, UInt(len.W)))
   val rtData       = Wire(Vec(backendFuN, UInt(len.W)))
   val reBranch     = Wire(Bool())
@@ -83,7 +77,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val aluValid     = Wire(Bool())
   val mduValid     = Wire(Bool())
   val ldstValid    = Wire(Bool())
-  val ldstAddr     = fwdRsData(2) + exInsts(2).imm 
+  val ldstAddr     = exFwdRsData(2) + exInsts(2).imm 
+  val aluWbData    = Wire(UInt(len.W))
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
   val exInterruptd = RegInit(false.B)
   val memMisaligned = MuxLookup(
@@ -157,25 +152,59 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   issueNum                    := issueArbiter.io.issue_num
 
   // load to something fwd is canceled, just stall
+  // default to regfile
   for(i <- 0 until backendFuN) {
-    isRsFwd(i) := false.B
-    isRtFwd(i) := false.B
-    rsFwdIndex(i) := 0.U
-    rtFwdIndex(i) := 0.U
+    rsFwdData(i) := rsData(i)
+    rtFwdData(i) := rtData(i)
   }
-  for(i <- 0 until 2) {
-    when(exInstsValid(i) && exInsts(i).write_dest === MicroOpCtrl.DReg && exInsts(i).rd =/= 0.U) {
-      for(j <- 0 until backendFuN) {
-        when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs1) {
-          isRsFwd(j) := true.B
-          rsFwdIndex(j) := i.U
+  // wb to is
+  for (j <- 0 until backendFuN) {
+    when(wbInstsValid(j) && wbInsts(j).write_dest === MicroOpCtrl.DReg && wbInsts(j).rd =/= 0.U) {
+      for(i <- 0 until backendFuN) {
+        when(wbInsts(j).rd === issueArbiter.io.insts_out(i).rs1) {
+          rsFwdData(i) := wbData(j)
         }
-        when(exInsts(i).rd === issueArbiter.io.insts_out(j).rs2) {
-          isRtFwd(j) := true.B
-          rtFwdIndex(j) := i.U
+        when(wbInsts(j).rd === issueArbiter.io.insts_out(i).rs2) {
+          rtFwdData(i) := wbData(j)
         }
       }
+    }    
+  }
+  // ex to is
+  when(exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DReg && exInsts(0).rd =/= 0.U) {
+    for(i <- 0 until backendFuN) {
+      when(exInsts(0).rd === issueArbiter.io.insts_out(i).rs1) {
+        rsFwdData(i) := aluWbData
+      }
+      when(exInsts(0).rd === issueArbiter.io.insts_out(i).rs2) {
+        rtFwdData(i) := aluWbData
+      }
     }
+  }
+  when(exInstsValid(1) && exInsts(1).write_dest === MicroOpCtrl.DReg && exInsts(1).rd =/= 0.U) {
+    for(i <- 0 until backendFuN) {
+      when(exInsts(1).rd === issueArbiter.io.insts_out(i).rs1) {
+        rsFwdData(i) := mdu.io.resp.lo
+      }
+      when(exInsts(1).rd === issueArbiter.io.insts_out(i).rs2) {
+        rtFwdData(i) := mdu.io.resp.lo
+      }
+    }
+  }
+
+  /*
+    read port rs_1 rt_1 rs_2 rt_2 rs_3 rt_3 rs_4 rs_4
+   */
+  for(i <- 0 until backendFuN) {
+    regFile.io.rs_addr_vec(2 * i) := issueArbiter.io.insts_out(i).rs1
+    regFile.io.rs_addr_vec(2 * i + 1) := issueArbiter.io.insts_out(i).rs2
+  }
+
+  // forward all the data here
+  // assume I-type Inst replace rt with rd, and update rt = 0
+  for(i <- 0 until backendFuN) {
+    rsData(i) := regFile.io.rs_data_vec(2 * i)
+    rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
   }
 
   /**
@@ -217,39 +246,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     exInterruptd := cp0.io.except.call_for_int
   }
 
-  for (i <- 0 until backendFuN) {
-    exIsRsFwd(i) := isRsFwd(i) && !stall_x
-    exIsRtFwd(i) := isRtFwd(i) && !stall_x
-  }
-  exRsFwdIndex := rsFwdIndex
-  exRtFwdIndex := rtFwdIndex
-
-  /*
-    read port
-    rs_1
-    rt_1
-    rs_2
-    rt_2
-    rs_3
-    rt_3
-    rs_4
-    rs_4
-   */
-  for(i <- 0 until backendFuN) {
-    regFile.io.rs_addr_vec(2 * i) := exInsts(i).rs1
-    regFile.io.rs_addr_vec(2 * i + 1) := exInsts(i).rs2
-  }
-
-  // forward all the data here
-  // assume I-type Inst replace rt with rd, and update rt = 0
-  for(i <- 0 until backendFuN) {
-    rsData(i) := regFile.io.rs_data_vec(2 * i)
-    rtData(i) := regFile.io.rs_data_vec(2 * i + 1)
-  }
-
-  for(i <- 0 until backendFuN) {
-    fwdRsData(i) := Mux(exIsRsFwd(i), wbData(exRsFwdIndex(i)), rsData(i))
-    fwdRtData(i) := Mux(exIsRtFwd(i), wbData(exRtFwdIndex(i)), rtData(i))
+  when (!stall_x) {
+    for (i <- 0 until backendFuN) {
+      exFwdRsData(i) := rsFwdData(i)
+      exFwdRtData(i) := rtFwdData(i)
+    }
   }
 
   // if waiting for slot, must be the smallsest one
@@ -258,7 +259,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   ldstValid  := exInstsValid(2) && !kill_x && (!wfds || exInstsOrder(2) === 0.U)
 
   // alu execution
-  alu.io.a := MuxLookup(exInsts(0).src_a, fwdRsData(0),
+  alu.io.a := MuxLookup(exInsts(0).src_a, exFwdRsData(0),
     Seq(
       MicroOpCtrl.AShamt -> exInsts(0).imm(10, 6),
       MicroOpCtrl.AHi    -> hi,
@@ -266,25 +267,25 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       MicroOpCtrl.ACP0   -> cp0.io.ftc.dout
     )
   )
-  alu.io.b := MuxLookup(exInsts(0).src_b, fwdRtData(0),
+  alu.io.b := MuxLookup(exInsts(0).src_b, exFwdRtData(0),
     Seq(
       MicroOpCtrl.BImm -> exInsts(0).imm
     )
   )
-  alu.io.rega  := fwdRsData(0)
+  alu.io.rega  := exFwdRsData(0)
   alu.io.aluOp := exInsts(0).alu_op
 
   // mdu execution
   mdu.io.req.valid := mduValid
-  mdu.io.req.reg1  := fwdRsData(1)
-  mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, fwdRsData(1),
+  mdu.io.req.reg1  := exFwdRsData(1)
+  mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, exFwdRsData(1),
     Seq(
       MicroOpCtrl.AShamt -> exInsts(1).imm(10, 6),
       MicroOpCtrl.AHi    -> hi,
       MicroOpCtrl.ALo    -> lo
     )
   )
-  mdu.io.req.in2 := MuxLookup(exInsts(1).src_b, fwdRtData(1),
+  mdu.io.req.in2 := MuxLookup(exInsts(1).src_b, exFwdRtData(1),
     Seq(
       MicroOpCtrl.BImm -> exInsts(1).imm
     )
@@ -310,7 +311,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned
   io.dcache.req.bits.mtype := exInsts(2).mem_width
   io.dcache.req.bits.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
-  io.dcache.req.bits.wdata := fwdRtData(2)
+  io.dcache.req.bits.wdata := exFwdRtData(2)
   io.dcache.req.bits.addr := ldstAddr
   io.dcache.resp.ready := true.B
 
@@ -321,7 +322,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   jumpPc := Mux(
     exInsts(0).next_pc === MicroOpCtrl.Jump, 
     Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)),
-    fwdRsData(0)
+    exFwdRsData(0)
   )
   when(exInstsTrueValid(0)) {
     when (isExPCBr) {
@@ -348,11 +349,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
    *  [---------- WB stage -----------]
    */
   wbInsts := exInsts
-
-  wbResult(0) := Mux(exInsts(0).write_src === MicroOpCtrl.WBPC,
+  aluWbData :=Mux(exInsts(0).write_src === MicroOpCtrl.WBPC,
     exInsts(0).pc + 8.U,
     Mux(exInsts(0).next_pc === MicroOpCtrl.PC4, alu.io.r, exInsts(0).pc + 8.U)
   )
+  wbResult(0) := aluWbData
   wbResult(1) := mdu.io.resp.lo
 
   // handle load-inst separately
