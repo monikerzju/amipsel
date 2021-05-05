@@ -35,12 +35,23 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-
-class DCacheSimple extends Module with MemAccessType with Config {
+// class MetaIO2 extends Bundle with Config{
+//   val din=Input((tagBits+2).W)
+//   val addr=Input(indexBits.W)
+//   val wen=Input(Bool())
+//   val dout=Output((tagBits+2).W)
+// }
+// class MetaV2 extends Module with MemAccessType with Config{
+//   val io=IO(new MetaIO2)
+  
+// }
+class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType with Config {
   val io = IO(new Bundle {
     val cpu = new MemIO(1)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
+  val s_normal :: s_evict :: s_refill :: s_uncached :: Nil = Enum(4)
+  val state = RegInit(s_normal)
   val nline = 1 << indexBits
   val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
   val meta = Module(new MetaDataSimple(nline));
@@ -53,6 +64,7 @@ class DCacheSimple extends Module with MemAccessType with Config {
   )
   val index_raw =
     io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits)
+  val index = RegNext(index_raw)
   io.bar.req.valid := false.B
   io.bar.req.wen := false.B
   io.bar.req.addr := Cat(Seq(tag_raw, index_raw, 0.U(offsetBits.W)))
@@ -60,26 +72,29 @@ class DCacheSimple extends Module with MemAccessType with Config {
   // TODO: [ ] set the content during the test
   // TODO: [ ] dual-port BRAM
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
-  val index = RegNext(index_raw)
+  val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0
   for (i <- 0 until 1 << (offsetBits - 2)) {
-    line(i) := data.io.douta(i * len + 31, i * len)
+    line(i) := Mux(state===s_normal,data.io.douta(i * len + 31, i * len), io.bar.resp.data(i * len + 31, i * len))
   }
+  writeline := line
   val tag_refill = RegInit(0.U(tagBits.W))
   val word1 = RegNext(io.cpu.req.bits.addr(offsetBits - 1, 2))
   val index_refill = RegInit(0.U(indexBits.W))
   data.io.wea := false.B
   data.io.addra := index_raw
   data.io.dina := io.bar.resp.data
+  // port b disabled, reserved for future
+  data.io.web := false.B
+  data.io.dinb := DontCare
   data.io.doutb := DontCare
+  data.io.addrb:=0.U
   meta.io.tags_in := tag_raw
   meta.io.index_in := index_raw
   meta.io.update := false.B
-  meta.io.aux_index := index_refill
-  meta.io.aux_tag := tag_refill
-  meta.io.write := io.cpu.req.bits.wen
-  val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
-  writeline := line
+  meta.io.write := false.B
+  // meta.io.aux_index := index_refill
+  // meta.io.aux_tag := tag_refill
   val mask = Wire(UInt(32.W))
   val shift = io.cpu.req.bits.addr(1, 0) << 3
   mask := "hffffffff".U
@@ -97,17 +112,16 @@ class DCacheSimple extends Module with MemAccessType with Config {
   val wd = ((mask & wdata) << shift) | ((~(mask << shift)) & line(word1))
 
   io.cpu.req.ready := io.cpu.resp.valid
-  val s_normal :: s_evict :: s_refill :: s_uncached :: Nil = Enum(4)
-  val state = RegInit(s_normal)
   io.cpu.resp.valid := io.bar.resp.valid || (state === s_normal && meta.io.hit)
   io.cpu.resp.bits.respn := 0.U
   io.cpu.resp.bits.rdata(0) := line(word1)
   val tag_evict_reg = RegInit(0.U(tagBits.W))
-  data.io.web := reg_wen && (state === s_normal || state === s_refill && io.bar.resp.valid)
-  // FIXME: [ ] write miss?
-  data.io.addrb := index
-  data.io.dinb := writeline.asUInt
-  val mmio = true.B
+  val mmio = if(real_dcache){
+    io.cpu.req.bits.addr(31,29)==="b110".U
+  }
+  else {
+    true.B
+  }
   io.bar.req.mtype := Mux(mmio, io.cpu.req.bits.mtype, MEM_DWORD.U)
   val reg_rdata = RegInit(0.U(len.W))
   val reg_wait = RegInit(false.B)
@@ -123,8 +137,14 @@ class DCacheSimple extends Module with MemAccessType with Config {
       when(!mmio && io.cpu.req.valid) {
         when(meta.io.hit) {
           when(reg_wen) {
+            // privious write hit, bubble inserted , delay the valid signal
             reg_wen := false.B
             io.cpu.resp.valid := false.B
+
+            meta.io.write:=true.B
+            data.io.wea:=true.B
+            data.io.addra:=index
+            data.io.dina:=writeline.asUInt
           }
         }
           .otherwise {
@@ -156,14 +176,18 @@ class DCacheSimple extends Module with MemAccessType with Config {
       io.bar.req.addr := Cat(Seq(tag_refill, index_refill, 0.U(offsetBits.W)))
       when(io.bar.resp.valid) {
         state := s_normal
-        for (i <- 0 until 1 << (offsetBits - 2)) {
-          line(i) := io.bar.resp.data(i * len + 31, i * len)
-        }
         io.cpu.resp.valid := true.B
         meta.io.update := true.B
+        meta.io.index_in:=index_refill
+        meta.io.tags_in:=tag_refill
+        meta.io.write:=reg_wen
         data.io.addra := index_refill
         data.io.wea := true.B
-        when(!reg_wen) {
+        when(reg_wen) {
+          data.io.dina:=writeline.asUInt
+          // write miss, directly write the combined from cpu and axi
+        }
+        .otherwise{
           reg_wait := true.B
           reg_rdata := line(word1)
         }

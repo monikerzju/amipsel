@@ -83,9 +83,9 @@ class MetaDataSimple(nline:Int) extends Module with Config{
         dirty(io.index_in):=true.B
     }
     when(io.update){
-        tags(io.aux_index):=io.aux_tag
-        valid(io.aux_index):=true.B
-        dirty(io.aux_index):=false.B
+        tags(io.index_in):=io.tags_in
+        valid(io.index_in):=true.B
+        dirty(io.index_in):=io.write
     }
 }
 class MetaData_4Way(nline:Int) extends Module with Config{
