@@ -113,7 +113,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   val wd = ((mask_reg & wdata) << shift) | ((~(mask_reg << shift)) & line(word1))
 
   io.cpu.req.ready := io.cpu.resp.valid
-  io.cpu.resp.valid := io.bar.resp.valid || (state === s_normal && meta.io.hit)
+  io.cpu.resp.valid := (state === s_refill && io.bar.resp.valid) || (state === s_normal && meta.io.hit)
   io.cpu.resp.bits.respn := 0.U
   io.cpu.resp.bits.rdata(0) := line(word1)
   val tag_evict_reg = RegInit(0.U(tagBits.W))
@@ -136,6 +136,11 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
       when(reg_wait) {
         io.cpu.resp.bits.rdata(0) := reg_rdata
       }
+      when(reg_wen){
+        data.io.wea:=true.B
+        data.io.addra:=index
+        meta.io.write:=true.B
+      }
       when(!mmio && io.cpu.req.valid) {
         when(meta.io.hit) {
           when(reg_wen) {
@@ -143,9 +148,6 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
             reg_wen := false.B
             io.cpu.resp.valid := false.B
 
-            meta.io.write:=true.B
-            data.io.wea:=true.B
-            data.io.addra:=index
           }
         }
           .otherwise {
@@ -171,11 +173,6 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
           io.bar.req.addr := io.cpu.req.bits.addr
           io.bar.req.data := io.cpu.req.bits.wdata
           io.bar.req.wen := io.cpu.req.bits.wen
-        }
-        .elsewhen(reg_wen){
-          meta.io.write:=true.B
-          data.io.wea:=true.B
-          data.io.addra:=index
         }
     }
     is(s_refill) {
