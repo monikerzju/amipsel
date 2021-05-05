@@ -46,7 +46,7 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
   def isCompatible(inst1: Mops, inst2: Mops): Bool = {
     !isDataHazard(inst1, inst2) &&
       (inst1.alu_mdu_lsu =/= inst2.alu_mdu_lsu ||
-          inst1.alu_mdu_lsu === toAMU.U && inst2.alu_mdu_lsu === toAMU.U)
+          inst1.alu_mdu_lsu === toALU.U && inst2.alu_mdu_lsu === toALU.U)
   }
 
   def isUglyCompatible(inst1: Mops, inst2: Mops, inst3: Mops): Bool = {
@@ -56,13 +56,13 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
         Cat(inst1.alu_mdu_lsu, inst2.alu_mdu_lsu),
         true.B,
         Seq(
-          Cat(toAMU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLSU,
-          Cat(toAMU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU,
-          Cat(toALU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLSU,
-          Cat(toAMU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLSU,
-          Cat(toMDU.U(typeLen.W), toAMU.U(typeLen.W)) -> isLSU,
+          Cat(toALU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU,
+          Cat(toALU.U(typeLen.W), toBJU.U(typeLen.W)) -> isLSU,
+          Cat(toBJU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU,
           Cat(toALU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLSU,
-          Cat(toMDU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU
+          Cat(toMDU.U(typeLen.W), toALU.U(typeLen.W)) -> isLSU,
+          Cat(toBJU.U(typeLen.W), toMDU.U(typeLen.W)) -> isLSU,
+          Cat(toMDU.U(typeLen.W), toBJU.U(typeLen.W)) -> isLSU
         )
       )
   }
@@ -105,7 +105,7 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
   for(i <- 0 until backendIssueN) {
     when(issue_valid(i)) {
       switch(io.insts_in(i).alu_mdu_lsu) {
-        is(toALU.U) {
+        is(toBJU.U) {
           io.insts_out(0) := io.insts_in(i)
           io.rss_out(0) := io.rss_in(i)
           io.rts_out(0) := io.rts_in(i)
@@ -132,7 +132,7 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
     }
 
     for(i <- 0 until backendIssueN) {
-      when(issue_valid(i) && io.insts_in(i).alu_mdu_lsu === toAMU.U) {
+      when(issue_valid(i) && io.insts_in(i).alu_mdu_lsu === toALU.U) {
         when(!alu_occupy) {
           io.insts_out(0) := io.insts_in(i)
           io.rss_out(0) := io.rss_in(i)
@@ -150,7 +150,7 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
     }
   }
 
-  // process toAMU
+  // process toALU
   if (backendIssueN == 3) {
     when(issue_valid(0) && issue_valid(1) && io.insts_in(0).alu_mdu_lsu === io.insts_in(1).alu_mdu_lsu) {
       io.insts_out(0) := io.insts_in(0)

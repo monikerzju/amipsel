@@ -32,6 +32,7 @@ trait Config {
   var BSEntryN: Int = 3
   var BSWayN: Int = 2
   // Assertions ---- Dont Change!!!
+  assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
   assert(backendIssueN == 2 || backendIssueN == 3)
   assert(tagBits + indexBits + offsetBits == len)

@@ -12,10 +12,10 @@ import chisel3.util.experimental.BoringUtils
 // but multiplex by ALSU AMU LSBJU
 trait InstType {
   val typeLen = 2
-  val toALU = 0
+  val toBJU = 0
   val toMDU = 1
   val toLSU = 2
-  val toAMU = 3
+  val toALU = 3
 }
 
 class StoreInfo extends Bundle with Config {
