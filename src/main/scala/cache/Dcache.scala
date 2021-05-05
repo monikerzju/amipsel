@@ -95,21 +95,22 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   meta.io.write := false.B
   // meta.io.aux_index := index_refill
   // meta.io.aux_tag := tag_refill
-  val mask = Wire(UInt(32.W))
-  val shift = io.cpu.req.bits.addr(1, 0) << 3
-  mask := "hffffffff".U
+  val mask_raw=Wire(UInt(32.W))
+  val mask_reg=RegEnable(mask_raw,io.cpu.req.valid)
+  val shift=io.cpu.req.bits.addr(1,0)<<3
+  mask_raw:="hffffffff".U
   switch(io.cpu.req.bits.mtype) {
     is(MEM_HALF.U) {
-      mask := "h0000ffff".U
+      mask_raw:="h0000ffff".U
     }
     is(MEM_BYTE.U) {
-      mask := "h000000ff".U
+      mask_raw:="h000000ff".U
     }
   }
   val wen = io.cpu.req.bits.wen && io.cpu.req.valid
   val reg_wen = RegNext(wen)
   val wdata = RegEnable(io.cpu.req.bits.wdata, wen)
-  val wd = ((mask & wdata) << shift) | ((~(mask << shift)) & line(word1))
+  val wd = ((mask_reg & wdata) << shift) | ((~(mask_reg << shift)) & line(word1))
 
   io.cpu.req.ready := io.cpu.resp.valid
   io.cpu.resp.valid := io.bar.resp.valid || (state === s_normal && meta.io.hit)
@@ -117,7 +118,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   io.cpu.resp.bits.rdata(0) := line(word1)
   val tag_evict_reg = RegInit(0.U(tagBits.W))
   val mmio = if(real_dcache){
-    io.cpu.req.bits.addr(31,29)==="b110".U
+    io.cpu.req.bits.addr(31,29)==="b101".U
   }
   else {
     true.B
