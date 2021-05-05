@@ -129,6 +129,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   reg_wait := false.B
   when(reg_wen) {
     writeline(word1) := wd
+    data.io.dina:=writeline.asUInt
   }
   switch(state) {
     is(s_normal) {
@@ -145,7 +146,6 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
             meta.io.write:=true.B
             data.io.wea:=true.B
             data.io.addra:=index
-            data.io.dina:=writeline.asUInt
           }
         }
           .otherwise {
@@ -172,6 +172,11 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
           io.bar.req.data := io.cpu.req.bits.wdata
           io.bar.req.wen := io.cpu.req.bits.wen
         }
+        .elsewhen(reg_wen){
+          meta.io.write:=true.B
+          data.io.wea:=true.B
+          data.io.addra:=index
+        }
     }
     is(s_refill) {
       io.bar.req.addr := Cat(Seq(tag_refill, index_refill, 0.U(offsetBits.W)))
@@ -184,11 +189,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
         meta.io.write:=reg_wen
         data.io.addra := index_refill
         data.io.wea := true.B
-        when(reg_wen) {
-          data.io.dina:=writeline.asUInt
-          // write miss, directly write the combined from cpu and axi
-        }
-        .otherwise{
+        when(!reg_wen) {
           reg_wait := true.B
           reg_rdata := line(word1)
         }
