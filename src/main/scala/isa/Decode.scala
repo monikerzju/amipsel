@@ -172,26 +172,37 @@ class Dec extends Module with InstType {
   )
 
   val bju_signal = ListLookup(io.inst,
-    /*Illegal*/List(PC4     , BrXXX   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX, SIMM   ),
+    /*Illegal*/List(PC4     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
     Array (
-      BEQ   -> List(Branch  , BrEQ    ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX, SIMM   ),
-      BNE   -> List(Branch  , BrNE    ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX, SIMM   ),
-      BGEZ  -> List(Branch  , BrGE    ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX, SIMM   ),
-      BGTZ  -> List(Branch  , BrGT    ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX, SIMM   ),
-      BLEZ  -> List(Branch  , BrLE    ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX, SIMM   ),
-      BLTZ  -> List(Branch  , BrLT    ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX, SIMM   ),
-      BGEZAL-> List(Branch  , BrGE    ,  AReg   ,  DReg  ,  WBALU     , IRS , IXX , IRA, SIMM   ),
-      BLTZAL-> List(Branch  , BrLT    ,  AReg   ,  DReg  ,  WBALU     , IRS , IXX , IRA, SIMM   ),
-      J     -> List(Jump    , BrXXX   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX, JOffset),
-      JAL   -> List(Jump    , BrXXX   ,  AXXX   ,  DReg  ,  WBPC      , IXX , IXX , IRA, JOffset),
-      JR    -> List(PCReg   , BrXXX   ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX, SIMM   ),
-      JALR  -> List(PCReg   , BrXXX   ,  AReg   ,  DReg  ,  WBPC      , IRS , IXX , IRD, SIMM   ),
-      BREAK -> List(Break   , BrXXX   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX, SIMM   ),
-      SYS   -> List(Trap    , BrXXX   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX, SIMM   ),
-      ERET  -> List(Ret     , BrXXX   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX, SIMM   ),
-      MFC0  -> List(PC4     , BrXXX   ,  ACP0   ,  DReg  ,  WBReg     , IRD , IXX , IRT, SIMM   ),
-      MTC0  -> List(PC4     , BrXXX   ,  AReg   ,  DCP0  ,  WBReg     , IRT , IXX , IRD, SIMM   )
+      BEQ   -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BNE   -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX),
+      BGEZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
+      BGTZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
+      BLEZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
+      BLTZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
+      BGEZAL-> List(Branch  ,  AReg   ,  DReg  ,  WBALU     , IRS , IXX , IRA),
+      BLTZAL-> List(Branch  ,  AReg   ,  DReg  ,  WBALU     , IRS , IXX , IRA),
+      J     -> List(Jump    ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
+      JAL   -> List(Jump    ,  AXXX   ,  DReg  ,  WBPC      , IXX , IXX , IRA),
+      JR    -> List(PCReg   ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
+      JALR  -> List(PCReg   ,  AReg   ,  DReg  ,  WBPC      , IRS , IXX , IRD),
+      BREAK -> List(Break   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
+      SYS   -> List(Trap    ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
+      ERET  -> List(Ret     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
+      MFC0  -> List(PC4     ,  ACP0   ,  DReg  ,  WBReg     , IRD , IXX , IRT),
+      MTC0  -> List(PC4     ,  AReg   ,  DCP0  ,  WBReg     , IRT , IXX , IRD)
     )    
+  )
+
+  val branch_signal = ListLookup(io.inst, List(BrGE),
+    Array (
+      BEQ   -> List(BrEQ),
+      BNE   -> List(BrNE),
+      BGTZ  -> List(BrGT),
+      BLEZ  -> List(BrLE),
+      BLTZ  -> List(BrLT),
+      BLTZAL-> List(BrLT)
+    )
   )
 
   //     illegal | npc  | fu   | br  |  srca  |  scrb  |  dest  |  aluop  |  memtype  |  src   |   rs  |  rt   | rd   |  imm
@@ -203,11 +214,11 @@ class Dec extends Module with InstType {
   io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
   io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
   io.mops.alu_mdu_lsu   := control_signal(1)
-  io.mops.branch_type   := Mux(control_signal(1) === toBJU.U, bju_signal(1), BrXXX)
+  io.mops.branch_type   := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
   io.mops.src_a         := MuxLookup(control_signal(1), AReg,
                              Seq(
                                toALU.U -> alu_signal(0),
-                               toBJU.U -> bju_signal(2)
+                               toBJU.U -> bju_signal(1)
                              )
                            )
   io.mops.src_b         := MuxLookup(control_signal(1), BReg,
@@ -220,7 +231,7 @@ class Dec extends Module with InstType {
                              Seq(
                                toMDU.U -> mdu_signal(0),
                                toLSU.U -> lsu_signal(0),
-                               toBJU.U -> bju_signal(3)
+                               toBJU.U -> bju_signal(2)
                              )
                            )
   io.mops.alu_op        := MuxLookup(control_signal(1), aluAddu.U,
@@ -234,33 +245,33 @@ class Dec extends Module with InstType {
   io.mops.write_src     := MuxLookup(control_signal(1), WBALU,
                              Seq(
                                toLSU.U -> WBMEM,
-                               toBJU.U -> bju_signal(4)
+                               toBJU.U -> bju_signal(3)
                              )
                            )
   io.mops.rs1           := MuxLookup(control_signal(1), IRS,
                              Seq(
                                toALU.U -> alu_signal(3),
-                               toBJU.U -> bju_signal(5)
+                               toBJU.U -> bju_signal(4)
                              )
                            )
   io.mops.rs2           := MuxLookup(control_signal(1), lsu_signal(2),
                              Seq(
                                toMDU.U -> mdu_signal(2),
                                toALU.U -> alu_signal(4),
-                               toBJU.U -> bju_signal(6)
+                               toBJU.U -> bju_signal(5)
                              )
                            )
   io.mops.rd            := MuxLookup(control_signal(1), lsu_signal(3),
                              Seq(
                                toMDU.U -> IXX,
                                toALU.U -> alu_signal(5),
-                               toBJU.U -> bju_signal(7)
+                               toBJU.U -> bju_signal(6)
                              )
                            )
   io.mops.imm           := MuxLookup(control_signal(1), SIMM,
                              Seq(
                                toALU.U -> alu_signal(6),
-                               toBJU.U -> bju_signal(8)
+                               toBJU.U -> Mux(bju_signal(0) === Jump, JOffset, SIMM)
                              )
                            )
   io.mops.pc            := io.pc

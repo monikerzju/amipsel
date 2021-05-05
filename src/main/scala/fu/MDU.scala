@@ -56,32 +56,32 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   val addResult  = io.req.in1 + io.req.in2
   val subResult  = io.req.in1 - io.req.in2
   val lo = Mux(
-    io.req.op(4).andR,
+    io.req.op(aluOpWidth - 1).andR,
     MuxLookup(
-      io.req.op,
+      io.req.op(aluOpWidth - 2, 0),
       divider.io.div_res,
       Seq(
-        MDU_DIV.U  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res).asUInt + 1.U)),
-        MDU_MUL.U  -> mul_res(31, 0).asUInt,
-        MDU_MULU.U -> mulu_res(31, 0)
+        MDU_DIV.U(aluOpWidth - 2, 0)  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res).asUInt + 1.U)),
+        MDU_MUL.U(aluOpWidth - 2, 0)  -> mul_res(31, 0).asUInt,
+        MDU_MULU.U(aluOpWidth - 2, 0) -> mulu_res(31, 0)
       )
     ),
     MuxLookup(
-      io.req.op,
+      io.req.op(aluOpWidth - 2, 0),
       addResult,
       Seq(
-        aluSub.U   -> subResult,
-        aluSubu.U  -> subResult,
-        aluSlt.U   -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
-        aluSltu.U  -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
-        aluXor.U   -> (io.req.in1 ^ io.req.in2),
-        aluAnd.U   -> (io.req.in1 & io.req.in2),
-        aluOr.U    -> (io.req.in1 | io.req.in2),
-        aluNor.U   -> ~(io.req.in1 | io.req.in2),
-        aluSll.U   -> (io.req.in2 << shamt),
-        aluSrl.U   -> (io.req.in2 >> shamt),
-        aluSra.U   -> (io.req.in2.asSInt() >> shamt).asUInt(),
-        aluLui.U   -> Cat(io.req.in2(15, 0), Fill(16, 0.U))
+        aluSub.U(aluOpWidth - 2, 0)   -> subResult,
+        aluSubu.U(aluOpWidth - 2, 0)  -> subResult,
+        aluSlt.U(aluOpWidth - 2, 0)   -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
+        aluSltu.U(aluOpWidth - 2, 0)  -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
+        aluXor.U(aluOpWidth - 2, 0)   -> (io.req.in1 ^ io.req.in2),
+        aluAnd.U(aluOpWidth - 2, 0)   -> (io.req.in1 & io.req.in2),
+        aluOr.U(aluOpWidth - 2, 0)    -> (io.req.in1 | io.req.in2),
+        aluNor.U(aluOpWidth - 2, 0)   -> ~(io.req.in1 | io.req.in2),
+        aluSll.U(aluOpWidth - 2, 0)   -> (io.req.in2 << shamt),
+        aluSrl.U(aluOpWidth - 2, 0)   -> (io.req.in2 >> shamt),
+        aluSra.U(aluOpWidth - 2, 0)   -> (io.req.in2.asSInt() >> shamt).asUInt(),
+        aluLui.U(aluOpWidth - 2, 0)   -> Cat(io.req.in2(15, 0), Fill(16, 0.U))
       )
     )
   )
