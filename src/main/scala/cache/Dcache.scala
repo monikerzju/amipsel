@@ -1,29 +1,27 @@
 /** *********************************************************
-  * ********************dcache prototype***********************
+  * ********************dcache prototype*********************
   * 1-way direct-mapped instruction cache
   * features:
   *    - AXI protocol added
-  *    - non-blocking
+  *    - serialized blocking access
   *    - meta ready at the cycle imediately after the request
   *    - data delay 1 cycle
-  *    - for word access only
+  *    
   *
-  * TODO:   [x] output serialized to cater for AXI bandwidth
+  * TODO:  [x] output serialized to cater for AXI bandwidth
   *        [x] traits not compatible with icore defination
   *        [x] BRAM interface for data access
   *        [ ] invalidate instructions
   *        [ ] flush
   *        [x] dual-issue for icache
-  *        [ ] mmio
-  *        [ ] map from virtual to physical
+  *        [x] mmio
+  *        [x] map from virtual to physical
   *
   * NOTICE: - expect the valid signal early in the cycle, not withstandable the latency
   *        - provides access for aligned address only
   * FIXME:  [x] skeptical : the valid signal might not trigger the state transfer;
   *                in which case both meta and data will suffer 1-cycle lantency
   *        [x] valid-ready protocol
-  *        [ ] 双发射字节对齐？若一个miss 一个hit？
-  *        [x] non-blocking 导致 out-of-order?
   *
   * *********************************************************
   */
@@ -35,16 +33,6 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-// class MetaIO2 extends Bundle with Config{
-//   val din=Input((tagBits+2).W)
-//   val addr=Input(indexBits.W)
-//   val wen=Input(Bool())
-//   val dout=Output((tagBits+2).W)
-// }
-// class MetaV2 extends Module with MemAccessType with Config{
-//   val io=IO(new MetaIO2)
-  
-// }
 class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType with Config {
   val io = IO(new Bundle {
     val cpu = new MemIO(1)
@@ -65,12 +53,12 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   val index_raw =
     io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits)
   val index = RegNext(index_raw)
-  io.bar.req.valid := false.B
-  io.bar.req.wen := false.B
-  io.bar.req.addr := Cat(Seq(tag_raw, index_raw, 0.U(offsetBits.W)))
-  io.bar.req.data := 0.U
-  // TODO: [ ] set the content during the test
-  // TODO: [ ] dual-port BRAM
+  val mmio = if(real_dcache){
+    io.cpu.req.bits.addr(31,29)==="b101".U
+  }
+  else {
+    true.B
+  }
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0
@@ -81,20 +69,33 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   val tag_refill = RegInit(0.U(tagBits.W))
   val word1 = RegNext(io.cpu.req.bits.addr(offsetBits - 1, 2))
   val index_refill = RegInit(0.U(indexBits.W))
+
   data.io.wea := false.B
   data.io.addra := index_raw
   data.io.dina := io.bar.resp.data
   // port b disabled, reserved for future
+  // TODO: [ ] issue reads and writes to seperate ports to form pipeline  
   data.io.web := false.B
   data.io.dinb := DontCare
   data.io.doutb := DontCare
   data.io.addrb:=0.U
+
   meta.io.tags_in := tag_raw
   meta.io.index_in := index_raw
   meta.io.update := false.B
   meta.io.write := false.B
-  // meta.io.aux_index := index_refill
-  // meta.io.aux_tag := tag_refill
+
+  io.cpu.req.ready := io.cpu.resp.valid
+  io.cpu.resp.valid := (state =/= s_evict && io.bar.resp.valid) || (state === s_normal && meta.io.hit)
+  io.cpu.resp.bits.respn := 0.U
+  io.cpu.resp.bits.rdata(0) := line(word1)
+
+  io.bar.req.mtype := Mux(mmio, io.cpu.req.bits.mtype, MEM_DWORD.U)
+  io.bar.req.valid := false.B
+  io.bar.req.wen := false.B
+  io.bar.req.addr := Cat(Seq(tag_raw, index_raw, 0.U(offsetBits.W)))
+  io.bar.req.data := 0.U
+
   val mask_raw=Wire(UInt(32.W))
   val mask_reg=RegEnable(mask_raw,io.cpu.req.valid)
   val shift=RegEnable(io.cpu.req.bits.addr(1,0)<<3,io.cpu.req.valid)
@@ -108,29 +109,19 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
     }
   }
   val wen = io.cpu.req.bits.wen && io.cpu.req.valid
-  val reg_wen = RegNext(wen)
   val wdata = RegEnable(io.cpu.req.bits.wdata, wen)
   val wd = ((mask_reg & wdata) << shift) | ((~(mask_reg << shift)) & line(word1))
 
-  io.cpu.req.ready := io.cpu.resp.valid
-  io.cpu.resp.valid := (state =/= s_evict && io.bar.resp.valid) || (state === s_normal && meta.io.hit)
-  io.cpu.resp.bits.respn := 0.U
-  io.cpu.resp.bits.rdata(0) := line(word1)
   val tag_evict_reg = RegInit(0.U(tagBits.W))
-  val mmio = if(real_dcache){
-    io.cpu.req.bits.addr(31,29)==="b101".U
-  }
-  else {
-    true.B
-  }
-  io.bar.req.mtype := Mux(mmio, io.cpu.req.bits.mtype, MEM_DWORD.U)
   val reg_rdata = RegInit(0.U(len.W))
   val reg_wait = RegInit(false.B)
+  val reg_wen = RegNext(wen)
   reg_wait := false.B
   when(reg_wen) {
     writeline(word1) := wd
     data.io.dina:=writeline.asUInt
   }
+
   switch(state) {
     is(s_normal) {
       when(reg_wait) {
@@ -147,7 +138,6 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
             // privious write hit, bubble inserted , delay the valid signal
             reg_wen := false.B
             io.cpu.resp.valid := false.B
-
           }
         }
           .otherwise {
@@ -156,10 +146,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
             when(meta.io.dirty) {
               state := s_evict
               tag_evict_reg := meta.io.tag
-              // NOTE:如果路径过长可以从此处切开并把寄存器移到meta内部
-              // io.bar.req.addr:=Cat(Seq(meta.io.tag,index_raw,0.U(offsetBits.W)))
-              // FIXME: align? register?
-              // io.bar.req.wen:=true.B
+              // data not ready, wait until s_evict to assert valid
             }
               .otherwise {
                 io.bar.req.valid := true.B
