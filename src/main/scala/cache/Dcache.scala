@@ -113,7 +113,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   val wd = ((mask_reg & wdata) << shift) | ((~(mask_reg << shift)) & line(word1))
 
   io.cpu.req.ready := io.cpu.resp.valid
-  io.cpu.resp.valid := (state === s_refill && io.bar.resp.valid) || (state === s_normal && meta.io.hit)
+  io.cpu.resp.valid := (state =/= s_evict && io.bar.resp.valid) || (state === s_normal && meta.io.hit)
   io.cpu.resp.bits.respn := 0.U
   io.cpu.resp.bits.rdata(0) := line(word1)
   val tag_evict_reg = RegInit(0.U(tagBits.W))
