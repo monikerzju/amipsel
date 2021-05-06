@@ -97,7 +97,7 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
   // meta.io.aux_tag := tag_refill
   val mask_raw=Wire(UInt(32.W))
   val mask_reg=RegEnable(mask_raw,io.cpu.req.valid)
-  val shift=io.cpu.req.bits.addr(1,0)<<3
+  val shift=RegEnable(io.cpu.req.bits.addr(1,0)<<3,io.cpu.req.valid)
   mask_raw:="hffffffff".U
   switch(io.cpu.req.bits.mtype) {
     is(MEM_HALF.U) {
@@ -189,6 +189,10 @@ class DCacheSimple(real_dcache:Boolean = true) extends Module with MemAccessType
         when(!reg_wen) {
           reg_wait := true.B
           reg_rdata := line(word1)
+        }.otherwise{
+          // already written, but cpu is apt to keep wen high along with valid    
+          // writing twice won't hurt though
+          reg_wen:=false.B
         }
       }.otherwise {
         io.bar.req.valid := true.B
