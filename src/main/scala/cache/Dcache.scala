@@ -38,6 +38,23 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
+class MetaDataBRAM(nline: Int) extends Module with Config{
+  // FIXME: io.write-> reg_write
+  val io=IO(new MetaIODSimple)
+  val blk = Module(new BRAMSyncReadMem(nline, tagBits+2))
+  blk.io.we    := io.update||(io.hit && io.write)
+  blk.io.addr  := io.index_in
+  val v=blk.io.dout(tagBits)
+  val t=blk.io.dout(tagBits-1,0)
+
+  val dirty=Mux(io.update,io.write,true.B)
+  val valid=Mux(io.update,io.index_in,v)
+  val tag=Mux(io.update,io.tags_in,t)
+  
+  blk.io.din   := Cat(Seq(dirty,valid,tag)) 
+  io.dirty:=blk.io.dout(tagBits+1)
+  io.hit:=io.tags_in===t && v
+}
 class DCacheSimple(real_dcache: Boolean = true)
     extends Module
     with MemAccessType
@@ -58,7 +75,12 @@ class DCacheSimple(real_dcache: Boolean = true)
   val state = RegInit(s_normal)
   val nline = 1 << indexBits
   val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = Module(new MetaDataSimple(nline));
+  val meta = if(!dcacheMetaZeroLatency){
+    Module(new MetaDataSimple(nline));
+  }
+  else {
+    Module(new MetaDataBRAM(nline));
+  }
   val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
   // 0x80000000-0xa000000
   // translate virtual addr from start
@@ -153,7 +175,7 @@ class DCacheSimple(real_dcache: Boolean = true)
         data.io.addra := index
         meta.io.write := true.B
       }
-      when(!mmio && io.cpu.req.valid) {
+      when(if(dcacheMetaZeroLatency)RegNext(!mmio && io.cpu.req.valid)else (!mmio && io.cpu.req.valid)) {
         when(meta.io.hit) {
           when(reg_wen) {
             // privious write hit, bubble inserted , delay the valid signal
