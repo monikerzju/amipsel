@@ -23,6 +23,12 @@
   *        [x] valid-ready protocol
   *
   * *********************************************************
+  * 5/7 changelog
+  * asserted cpu input not steady, e.g. send valid even when stall
+  * add `responsive` singal, asserted when resp.valid and put down when req.valid
+  * change all cpu raw input in states apart from s_normal to mux(raw,regEnable(raw,responsive));
+  * replace RegNext with RegEnable(_,responsive)
+  * *********************************************************
   */
 package cache
 
@@ -40,23 +46,29 @@ class DCacheSimple(real_dcache: Boolean = true)
     val cpu = new MemIO(1)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
+  // assert(!dcacheMetaZeroLatency)
+  val responsive = RegInit(true.B)
+  responsive := Mux(io.cpu.resp.valid, true.B, !io.cpu.req.valid)
+  def __reg(raw: UInt) = {
+    Mux(responsive, raw, RegEnable(raw, responsive))
+  }
   val s_normal :: s_evict :: s_refill :: s_uncached :: Nil = Enum(4)
   val state = RegInit(s_normal)
   val nline = 1 << indexBits
   val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
   val meta = Module(new MetaDataSimple(nline));
-  val unmaped = io.cpu.req.bits.addr(31, 29) === "b100".U
+  val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
   // 0x80000000-0xa000000
   // translate virtual addr from start
   val tag_raw = Cat(
-    Mux(unmaped, 0.U(3.W), io.cpu.req.bits.addr(31, 29)),
-    io.cpu.req.bits.addr(28, 32 - tagBits)
+    Mux(unmaped, 0.U(3.W), __reg(io.cpu.req.bits.addr(31, 29))),
+    __reg(io.cpu.req.bits.addr(28, 32 - tagBits))
   )
   val index_raw =
-    io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits)
+    __reg(io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits))
   val index = RegNext(index_raw)
   val mmio = if (real_dcache) {
-    io.cpu.req.bits.addr(31, 29) === "b101".U
+    __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
   } else {
     true.B
   }
@@ -72,7 +84,7 @@ class DCacheSimple(real_dcache: Boolean = true)
   }
   writeline := line
   val tag_refill = RegInit(0.U(tagBits.W))
-  val word1 = RegNext(io.cpu.req.bits.addr(offsetBits - 1, 2))
+  val word1 = RegEnable(io.cpu.req.bits.addr(offsetBits - 1, 2), responsive)
   val index_refill = RegInit(0.U(indexBits.W))
 
   data.io.wea := false.B
@@ -95,15 +107,15 @@ class DCacheSimple(real_dcache: Boolean = true)
   io.cpu.resp.bits.respn := 0.U
   io.cpu.resp.bits.rdata(0) := line(word1)
 
-  io.bar.req.mtype := Mux(mmio, io.cpu.req.bits.mtype, MEM_DWORD.U)
+  io.bar.req.mtype := __reg(Mux(mmio, io.cpu.req.bits.mtype, MEM_DWORD.U))
   io.bar.req.valid := false.B
   io.bar.req.wen := false.B
   io.bar.req.addr := Cat(Seq(tag_raw, index_raw, 0.U(offsetBits.W)))
   io.bar.req.data := 0.U
 
   val mask_raw = Wire(UInt(32.W))
-  val mask_reg = RegEnable(mask_raw, io.cpu.req.valid)
-  val shift = RegEnable(io.cpu.req.bits.addr(1, 0) << 3, io.cpu.req.valid)
+  val mask_reg = RegEnable(mask_raw, responsive)
+  val shift = RegEnable(io.cpu.req.bits.addr(1, 0) << 3, responsive)
   mask_raw := "hffffffff".U
   switch(io.cpu.req.bits.mtype) {
     is(MEM_HALF.U) {
@@ -113,15 +125,16 @@ class DCacheSimple(real_dcache: Boolean = true)
       mask_raw := "h000000ff".U
     }
   }
-  val wen = io.cpu.req.bits.wen && io.cpu.req.valid
-  val wdata = RegEnable(io.cpu.req.bits.wdata, wen)
+  val wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
   val wd =
     ((mask_reg & wdata) << shift) | ((~(mask_reg << shift)) & line(word1))
 
   val tag_evict_reg = RegInit(0.U(tagBits.W))
   val reg_rdata = RegInit(0.U(len.W))
   val reg_wait = RegInit(false.B)
-  val reg_wen = RegNext(wen)
+  // val reg_wen = RegNext(wen)
+  val reg_wen = RegInit(false.B)
+  reg_wen := Mux(responsive, io.cpu.req.bits.wen && io.cpu.req.valid, reg_wen)
   reg_wait := false.B
   when(reg_wen) {
     writeline(word1) := wd
@@ -206,9 +219,9 @@ class DCacheSimple(real_dcache: Boolean = true)
       }
     }
     is(s_uncached) {
-      io.bar.req.addr := io.cpu.req.bits.addr
-      io.bar.req.data := io.cpu.req.bits.wdata
-      io.bar.req.wen := io.cpu.req.bits.wen
+      io.bar.req.addr := __reg(io.cpu.req.bits.addr)
+      io.bar.req.data := __reg(io.cpu.req.bits.wdata)
+      io.bar.req.wen := __reg(io.cpu.req.bits.wen)
 
       when(io.bar.resp.valid) {
         state := s_normal
