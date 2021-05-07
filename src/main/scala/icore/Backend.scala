@@ -111,7 +111,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val kill_w           = io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
   val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN)) // 4 read port, 2 write port
-  val cp0              = Module(new CP0)
+  val cp0              = Module(new CP0(diffTestV))
   val wbData           = Wire(Vec(backendFuN, UInt(len.W)))
   val wbReBranch       = RegInit(false.B)
   val latestBJPC       = RegInit(startAddr.U) // cannot deal with the second is Exception and the first is non-bj
