@@ -29,6 +29,12 @@
   * change all cpu raw input in states apart from s_normal to mux(raw,regEnable(raw,responsive));
   * replace RegNext with RegEnable(_,responsive)
   * *********************************************************
+  * bram diff:
+  * 1. valid change to RegNext; now stay up to 2 cycle in s_normal instead of 1
+  * 2. cancel data delay when bar.resp.valid is received
+  * 3. meta output hit, dirty, compatible with current, no diff
+  * 4. `responsive` definition
+  * *********************************************************
   */
 package cache
 
@@ -38,22 +44,23 @@ import chisel3.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
-class MetaDataBRAM(nline: Int) extends Module with Config{
+class MetaDataBRAM(nline: Int) extends Module with Config {
+  assert(!dcacheMetaZeroLatency)
   // FIXME: io.write-> reg_write
-  val io=IO(new MetaIODSimple)
-  val blk = Module(new BRAMSyncReadMem(nline, tagBits+2))
-  blk.io.we    := io.update||(io.hit && io.write)
-  blk.io.addr  := io.index_in
-  val v=blk.io.dout(tagBits)
-  val t=blk.io.dout(tagBits-1,0)
+  val io = IO(new MetaIODSimple)
+  val blk = Module(new BRAMSyncReadMem(nline, tagBits + 2))
+  blk.io.we := io.update || (io.hit && io.write)
+  blk.io.addr := io.index_in
+  val v = blk.io.dout(tagBits)
+  val t = blk.io.dout(tagBits - 1, 0)
 
-  val dirty=Mux(io.update,io.write,true.B)
-  val valid=Mux(io.update,io.index_in,v)
-  val tag=Mux(io.update,io.tags_in,t)
-  
-  blk.io.din   := Cat(Seq(dirty,valid,tag)) 
-  io.dirty:=blk.io.dout(tagBits+1)
-  io.hit:=io.tags_in===t && v
+  val dirty = Mux(io.update, io.write, true.B)
+  val tag = Mux(io.update, io.tags_in, t)
+
+  blk.io.din := Cat(Seq(dirty, true.B, tag))
+  io.dirty := blk.io.dout(tagBits + 1)
+  io.hit := RegNext(io.tags_in) === t && v
+  io.tag := t
 }
 class DCacheSimple(real_dcache: Boolean = true)
     extends Module
@@ -64,8 +71,14 @@ class DCacheSimple(real_dcache: Boolean = true)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
   // assert(!dcacheMetaZeroLatency)
-  val responsive = RegInit(true.B)
-  responsive := Mux(io.cpu.resp.valid, true.B, !io.cpu.req.valid)
+  val responsive = if (dcacheMetaZeroLatency) RegInit(true.B) else Wire(Bool())
+  if (dcacheMetaZeroLatency) {
+    responsive := Mux(io.cpu.resp.valid, true.B, !io.cpu.req.valid)
+  } else {
+    val res_tmp = RegInit(true.B)
+    res_tmp := io.cpu.resp.valid || !io.cpu.req.valid
+    responsive := io.cpu.resp.valid || res_tmp
+  }
   def __reg(raw: UInt) = {
     Mux(responsive, raw, RegEnable(raw, responsive))
   }
@@ -75,10 +88,9 @@ class DCacheSimple(real_dcache: Boolean = true)
   val state = RegInit(s_normal)
   val nline = 1 << indexBits
   val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = if(!dcacheMetaZeroLatency){
+  val meta = if (dcacheMetaZeroLatency) {
     Module(new MetaDataSimple(nline));
-  }
-  else {
+  } else {
     Module(new MetaDataBRAM(nline));
   }
   val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
@@ -127,7 +139,7 @@ class DCacheSimple(real_dcache: Boolean = true)
   meta.io.write := false.B
 
   io.cpu.req.ready := io.cpu.resp.valid
-  io.cpu.resp.valid := (state =/= s_evict && io.bar.resp.valid) || (state === s_normal && meta.io.hit)
+  io.cpu.resp.valid := (state === s_cpu_resp) || (state === s_normal && meta.io.hit)
   io.cpu.resp.bits.respn := 0.U
   io.cpu.resp.bits.rdata(0) := line(word1)
 
@@ -175,7 +187,10 @@ class DCacheSimple(real_dcache: Boolean = true)
         data.io.addra := index
         meta.io.write := true.B
       }
-      when(if(dcacheMetaZeroLatency)RegNext(!mmio && io.cpu.req.valid)else (!mmio && io.cpu.req.valid)) {
+      when(
+        if (!dcacheMetaZeroLatency) RegNext(!mmio && io.cpu.req.valid)
+        else (!mmio && io.cpu.req.valid)
+      ) {
         when(meta.io.hit) {
           when(reg_wen) {
             // privious write hit, bubble inserted , delay the valid signal
@@ -190,6 +205,7 @@ class DCacheSimple(real_dcache: Boolean = true)
               state := s_evict
               tag_evict_reg := meta.io.tag
               // data not ready, wait until s_evict to assert valid
+              // FIXME: [ ] optional, if meta latency then
             }
               .otherwise {
                 io.bar.req.valid := true.B
@@ -232,7 +248,11 @@ class DCacheSimple(real_dcache: Boolean = true)
       // introduce miss penalty
       state := s_normal
       io.cpu.resp.valid := true.B
-      reg_wait := !reg_wen
+      if (!dcacheMetaZeroLatency) {
+        io.cpu.resp.bits.rdata(0) := reg_rdata
+      } else {
+        reg_wait := !reg_wen
+      }
     }
     is(s_evict) {
       io.bar.req.wen := true.B
@@ -251,7 +271,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     is(s_uncached) {
       io.bar.req.addr := __reg(io.cpu.req.bits.addr)
       io.bar.req.data := __reg(io.cpu.req.bits.wdata)
-      io.bar.req.wen := __reg(io.cpu.req.bits.wen)
+      io.bar.req.wen := reg_wen
 
       when(io.bar.resp.valid) {
         state := s_cpu_resp
