@@ -52,7 +52,9 @@ class DCacheSimple(real_dcache: Boolean = true)
   def __reg(raw: UInt) = {
     Mux(responsive, raw, RegEnable(raw, responsive))
   }
-  val s_normal :: s_evict :: s_refill :: s_uncached :: Nil = Enum(4)
+  val s_normal :: s_evict :: s_refill :: s_uncached :: s_cpu_resp :: Nil = Enum(
+    5
+  )
   val state = RegInit(s_normal)
   val nline = 1 << indexBits
   val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
@@ -184,8 +186,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     is(s_refill) {
       io.bar.req.addr := Cat(Seq(tag_refill, index_refill, 0.U(offsetBits.W)))
       when(io.bar.resp.valid) {
-        state := s_normal
-        io.cpu.resp.valid := true.B
+        state := s_cpu_resp
         meta.io.update := true.B
         meta.io.index_in := index_refill
         meta.io.tags_in := tag_refill
@@ -193,7 +194,6 @@ class DCacheSimple(real_dcache: Boolean = true)
         data.io.addra := index_refill
         data.io.wea := true.B
         when(!reg_wen) {
-          reg_wait := true.B
           reg_rdata := line(word1)
         }.otherwise {
           // already written, but cpu is apt to keep wen high along with valid
@@ -203,6 +203,14 @@ class DCacheSimple(real_dcache: Boolean = true)
       }.otherwise {
         io.bar.req.valid := true.B
       }
+    }
+    is(s_cpu_resp) {
+      // cut down the path from axi to core
+      // maybe use registers as relay to cut path from axi to BRAM data;
+      // introduce miss penalty
+      state := s_normal
+      io.cpu.resp.valid := true.B
+      reg_wait := !reg_wen
     }
     is(s_evict) {
       io.bar.req.wen := true.B
