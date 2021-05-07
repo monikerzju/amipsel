@@ -3,6 +3,9 @@ package conf
 import chisel3._
 
 trait Config {
+  // Compile
+  var useLookupBi: Boolean = false
+  // Basic Option
   var len: Int = 32
   var startAddr: String = "hbfc00000"
   var endAddr: String = "hbfc00100"

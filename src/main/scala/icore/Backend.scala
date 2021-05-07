@@ -8,8 +8,7 @@ import isa._
 import chisel3.experimental.BundleLiterals._
 import chisel3.util.experimental.BoringUtils
 
-// TODO Maybe toALU toMDU toLSU toBJU
-// but multiplex by ALSU AMU LSBJU
+// toALU toMDU toLSU toBJU
 trait InstType {
   val typeLen = 2
   val toBJU = 0
@@ -23,8 +22,7 @@ class StoreInfo extends Bundle with Config {
   val data = UInt(len.W)
 }
 
-// TODO ex dont care expt mask, move kill expt to wb, dcache sw need to be confirmed at wb
-// TODO fwd dont need to care wb or not, valid -> ok, because expt will just cause redirecting
+// TODO ALU_LSU ALU_MDU LSU_BJU
 class Backend(diffTestV: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
