@@ -232,9 +232,8 @@ class DCacheSimple(real_dcache: Boolean = true)
       io.bar.req.wen := __reg(io.cpu.req.bits.wen)
 
       when(io.bar.resp.valid) {
-        state := s_normal
+        state := s_cpu_resp
         when(!reg_wen) {
-          reg_wait := true.B
           reg_rdata := io.bar.resp.data(31, 0)
         }
       }.otherwise {
