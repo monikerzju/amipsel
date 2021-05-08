@@ -3,6 +3,7 @@ package fu
 import chisel3._
 import chisel3.util._
 import conf.Config
+import utils._
 
 trait AluOpType{
   val aluOpWidth = 5
@@ -37,24 +38,47 @@ class ALU extends Module with Config with AluOpType {
   val addResult  = io.a + io.b
   val subResult  = io.a - io.b
   val shamt = io.a(4, 0)
-  io.r := MuxLookup(
-    io.aluOp,
-    addResult,
-    Seq(
-      aluSub.U  -> subResult,
-      aluSubu.U -> subResult,
-      aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
-      aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
-      aluXor.U  -> (io.a ^ io.b),
-      aluAnd.U  -> (io.a & io.b),
-      aluOr.U   -> (io.a | io.b),
-      aluNor.U  -> ~(io.a | io.b),
-      aluSll.U  -> (io.b << shamt),
-      aluSrl.U  -> (io.b >> shamt),
-      aluSra.U  -> (io.b.asSInt() >> shamt).asUInt(),
-      aluLui.U  -> Cat(io.b(15, 0), Fill(16, 0.U))
+
+  if (useLookupBi) {
+    io.r := MuxLookupBi(
+      io.aluOp,
+      addResult,
+      Seq(
+        aluSub.U  -> subResult,
+        aluSubu.U -> subResult,
+        aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
+        aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
+        aluXor.U  -> (io.a ^ io.b),
+        aluAnd.U  -> (io.a & io.b),
+        aluOr.U   -> (io.a | io.b),
+        aluNor.U  -> ~(io.a | io.b),
+        aluSll.U  -> (io.b << shamt),
+        aluSrl.U  -> (io.b >> shamt),
+        aluSra.U  -> (io.b.asSInt() >> shamt).asUInt(),
+        aluLui.U  -> Cat(io.b(15, 0), Fill(16, 0.U))
+      )
     )
-  )
+  } else {
+    io.r := MuxLookup(
+      io.aluOp,
+      addResult,
+      Seq(
+        aluSub.U  -> subResult,
+        aluSubu.U -> subResult,
+        aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
+        aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
+        aluXor.U  -> (io.a ^ io.b),
+        aluAnd.U  -> (io.a & io.b),
+        aluOr.U   -> (io.a | io.b),
+        aluNor.U  -> ~(io.a | io.b),
+        aluSll.U  -> (io.b << shamt),
+        aluSrl.U  -> (io.b >> shamt),
+        aluSra.U  -> (io.b.asSInt() >> shamt).asUInt(),
+        aluLui.U  -> Cat(io.b(15, 0), Fill(16, 0.U))
+      )
+    )    
+  }
+
 
   io.zero := ~io.r.orR()
   io.ovf  := Mux(io.aluOp === aluAdd.U, io.rega(len - 1) === io.b(len - 1) && io.rega(len - 1) =/= addrResult(len - 1), 

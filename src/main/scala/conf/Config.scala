@@ -3,6 +3,9 @@ package conf
 import chisel3._
 
 trait Config {
+  // Compile
+  var useLookupBi: Boolean = false
+  // Basic Option
   var len: Int = 32
   var startAddr: String = "hbfc00000"
   var endAddr: String = "hbfc00100"
@@ -32,6 +35,7 @@ trait Config {
   var BSEntryN: Int = 3
   var BSWayN: Int = 2
   // Assertions ---- Dont Change!!!
+  assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
   assert(backendIssueN == 2 || backendIssueN == 3)
   assert(tagBits + indexBits + offsetBits == len)
