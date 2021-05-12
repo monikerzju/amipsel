@@ -19,7 +19,6 @@ trait Config {
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = true
-  var icachePref: Boolean = false
   var tagBits: Int = 19
   var indexBits: Int = 8   // 8KB now
   var offsetBits: Int = 5
