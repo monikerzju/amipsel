@@ -54,7 +54,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val issueRts     = Wire(Vec(backendFuN, UInt(len.W)))
   val issueQueue   = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   val issueArbiter = Module(new IssueArbiter(queueSize))
-  val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
+//  val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
+  val stall_i      = Wire(Bool())
   val kill_i       = io.fb.bmfs.redirect_kill
   val rsFwdData    = Wire(Vec(backendIssueN, UInt(len.W)))
   val rtFwdData    = Wire(Vec(backendIssueN, UInt(len.W)))
@@ -106,12 +107,13 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val lo               = RegInit(0.U(len.W))
   val wbResult         = RegInit(VecInit(Seq.fill(backendFuN)(0.U(len.W))))
   val wbInstsValid     = Reg(Vec(backendFuN, Bool()))
-  val wbInstsOrder     = RegNext(exInstsOrder)
+//  val wbInstsOrder     = RegNext(exInstsOrder)
+  val wbInstsOrder     = RegInit(VecInit(Seq.fill(backendFuN)(0.U(2.W))))
   val wbInsts          = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val kill_w           = io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
   val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN)) // 4 read port, 2 write port
-  val cp0              = Module(new CP0)
+  val cp0              = Module(new CP0(diffTestV))
   val wbData           = Wire(Vec(backendFuN, UInt(len.W)))
   val wbReBranch       = RegInit(false.B)
   val latestBJPC       = RegInit(startAddr.U) // cannot deal with the second is Exception and the first is non-bj
@@ -311,16 +313,40 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   )
 
   // initialize lsu
+  val lastMemReqValid = RegInit(false.B)
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
+  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || lastMemReqValid && !RegNext(io.dcache.resp.valid)
+  io.dcache.resp.ready := true.B
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
-  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned
+  /*
   io.dcache.req.bits.mtype := exInsts(2).mem_width
   io.dcache.req.bits.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
   io.dcache.req.bits.wdata := exFwdRtData(2)
   io.dcache.req.bits.addr := ldstAddr
-  io.dcache.resp.ready := true.B
+
+   */
+  val lastMemReq = RegInit({
+    val memReq = Wire(new MemReq)
+    memReq.flush := false.B
+    memReq.invalidate := false.B
+    memReq.mtype := MicroOpCtrl.MemWord
+    memReq.wen := false.B
+    memReq.wdata := 0.U
+    memReq.addr := 0.U
+    memReq
+  }
+  )
+  // 2 to 1
+  io.dcache.req.bits.mtype := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.mtype, exInsts(2).mem_width)
+  io.dcache.req.bits.wen := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
+  io.dcache.req.bits.wdata := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.wdata, exFwdRtData(2))
+  io.dcache.req.bits.addr := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.addr, ldstAddr)
+
+  val dcacheStall = lastMemReqValid && !RegNext(io.dcache.resp.valid)
+  stall_i := dcacheStall || !mdu.io.resp.valid
+
 
   // jump br
   val isExPCJump = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
@@ -355,7 +381,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   /**
    *  [---------- WB stage -----------]
    */
-  wbInsts := exInsts
+//  wbInsts := exInsts
   aluWbData :=Mux(exInsts(0).write_src === MicroOpCtrl.WBPC || exInsts(0).next_pc =/= MicroOpCtrl.PC4,
     exInsts(0).pc + 8.U,
     MuxLookup(
@@ -367,8 +393,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       )
     )
   )
-  wbResult(0) := aluWbData
-  wbResult(1) := mdu.io.resp.lo
+
 
   // handle load-inst separately
   val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
@@ -400,9 +425,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     }
     wbReBranch := false.B
   }.elsewhen (bubble_w) {
+    // write regFile until Stall ends
+    /*
     for(i <- 0 until backendFuN) {
       wbInstsValid(i) := false.B
     }
+     */
   }.otherwise {
     latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump), 
       exInsts(0).pc, latestBJPC
@@ -410,13 +438,22 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     for (i <- 0 until backendFuN) {
       wbInstsValid(i) := exInstsTrueValid(i)
     }
+    wbInsts := exInsts
+    wbInstsOrder := exInstsOrder
+    wbResult(0) := aluWbData
+    wbResult(1) := mdu.io.resp.lo
+    lastMemReqValid := exInstsTrueValid(2) && !memMisaligned
+    lastMemReq.mtype := exInsts(2).mem_width
+    lastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
+    lastMemReq.wdata := exFwdRtData(2)
+    lastMemReq.addr := ldstAddr
     when (!wfds) {
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
     }
   }
 
-  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
+  io.fb.bmfs.redirect_kill := !dcacheStall && ((wbReBranch && !wfds) || cp0.io.except.except_kill)
   io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
 
   // regfile
@@ -514,7 +551,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       debug_nreg(i) := 0.U
     }
     for(i <- 0 until backendFuN) {
-      when(wbInstsValid(i)) {
+      when(!bubble_w && wbInstsValid(i)) {
         switch(wbInstsOrder(i)) {
           is(0.U) {
             debug_pc(0) := wbInsts(i).pc

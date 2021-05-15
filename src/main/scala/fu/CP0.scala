@@ -113,7 +113,7 @@ class CauseStruct extends Bundle {
 }
 
 // Put CP0 in WB stage anyway
-class CP0 extends Module with CP0Code with CauseExcCode with Config {
+class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config {
   val io = IO(new CP0IO)
 
   val badvaddrr = Reg(UInt(len.W))
@@ -153,9 +153,10 @@ class CP0 extends Module with CP0Code with CauseExcCode with Config {
 
   io.ftc.dout := badvaddrr
   val read_causer = Cat(causer(len - 1), tim_int, causer(29, 16), real_hard_int_vec, causer(9, 0))
+  val countw = if (diffTestV) 0.U else countr(len, 1)
   switch (io.ftc.code) {
     is (BadVAddr.U) { io.ftc.dout := badvaddrr      }
-    is (Count.U)    { io.ftc.dout := countr(len, 1) }
+    is (Count.U)    { io.ftc.dout := countw         }
     is (Status.U)   { io.ftc.dout := statusr        }
     is (Cause.U)    { io.ftc.dout := read_causer    }
     is (EPC.U)      { io.ftc.dout := epcr           }

@@ -52,7 +52,6 @@ class Dec extends Module with InstType {
   val control_signal = ListLookup(io.inst,
                     List(T ,  toBJU.U),
     Array(
-      NOP        -> List(F ,  toALU.U),
       ADD        -> List(F ,  toALU.U),
       ADDI       -> List(F ,  toALU.U),
       ADDU       -> List(F ,  toALU.U),
