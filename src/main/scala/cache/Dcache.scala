@@ -45,21 +45,29 @@ import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
 class MetaDataBRAM(nline: Int) extends Module with Config {
+  // write allocate 
+  // to support simutanious write and read, implement dirty bit with regs
+
   assert(!dcacheMetaZeroLatency)
   // FIXME: io.write-> reg_write
   val io = IO(new MetaIODSimple)
-  val blk = Module(new BRAMSyncReadMem(nline, tagBits + 2))
-  blk.io.we := io.update || (io.hit && io.write)
-  blk.io.addr := io.index_in
+  val blk = Module(new BRAMSyncReadMem(nline, tagBits + 1))
+  val dirty_bits = RegInit(0.U(nline.W))
+
   val v = blk.io.dout(tagBits)
   val t = blk.io.dout(tagBits - 1, 0)
 
-  val dirty = Mux(io.update, io.write, true.B)
-  val tag = Mux(io.update, io.tags_in, t)
+  when(RegNext(io.write)){
+    dirty_bits(io.index_in) := io.hit
+  }
+  
+  blk.io.we := io.update
+  blk.io.addr := io.index_in
+  blk.io.din := Cat(true.B, io.tags_in)
 
-  blk.io.din := Cat(Seq(dirty, true.B, tag))
-  io.dirty := blk.io.dout(tagBits + 1)
-  io.hit := RegNext(io.tags_in) === t && v
+  io.dirty := dirty_bits(io.index_in)
+  io.hit := RegNext(io.update) || (RegNext(io.tags_in) === t && v)
+  // always return hit after writing meta
   io.tag := t
 }
 class DCacheSimple(real_dcache: Boolean = true)
@@ -92,6 +100,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     Mux(unmaped, 0.U(3.W), __reg(io.cpu.req.bits.addr(31, 29))),
     __reg(io.cpu.req.bits.addr(28, 32 - tagBits))
   )
+  val reg_tag = RegNext(tag_raw)
   val index_raw =
     __reg(io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits))
   val reg_index = RegNext(index_raw)
@@ -133,7 +142,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     meta.io.tags_in := tag_raw
     meta.io.index_in := index_raw
     meta.io.update := false.B
-    meta.io.write := false.B
+    meta.io.write := __reg(io.cpu.req.bits.wen)
   }
   // cpu io defaults
   {
@@ -178,39 +187,55 @@ class DCacheSimple(real_dcache: Boolean = true)
     io.cpu.req.bits.wen && io.cpu.req.valid,
     reg_write
   )
-  // when(reg_write) {
-  //   writeline(reg_word1) := wd
-  //   data.io.dina := writeline.asUInt
-  // }
+  val reg_line = RegInit(0.U(1<<(offsetBits+3).W))
+  val reg_miss = RegInit(false.B)
+  val reg_forward = RegInit(false.B)
+  reg_miss := false.B
+  reg_forward := false.B
+  // clears after 1 cycle, only used to convey signal between adjacent cycles 
 
   switch(state) {
     is(s_normal) {
-      // when(reg_write) {
-      //   data.io.wea := true.B
-      //   writeline(reg_word1) := wd
-      //   data.io.dina := writeline.asUInt
-      //   data.io.addra := reg_index
-      //   meta.io.write := true.B
-      // }
       when(RegNext(!mmio && io.cpu.req.valid)) {
         // dealing with the request from previous cycle
 
-        when(meta.io.hit) {
+        when((meta.io.hit || reg_forward) && !reg_miss) {
           when(reg_write) {
-            // privious write hit, bubble inserted , delay the valid signal
+
             reg_write := false.B
-            io.cpu.resp.valid := false.B
-
-            data.io.wea := true.B
+            io.cpu.resp.valid := true.B
+            
+            // use b port for writes, a port for read 
+            data.io.web := true.B
             writeline(reg_word1) := wd
-            data.io.dina := writeline.asUInt
-            data.io.addra := reg_index
+            data.io.dinb := writeline.asUInt
+            data.io.addrb := reg_index
 
-            meta.io.write := true.B
+            
+            // another request coming in, as resp.valid is asserted;
+            // port a set as default, only conflicts when the indexes are same            
+            when(index_raw == reg_index){
+              // reads xxx from meta and data;
+              reg_line := writeline.asUInt
+              when(reg_tag == tag_raw){
+                // same addr, use forwarding
+                reg_forward := true.B
+              }.otherwise{
+                // miss for next cycle
+                reg_miss := true.B
+              }
+              
+            }
           }.otherwise{
             io.cpu.resp.valid := RegEnable(io.cpu.req.valid,responsive)
           }
+          when(reg_forward){
+            line := reg_line  
+          }
         }.otherwise {
+          when(reg_miss){
+            line := reg_line
+          }
           io.cpu.resp.valid := false.B
           reg_tag_refill := tag_raw
           reg_index_refill := index_raw
