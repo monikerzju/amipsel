@@ -138,7 +138,7 @@ class DCacheSimple(real_dcache: Boolean = true)
   // cpu io defaults
   {
     io.cpu.req.ready := io.cpu.resp.valid
-    io.cpu.resp.valid := false
+    io.cpu.resp.valid := false.B
     io.cpu.resp.bits.respn := 0.U
     io.cpu.resp.bits.rdata(0) := line(reg_word1)
   }
@@ -164,7 +164,7 @@ class DCacheSimple(real_dcache: Boolean = true)
       mask_raw := "h000000ff".U
     }
   }
-  val reg_wdata = RegEnable(io.cpu.req.bits.reg_wdata, responsive)
+  val reg_wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
   val wd =
     ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
 
@@ -228,11 +228,11 @@ class DCacheSimple(real_dcache: Boolean = true)
             state := s_refill
           }
         }
-      }.elsewhen(mmio && __reg(io.cpu.req.valid)) {
+      }.elsewhen(mmio && __reg(io.cpu.req.valid)(0)) {
           state := s_uncached
           io.bar.req.valid := true.B
           io.bar.req.addr := io.cpu.req.bits.addr
-          io.bar.req.data := io.cpu.req.bits.reg_wdata
+          io.bar.req.data := io.cpu.req.bits.wdata
           io.bar.req.wen := io.cpu.req.bits.wen
         }
     }
@@ -291,7 +291,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     }
     is(s_uncached) {
       io.bar.req.addr := __reg(io.cpu.req.bits.addr)
-      io.bar.req.data := __reg(io.cpu.req.bits.reg_wdata)
+      io.bar.req.data := __reg(io.cpu.req.bits.wdata)
       io.bar.req.wen := reg_write
 
       when(io.bar.resp.valid) {
