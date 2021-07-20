@@ -45,7 +45,6 @@ import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
 class MetaDataBRAM(nline: Int) extends Module with Config {
-  // write allocate 
   // to support simutanious write and read, implement dirty bit with regs
 
   assert(!dcacheMetaZeroLatency)
@@ -57,8 +56,13 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
   val v = blk.io.dout(tagBits)
   val t = blk.io.dout(tagBits - 1, 0)
 
-  when(RegNext(io.write)){
-    dirty_bits(io.index_in) := io.hit
+  when(io.update || (RegNext(io.write) && io.hit)){
+    when(io.update && !(RegNext(io.write))){
+      dirty_bits(io.index_in) := false.B
+    }.otherwise{
+      // write allocate, all writes are write hit 
+      dirty_bits(io.index_in) := true.B
+    }
   }
   
   blk.io.we := io.update
