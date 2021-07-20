@@ -52,7 +52,7 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
   // FIXME: io.write-> reg_write
   val io = IO(new MetaIODSimple)
   val blk = Module(new BRAMSyncReadMem(nline, tagBits + 1))
-  val dirty_bits = RegInit(0.U(nline.W))
+  val dirty_bits = RegInit(VecInit(Seq.fill(nline)(false.B)))
 
   val v = blk.io.dout(tagBits)
   val t = blk.io.dout(tagBits - 1, 0)
@@ -187,7 +187,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     io.cpu.req.bits.wen && io.cpu.req.valid,
     reg_write
   )
-  val reg_line = RegInit(0.U(1<<(offsetBits+3).W))
+  val reg_line = RegInit(0.U((1<<(offsetBits+3)).W))
   val reg_miss = RegInit(false.B)
   val reg_forward = RegInit(false.B)
   reg_miss := false.B
@@ -214,10 +214,10 @@ class DCacheSimple(real_dcache: Boolean = true)
             
             // another request coming in, as resp.valid is asserted;
             // port a set as default, only conflicts when the indexes are same            
-            when(index_raw == reg_index){
+            when(index_raw === reg_index){
               // reads xxx from meta and data;
               reg_line := writeline.asUInt
-              when(reg_tag == tag_raw){
+              when(reg_tag === tag_raw){
                 // same addr, use forwarding
                 reg_forward := true.B
               }.otherwise{
@@ -230,11 +230,15 @@ class DCacheSimple(real_dcache: Boolean = true)
             io.cpu.resp.valid := RegEnable(io.cpu.req.valid,responsive)
           }
           when(reg_forward){
-            line := reg_line  
+            for (i <- 0 until 1 << (offsetBits - 2)) {
+              line(i) := reg_line(i *len + 31,i *len)
+            }
           }
         }.otherwise {
           when(reg_miss){
-            line := reg_line
+            for (i <- 0 until 1 << (offsetBits - 2)) {
+              line(i) := reg_line(i *len + 31,i *len)
+            }
           }
           io.cpu.resp.valid := false.B
           reg_tag_refill := tag_raw
