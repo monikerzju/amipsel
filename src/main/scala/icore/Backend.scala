@@ -212,7 +212,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     regFile.io.rs_addr_vec(2 * i + 1) := issueInsts(i).rs2
   }
 
-  // forward all the data here
+
   // assume I-type Inst replace rt with rd, and update rt = 0
   for(i <- 0 until backendIssueN) {
     rsData(i) := regFile.io.rs_data_vec(2 * i)
@@ -313,10 +313,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   )
 
   // initialize lsu
-  val lastMemReqValid = RegInit(false.B)
+  val exLastMemReqValid = RegInit(false.B)
+  val dcacheStall = exLastMemReqValid && !RegNext(io.dcache.resp.valid)
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
-  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || lastMemReqValid && !RegNext(io.dcache.resp.valid)
+  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || exLastMemReqValid && !RegNext(io.dcache.resp.valid)
   io.dcache.resp.ready := true.B
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
@@ -327,7 +328,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   io.dcache.req.bits.addr := ldstAddr
 
    */
-  val lastMemReq = RegInit({
+  val exLastMemReq = RegInit({
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
     memReq.invalidate := false.B
@@ -339,12 +340,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
   )
   // 2 to 1
-  io.dcache.req.bits.mtype := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.mtype, exInsts(2).mem_width)
-  io.dcache.req.bits.wen := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
-  io.dcache.req.bits.wdata := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.wdata, exFwdRtData(2))
-  io.dcache.req.bits.addr := Mux(lastMemReqValid && !RegNext(io.dcache.resp.valid), lastMemReq.addr, ldstAddr)
+  io.dcache.req.bits.mtype := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.mtype, exInsts(2).mem_width)
+  io.dcache.req.bits.wen := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
+  io.dcache.req.bits.wdata := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.wdata, exFwdRtData(2))
+  io.dcache.req.bits.addr := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.addr, ldstAddr)
 
-  val dcacheStall = lastMemReqValid && !RegNext(io.dcache.resp.valid)
+
   stall_i := dcacheStall || !mdu.io.resp.valid
 
 
@@ -353,13 +354,13 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val isExPCBr   = exInsts(0).next_pc === MicroOpCtrl.Branch
   reBranch := false.B
   jumpPc := Mux(
-    exInsts(0).next_pc === MicroOpCtrl.Jump, 
+    exInsts(0).next_pc === MicroOpCtrl.Jump,
     Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)),
     exFwdRsData(0)
   )
   when(exInstsTrueValid(0)) {
     when (isExPCBr) {
-      reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U,
+      reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
           MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
@@ -382,7 +383,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
    *  [---------- WB stage -----------]
    */
 //  wbInsts := exInsts
-  aluWbData :=Mux(exInsts(0).write_src === MicroOpCtrl.WBPC || exInsts(0).next_pc =/= MicroOpCtrl.PC4,
+  aluWbData := Mux(exInsts(0).write_src === MicroOpCtrl.WBPC || exInsts(0).next_pc =/= MicroOpCtrl.PC4,
     exInsts(0).pc + 8.U,
     MuxLookup(
       exInsts(0).src_a, alu.io.r,
@@ -432,7 +433,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     }
      */
   }.otherwise {
-    latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump), 
+    latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump),
       exInsts(0).pc, latestBJPC
     )
     for (i <- 0 until backendFuN) {
@@ -442,11 +443,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     wbInstsOrder := exInstsOrder
     wbResult(0) := aluWbData
     wbResult(1) := mdu.io.resp.lo
-    lastMemReqValid := exInstsTrueValid(2) && !memMisaligned
-    lastMemReq.mtype := exInsts(2).mem_width
-    lastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
-    lastMemReq.wdata := exFwdRtData(2)
-    lastMemReq.addr := ldstAddr
+    exLastMemReqValid := exInstsTrueValid(2) && !memMisaligned
+    exLastMemReq.mtype := exInsts(2).mem_width
+    exLastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
+    exLastMemReq.wdata := exFwdRtData(2)
+    exLastMemReq.addr := ldstAddr
     when (!wfds) {
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
@@ -550,26 +551,47 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       debug_data(i) := 0.U
       debug_nreg(i) := 0.U
     }
+    // get ordered exception
+    val debug_ordered_wbExcepts = Wire(Vec(backendFuN, Bool()))
+    for (i <- 0 until backendFuN) {
+      debug_ordered_wbExcepts(i) := false.B
+    }
+    for (i <- 0 until backendFuN) {
+      switch (wbInstsOrder(i)) {
+        is(0.U) {
+          debug_ordered_wbExcepts(0) := wbExcepts(i)
+        }
+        is(1.U) {
+          debug_ordered_wbExcepts(1) := wbExcepts(i)
+        }
+        is(2.U) {
+          debug_ordered_wbExcepts(2) := wbExcepts(i)
+        }
+      }
+    }
     for(i <- 0 until backendFuN) {
       when(!bubble_w && wbInstsValid(i)) {
         switch(wbInstsOrder(i)) {
           is(0.U) {
             debug_pc(0) := wbInsts(i).pc
-            debug_wen(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !wbExcepts(i)
+            // order 0 means, whether or not the current inst or the following insts have exception, it will always execute
+            // so && !wbExcepts(i) should be discarded
+            debug_wen(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0)
             debug_data(0) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(0) := wbInsts(i).rd
           }
           is(1.U) {
             debug_pc(1) := wbInsts(i).pc
-            debug_wen(1) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !wbExcepts(i)
+            // consider that previous insts have exception
+            debug_wen(1) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0) && !debug_ordered_wbExcepts(1)
             debug_data(1) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(1) := wbInsts(i).rd
           }
           is(2.U) {
             debug_pc(2) := wbInsts(i).pc
-            debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !wbExcepts(i)
+            debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0) && !debug_ordered_wbExcepts(1) && !debug_ordered_wbExcepts(2)
             debug_data(2) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(2) := wbInsts(i).rd
