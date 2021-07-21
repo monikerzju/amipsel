@@ -587,8 +587,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
         switch(wbInstsOrder(i)) {
           is(0.U) {
             debug_pc(0) := wbInsts(i).pc
-            // order 0 means, whether or not the current inst or the following insts have exception, it will always execute
-            // so && !wbExcepts(i) should be discarded
+            // the inst which has exception should be discarded in the difftest
             debug_wen(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0)
             debug_data(0) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
