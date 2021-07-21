@@ -206,7 +206,7 @@ class DCacheSimple(real_dcache: Boolean = true)
         when((meta.io.hit || reg_forward) && !reg_miss) {
           when(reg_write) {
 
-            reg_write := false.B
+            // reg_write := false.B
             io.cpu.resp.valid := true.B
             
             // use b port for writes, a port for read 
@@ -287,7 +287,8 @@ class DCacheSimple(real_dcache: Boolean = true)
         }.otherwise {
           writeline(reg_word1) := wd
           data.io.dina := writeline.asUInt
-          reg_write := false.B
+          // reg_write := false.B
+          // could be redundent, ought not interfere reg_write manually
         }
       }.otherwise {
         io.bar.req.valid := true.B
@@ -300,7 +301,7 @@ class DCacheSimple(real_dcache: Boolean = true)
       state := s_normal
       io.cpu.resp.valid := true.B
       io.cpu.resp.bits.rdata(0) := reg_rdata
-      reg_write := false.B
+      // reg_write := false.B
     }
     is(s_evict) {
       // data.io.addra := Cat(meta.io.evict_way,index)
