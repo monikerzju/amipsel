@@ -120,6 +120,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbExcepts        = Wire(Vec(backendFuN, Bool()))
   val wbMisalignedAddr = RegNext(io.dcache.req.bits.addr)
   val wbInterruptd     = RegNext(exInterruptd)
+  val wbALUOvf         = RegInit(false.B)
+  val wbMDUOvf         = RegInit(false.B)
+  val wbLdMa           = RegInit(false.B)
+  val wbStMa           = RegInit(false.B)
 
   /**
    *  [---------- IS stage -----------]
@@ -340,10 +344,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
   )
   // 2 to 1
-  io.dcache.req.bits.mtype := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.mtype, exInsts(2).mem_width)
-  io.dcache.req.bits.wen := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
-  io.dcache.req.bits.wdata := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.wdata, exFwdRtData(2))
-  io.dcache.req.bits.addr := Mux(exLastMemReqValid && !RegNext(io.dcache.resp.valid), exLastMemReq.addr, ldstAddr)
+  io.dcache.req.bits.mtype := Mux(dcacheStall, exLastMemReq.mtype, exInsts(2).mem_width)
+  io.dcache.req.bits.wen := Mux(dcacheStall, exLastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
+  io.dcache.req.bits.wdata := Mux(dcacheStall, exLastMemReq.wdata, exFwdRtData(2))
+  io.dcache.req.bits.addr := Mux(dcacheStall, exLastMemReq.addr, ldstAddr)
 
 
   stall_i := dcacheStall || !mdu.io.resp.valid
@@ -448,6 +452,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     exLastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     exLastMemReq.wdata := exFwdRtData(2)
     exLastMemReq.addr := ldstAddr
+
+    wbALUOvf := alu.io.ovf
+    wbMDUOvf := mdu.io.resp.except
+    wbLdMa := ldMisaligned
+    wbStMa := stMisaligned
     when (!wfds) {
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
@@ -480,10 +489,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   // cp0
-  val wbALUOvfReal  = wbInstsValid(0) && RegNext(alu.io.ovf)
-  val wbMDUOvfReal  = wbInstsValid(1) && RegNext(mdu.io.resp.except)
-  val wbLdMaReal    = wbInstsValid(2) && RegNext(ldMisaligned)
-  val wbStMaReal    = wbInstsValid(2) && RegNext(stMisaligned)
+  // TODO: cache stall should also influence the exception
+  val wbALUOvfReal  = wbInstsValid(0) && wbALUOvf
+  val wbMDUOvfReal  = wbInstsValid(1) && wbMDUOvf
+  val wbLdMaReal    = wbInstsValid(2) && wbLdMa
+  val wbStMaReal    = wbInstsValid(2) && wbStMa
   val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
@@ -493,6 +503,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wbExcepts(1) := wbMDUOvfReal
   wbExcepts(2) := wbLdMaReal || wbStMaReal
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
+
   wb_ev(Interrupt   ) := false.B
   wb_ev(TLBModify   ) := false.B
   wb_ev(TLBLoad     ) := false.B
@@ -557,15 +568,17 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       debug_ordered_wbExcepts(i) := false.B
     }
     for (i <- 0 until backendFuN) {
-      switch (wbInstsOrder(i)) {
-        is(0.U) {
-          debug_ordered_wbExcepts(0) := wbExcepts(i)
-        }
-        is(1.U) {
-          debug_ordered_wbExcepts(1) := wbExcepts(i)
-        }
-        is(2.U) {
-          debug_ordered_wbExcepts(2) := wbExcepts(i)
+      when (wbInstsValid(i)) {
+        switch (wbInstsOrder(i)) {
+          is(0.U) {
+            debug_ordered_wbExcepts(0) := wbExcepts(i)
+          }
+          is(1.U) {
+            debug_ordered_wbExcepts(1) := wbExcepts(i)
+          }
+          is(2.U) {
+            debug_ordered_wbExcepts(2) := wbExcepts(i)
+          }
         }
       }
     }
@@ -591,7 +604,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           }
           is(2.U) {
             debug_pc(2) := wbInsts(i).pc
-            debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0) && !debug_ordered_wbExcepts(1) && !debug_ordered_wbExcepts(2)
+            val tmp = if(backendIssueN == 3) !debug_ordered_wbExcepts(2) else true.B
+            debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0) && !debug_ordered_wbExcepts(1) && tmp
             debug_data(2) := MuxLookup(i.U, wbResult(0),
             Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
             debug_nreg(2) := wbInsts(i).rd
