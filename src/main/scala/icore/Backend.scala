@@ -318,10 +318,18 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
-  val dcacheStall = exLastMemReqValid && !RegNext(io.dcache.resp.valid)
+  val dcacheStall = Wire(Bool())
+  var sim = false
+  if (sim) {
+    dcacheStall := exLastMemReqValid && !RegNext(io.dcache.resp.valid)
+  }
+  else {
+    dcacheStall := exLastMemReqValid && !io.dcache.resp.valid
+  }
+
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
-  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || exLastMemReqValid && !RegNext(io.dcache.resp.valid)
+  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || dcacheStall
   io.dcache.resp.ready := true.B
   io.dcache.req.bits.flush := false.B
   io.dcache.req.bits.invalidate := false.B
