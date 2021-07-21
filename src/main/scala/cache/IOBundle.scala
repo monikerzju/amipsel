@@ -11,8 +11,8 @@ class MetaIOISimple extends Bundle with Config {
   val tags_in = Input(UInt(tagBits.W))
   val update = Input(Bool())
   val hit = Output(Bool())
-  val aux_index = Input(UInt((indexBits).W))
-  val aux_tag = Input(UInt((tagBits).W))
+  // val aux_index = Input(UInt((indexBits).W))
+  // val aux_tag = Input(UInt((tagBits).W))
 }
 
 class MetaIOI extends MetaIOISimple {
