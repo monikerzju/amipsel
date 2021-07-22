@@ -62,15 +62,50 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
   io.hit := RegNext(io.tags_in) === t && v
   io.tag := t
 }
-class DCacheSimple(real_dcache: Boolean = true)
-    extends Module
-    with MemAccessType
-    with Config {
+class DPMetaDataBRAM(nline: Int) extends Module with Config {
+  assert(!dcacheMetaZeroLatency)
+  // FIXME: io.write-> reg_write
+  val io = IO(new Bundle {
+    val a = new MetaIODSimple
+    val b = new MetaIODSimple
+  })
+  val blk = Module(new DPBRAMSyncReadMem(nline, tagBits + 2))
+  
+  blk.io.wea := io.a.update || (io.a.hit && io.a.write)
+  blk.io.addra := io.a.index_in
+  val v0 = blk.io.douta(tagBits)
+  val t0 = blk.io.douta(tagBits - 1, 0)
+
+  val dirty0 = Mux(io.a.update, io.a.write, true.B)
+  val tag0 = Mux(io.a.update, io.a.tags_in, t0)
+
+  blk.io.dina := Cat(Seq(dirty0, true.B, tag0))
+  io.a.dirty := blk.io.douta(tagBits + 1)
+  io.a.hit := RegNext(io.a.tags_in) === t0 && v0
+  io.a.tag := t0
+
+  blk.io.web := io.b.update || (io.b.hit && io.b.write)
+  blk.io.addrb := io.b.index_in
+  val v1 = blk.io.doutb(tagBits)
+  val t1 = blk.io.doutb(tagBits - 1, 0)
+
+  val dirty1 = Mux(io.b.update, io.b.write, true.B)
+  val tag1 = Mux(io.b.update, io.b.tags_in, t1)
+
+  blk.io.dinb := Cat(Seq(dirty1, true.B, tag1))
+  io.b.dirty := blk.io.doutb(tagBits + 1)
+  io.b.hit := RegNext(io.b.tags_in) === t1 && v1
+  io.b.tag := t1
+}
+class DcacheStateMachine extends Module with Config with MemAccessType{
   val io = IO(new Bundle {
     val cpu = new MemIO(1)
+    val nstate = Output(UInt(3.W))
+    val nstate_in = Input(UInt(3.W))
+    val meta = Flipped(new MetaIODSimple)
+    val bram = Flipped(new BRAMWrapperIO)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
-  assert(!dcacheMetaZeroLatency)
   val responsive = Wire(Bool())
   val reg_tmp = RegInit(true.B)
   reg_tmp := io.cpu.resp.valid || !io.cpu.req.valid
@@ -82,9 +117,8 @@ class DCacheSimple(real_dcache: Boolean = true)
     5
   )
   val state = RegInit(s_normal)
-  val nline = 1 << indexBits
-  val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = Module(new MetaDataBRAM(nline));
+  io.nstate := state
+  state := io.nstate
   val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
   // 0x80000000-0xa000000
   // translate virtual addr from start
@@ -95,18 +129,14 @@ class DCacheSimple(real_dcache: Boolean = true)
   val index_raw =
     __reg(io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits))
   val reg_index = RegNext(index_raw)
-  val mmio = if (real_dcache) {
-    __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
-  } else {
-    true.B
-  }
+  val mmio = __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0
   for (i <- 0 until 1 << (offsetBits - 2)) {
     line(i) := Mux(
       state === s_normal || state === s_evict,
-      data.io.douta(i * len + 31, i * len),
+      io.bram.dout(i * len + 31, i * len),
       io.bar.resp.data(i * len + 31, i * len)
     )
   }
@@ -117,23 +147,17 @@ class DCacheSimple(real_dcache: Boolean = true)
 
   // bram defaults
   {
-    data.io.wea := false.B
-    data.io.addra := index_raw
-    data.io.dina := io.bar.resp.data
-    // port b disabled, reserved for future
-    // TODO: [ ] issue reads and writes to seperate ports to form pipeline
-    data.io.web := false.B
-    data.io.dinb := DontCare
-    data.io.doutb := DontCare
-    data.io.addrb := 0.U
+    io.bram.we := false.B
+    io.bram.addr := index_raw
+    io.bram.din := io.bar.resp.data
   }
 
   // meta defaults
   {
-    meta.io.tags_in := tag_raw
-    meta.io.index_in := index_raw
-    meta.io.update := false.B
-    meta.io.write := false.B
+    io.meta.tags_in := tag_raw
+    io.meta.index_in := index_raw
+    io.meta.update := false.B
+    io.meta.write := false.B
   }
   // cpu io defaults
   {
@@ -184,18 +208,18 @@ class DCacheSimple(real_dcache: Boolean = true)
       when(RegNext(!mmio && io.cpu.req.valid)) {
         // dealing with the request from previous cycle
 
-        when(meta.io.hit) {
+        when(io.meta.hit) {
           when(reg_write) {
             // privious write hit, bubble inserted , delay the valid signal
             reg_write := false.B
             io.cpu.resp.valid := false.B
 
-            data.io.wea := true.B
+            io.bram.we := true.B
             writeline(reg_word1) := wd
-            data.io.dina := writeline.asUInt
-            data.io.addra := reg_index
+            io.bram.din := writeline.asUInt
+            io.bram.addr := reg_index
 
-            meta.io.write := true.B
+            io.meta.write := true.B
           }.otherwise{
             io.cpu.resp.valid := RegEnable(io.cpu.req.valid,responsive)
           }
@@ -203,22 +227,22 @@ class DCacheSimple(real_dcache: Boolean = true)
           io.cpu.resp.valid := false.B
           reg_tag_refill := tag_raw
           reg_index_refill := index_raw
-          when(meta.io.dirty) {
-            state := s_evict
-            reg_tag_evict := meta.io.tag
+          when(io.meta.dirty) {
+            io.nstate := s_evict
+            reg_tag_evict := io.meta.tag
 
             // for 4 way,
             // to preseve the same temporal feature, 
             // assert data not ready, wait until s_evict to assert valid
 
-            // data.io.addra := Cat(meta.io.evict_way,reg_index)
+            // io.bram.addr := Cat(io.meta.evict_way,reg_index)
           }.otherwise {
             io.bar.req.valid := true.B
-            state := s_refill
+            io.nstate := s_refill
           }
         }
       }.elsewhen(mmio && __reg(io.cpu.req.valid)(0)) {
-          state := s_uncached
+          io.nstate := s_uncached
           io.bar.req.valid := true.B
           io.bar.req.addr := io.cpu.req.bits.addr
           io.bar.req.data := io.cpu.req.bits.wdata
@@ -230,19 +254,19 @@ class DCacheSimple(real_dcache: Boolean = true)
         Seq(reg_tag_refill, reg_index_refill, 0.U(offsetBits.W))
       )
       when(io.bar.resp.valid) {
-        state := s_cpu_resp
-        meta.io.update := true.B
-        meta.io.index_in := reg_index_refill
-        meta.io.tags_in := reg_tag_refill
-        meta.io.write := reg_write
-        data.io.addra := reg_index_refill
-        data.io.wea := true.B
+        io.nstate := s_cpu_resp
+        io.meta.update := true.B
+        io.meta.index_in := reg_index_refill
+        io.meta.tags_in := reg_tag_refill
+        io.meta.write := reg_write
+        io.bram.addr := reg_index_refill
+        io.bram.we := true.B
         when(!reg_write) {
           reg_rdata := line(reg_word1)
           // dina = resp.data
         }.otherwise {
           writeline(reg_word1) := wd
-          data.io.dina := writeline.asUInt
+          io.bram.din := writeline.asUInt
           // reg_write := false.B
           // could be redundent, ought not interfere reg_write manually
         }
@@ -254,13 +278,13 @@ class DCacheSimple(real_dcache: Boolean = true)
       // cut down the path from axi to core
       // may use registers as relay to cut path from axi to BRAM data;
       // introduce miss penalty
-      state := s_normal
+      io.nstate := s_normal
       io.cpu.resp.valid := true.B
       io.cpu.resp.bits.rdata(0) := reg_rdata
       // reg_write := false.B
     }
     is(s_evict) {
-      // data.io.addra := Cat(meta.io.evict_way,index)
+      // io.bram.addr := Cat(meta.io.evict_way,index)
       // `line` is the output of douta, addra should be controled 
       io.bar.req.data := line.asUInt
       io.bar.req.valid := true.B
@@ -269,7 +293,7 @@ class DCacheSimple(real_dcache: Boolean = true)
         Seq(reg_tag_evict, reg_index_refill, 0.U(offsetBits.W))
       )
       when(io.bar.resp.valid) {
-        state := s_refill
+        io.nstate := s_refill
         io.bar.req.addr := Cat(
           Seq(reg_tag_refill, reg_index_refill, 0.U(offsetBits.W))
         )
@@ -285,7 +309,7 @@ class DCacheSimple(real_dcache: Boolean = true)
       io.bar.req.wen := reg_write
 
       when(io.bar.resp.valid) {
-        state := s_cpu_resp
+        io.nstate := s_cpu_resp
         when(!reg_write) {
           reg_rdata := io.bar.resp.data(31, 0)
         }
@@ -294,4 +318,50 @@ class DCacheSimple(real_dcache: Boolean = true)
       }
     }
   }
+}
+class DCacheSimple(real_dcache: Boolean = true)
+    extends Module
+    with Config {
+  val io = IO(new Bundle {
+    val cpu0 = new MemIO(1)
+    val cpu1 = new MemIO(1)
+    val bar = new CacheIO(1 << (offsetBits + 3))
+  })
+  assert(!dcacheMetaZeroLatency)
+  val nline = 1 << indexBits
+  val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
+  val meta = Module(new DPMetaDataBRAM(nline));
+
+  val worker0 = new DcacheStateMachine
+  val worker1 = new DcacheStateMachine
+
+  worker0.io.cpu <> io.cpu0
+   
+  {
+    // port a, map to worker 0
+    data.io.wea := worker0.io.bram.we
+    data.io.addra := worker0.io.bram.addr 
+    data.io.dina := worker0.io.bram.din 
+    worker0.io.bram.dout := data.io.douta
+  }
+  val nstate0 = WireDefault(worker0.io.nstate)
+  worker0.io.nstate_in := nstate1
+  meta.io.a := worker0.io.meta
+
+  worker1.io.cpu <> io.cpu1
+
+  {
+    // port b, map to worker 1
+    data.io.web := worker1.io.bram.we
+    data.io.addrb := worker1.io.bram.addr 
+    data.io.dinb := worker1.io.bram.din 
+    worker1.io.bram.dout := data.io.doutb
+  }
+  val nstate1 = WireDefault(worker1.io.nstate) 
+  meta.io.a := worker1.io.meta
+  worker1.io.nstate_in := nstate0
+  // bar arbiter
+  io.bar.req := Mux(worker1.io.bar.req.valid, worker1.io.bar.req, worker0.io.bar.req)
+  worker0.io.bar.resp := io.bar.resp
+  worker1.io.bar.resp := io.bar.resp
 }
