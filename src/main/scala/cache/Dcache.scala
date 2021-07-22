@@ -55,13 +55,15 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
 
   val v = blk.io.dout(tagBits)
   val t = blk.io.dout(tagBits - 1, 0)
-
-  when(io.update || (RegNext(io.write) && io.hit)){
-    when(io.update && !(RegNext(io.write))){
-      dirty_bits(io.index_in) := false.B
+  val reg_update = RegNext(io.update)
+  val reg_write = RegNext(io.write)
+  val reg_index = RegNext(io.index_in)
+  when(reg_update || (reg_write && io.hit)){
+    when(reg_update && !(reg_write)){
+      dirty_bits(reg_index) := false.B
     }.otherwise{
       // write allocate, all writes are write hit 
-      dirty_bits(io.index_in) := true.B
+      dirty_bits(reg_index) := true.B
     }
   }
   
@@ -69,7 +71,7 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
   blk.io.addr := io.index_in
   blk.io.din := Cat(true.B, io.tags_in)
 
-  io.dirty := dirty_bits(io.index_in)
+  io.dirty := dirty_bits(reg_index)
   io.hit := RegNext(io.update) || (RegNext(io.tags_in) === t && v)
   // always return hit after writing meta
   io.tag := t
