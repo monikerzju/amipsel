@@ -46,7 +46,9 @@ class Tile(diffTestV: Boolean) extends Module with Config {
 
   core.io.interrupt := io.intr
   core.io.icache <> icache.io.cpu
-  core.io.dcache <> dcache.io.cpu
+  core.io.dcache <> dcache.io.cpu0
+  core.io.dcache1 <> dcache.io.cpu1
+  
   // Serve D$ first
   xbar.io.cache(0) <> dcache.io.bar
   xbar.io.cache(1) <> icache.io.bar

@@ -103,7 +103,7 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
     val state_out = Output(UInt(3.W))
     val state_in = Input(UInt(3.W))
     val meta = Flipped(new MetaIODSimple)
-    val bram = Flipped(new BRAMWrapperIO)
+    val bram = Flipped(new BRAMSyncReadMemIO(1 << (offsetBits + 3),1 << indexBits))
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
   val responsive = Wire(Bool())
@@ -349,8 +349,8 @@ class DCacheSimple(real_dcache: Boolean = true)
   val data = Module(new TDPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
   val meta = Module(new DPMetaDataBRAM(nline));
 
-  val worker0 = new DcacheStateMachine(true)
-  val worker1 = new DcacheStateMachine(false)
+  val worker0 = Module(new DcacheStateMachine(true))
+  val worker1 = Module(new DcacheStateMachine(false))
 
   worker0.io.cpu <> io.cpu0
    
@@ -362,7 +362,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     worker0.io.bram.dout := data.io.douta
   }
   worker0.io.state_in := worker1.io.state_out
-  meta.io.a := worker0.io.meta
+  meta.io.a <> worker0.io.meta
 
   worker1.io.cpu <> io.cpu1
 
@@ -373,10 +373,18 @@ class DCacheSimple(real_dcache: Boolean = true)
     data.io.dinb := worker1.io.bram.din 
     worker1.io.bram.dout := data.io.doutb
   }
-  meta.io.a := worker1.io.meta
+  meta.io.b <> worker1.io.meta
   worker1.io.state_in := worker0.io.state_out
   // bar arbiter
-  io.bar.req := Mux(worker1.io.bar.req.valid, worker1.io.bar.req, worker0.io.bar.req)
+  // io.bar.req := Mux(worker1.io.bar.req.valid, worker1.io.bar.req, worker0.io.bar.req)
+  io.bar.req := worker0.io.bar.req
+  when(worker1.io.bar.req.valid){
+    io.bar.req := worker1.io.bar.req
+  }
+
   worker0.io.bar.resp := io.bar.resp
   worker1.io.bar.resp := io.bar.resp
+
+  // for test only 
+  // worker1.io.cpu.req.valid := false.B
 }
