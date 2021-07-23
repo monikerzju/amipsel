@@ -97,11 +97,11 @@ class DPMetaDataBRAM(nline: Int) extends Module with Config {
   io.b.hit := RegNext(io.b.tags_in) === t1 && v1
   io.b.tag := t1
 }
-class DcacheStateMachine extends Module with Config with MemAccessType{
+class DcacheStateMachine(primal: Boolean = true) extends Module with Config with MemAccessType{
   val io = IO(new Bundle {
     val cpu = new MemIO(1)
-    val nstate = Output(UInt(3.W))
-    val nstate_in = Input(UInt(3.W))
+    val state_out = Output(UInt(3.W))
+    val state_in = Input(UInt(3.W))
     val meta = Flipped(new MetaIODSimple)
     val bram = Flipped(new BRAMWrapperIO)
     val bar = new CacheIO(1 << (offsetBits + 3))
@@ -116,9 +116,26 @@ class DcacheStateMachine extends Module with Config with MemAccessType{
   val s_normal :: s_evict :: s_refill :: s_uncached :: s_cpu_resp :: Nil = Enum(
     5
   )
+  var bar_ready = MuxLookup(
+    io.state_in, true.B,
+    Seq(
+      s_refill -> false.B,
+      s_uncached -> false.B,
+      s_evict -> false.B
+    )
+  )
   val state = RegInit(s_normal)
-  io.nstate := state
-  state := io.nstate
+  val nstate = WireDefault(state)
+  state := nstate
+  // conflict avoidance: two ports, assume a being primal 
+  // a checks if b's CURRENT state is using bar channel
+  // b checks if a's NEXT state is using bar channel
+  if(primal) {
+    io.state_out := nstate
+  }
+  else{
+    io.state_out := state
+  }
   val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
   // 0x80000000-0xa000000
   // translate virtual addr from start
@@ -227,8 +244,8 @@ class DcacheStateMachine extends Module with Config with MemAccessType{
           io.cpu.resp.valid := false.B
           reg_tag_refill := tag_raw
           reg_index_refill := index_raw
-          when(io.meta.dirty) {
-            io.nstate := s_evict
+          when(io.meta.dirty && bar_ready) {
+            nstate := s_evict
             reg_tag_evict := io.meta.tag
 
             // for 4 way,
@@ -236,25 +253,25 @@ class DcacheStateMachine extends Module with Config with MemAccessType{
             // assert data not ready, wait until s_evict to assert valid
 
             // io.bram.addr := Cat(io.meta.evict_way,reg_index)
-          }.otherwise {
+          }.elsewhen(bar_ready) {
             io.bar.req.valid := true.B
-            io.nstate := s_refill
+            nstate := s_refill
           }
         }
-      }.elsewhen(mmio && __reg(io.cpu.req.valid)(0)) {
-          io.nstate := s_uncached
-          io.bar.req.valid := true.B
-          io.bar.req.addr := io.cpu.req.bits.addr
-          io.bar.req.data := io.cpu.req.bits.wdata
-          io.bar.req.wen := io.cpu.req.bits.wen
-        }
+      }.elsewhen(mmio && __reg(io.cpu.req.valid)(0) && bar_ready) {
+        nstate := s_uncached
+        io.bar.req.valid := true.B
+        io.bar.req.addr := io.cpu.req.bits.addr
+        io.bar.req.data := io.cpu.req.bits.wdata
+        io.bar.req.wen := io.cpu.req.bits.wen
+      }
     }
     is(s_refill) {
       io.bar.req.addr := Cat(
         Seq(reg_tag_refill, reg_index_refill, 0.U(offsetBits.W))
       )
       when(io.bar.resp.valid) {
-        io.nstate := s_cpu_resp
+        nstate := s_cpu_resp
         io.meta.update := true.B
         io.meta.index_in := reg_index_refill
         io.meta.tags_in := reg_tag_refill
@@ -278,7 +295,7 @@ class DcacheStateMachine extends Module with Config with MemAccessType{
       // cut down the path from axi to core
       // may use registers as relay to cut path from axi to BRAM data;
       // introduce miss penalty
-      io.nstate := s_normal
+      nstate := s_normal
       io.cpu.resp.valid := true.B
       io.cpu.resp.bits.rdata(0) := reg_rdata
       // reg_write := false.B
@@ -293,7 +310,7 @@ class DcacheStateMachine extends Module with Config with MemAccessType{
         Seq(reg_tag_evict, reg_index_refill, 0.U(offsetBits.W))
       )
       when(io.bar.resp.valid) {
-        io.nstate := s_refill
+        nstate := s_refill
         io.bar.req.addr := Cat(
           Seq(reg_tag_refill, reg_index_refill, 0.U(offsetBits.W))
         )
@@ -309,7 +326,7 @@ class DcacheStateMachine extends Module with Config with MemAccessType{
       io.bar.req.wen := reg_write
 
       when(io.bar.resp.valid) {
-        io.nstate := s_cpu_resp
+        nstate := s_cpu_resp
         when(!reg_write) {
           reg_rdata := io.bar.resp.data(31, 0)
         }
@@ -332,8 +349,8 @@ class DCacheSimple(real_dcache: Boolean = true)
   val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
   val meta = Module(new DPMetaDataBRAM(nline));
 
-  val worker0 = new DcacheStateMachine
-  val worker1 = new DcacheStateMachine
+  val worker0 = new DcacheStateMachine(true)
+  val worker1 = new DcacheStateMachine(false)
 
   worker0.io.cpu <> io.cpu0
    
@@ -344,8 +361,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     data.io.dina := worker0.io.bram.din 
     worker0.io.bram.dout := data.io.douta
   }
-  val nstate0 = WireDefault(worker0.io.nstate)
-  worker0.io.nstate_in := nstate1
+  worker0.io.state_in := worker1.io.state_out
   meta.io.a := worker0.io.meta
 
   worker1.io.cpu <> io.cpu1
@@ -357,9 +373,8 @@ class DCacheSimple(real_dcache: Boolean = true)
     data.io.dinb := worker1.io.bram.din 
     worker1.io.bram.dout := data.io.doutb
   }
-  val nstate1 = WireDefault(worker1.io.nstate) 
   meta.io.a := worker1.io.meta
-  worker1.io.nstate_in := nstate0
+  worker1.io.state_in := worker0.io.state_out
   // bar arbiter
   io.bar.req := Mux(worker1.io.bar.req.valid, worker1.io.bar.req, worker0.io.bar.req)
   worker0.io.bar.resp := io.bar.resp
