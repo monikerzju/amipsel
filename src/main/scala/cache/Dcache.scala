@@ -69,7 +69,7 @@ class DPMetaDataBRAM(nline: Int) extends Module with Config {
     val a = new MetaIODSimple
     val b = new MetaIODSimple
   })
-  val blk = Module(new DPBRAMSyncReadMem(nline, tagBits + 2))
+  val blk = Module(new TDPBRAMSyncReadMem(nline, tagBits + 2))
   
   blk.io.wea := io.a.update || (io.a.hit && io.a.write)
   blk.io.addra := io.a.index_in
@@ -346,7 +346,7 @@ class DCacheSimple(real_dcache: Boolean = true)
   })
   assert(!dcacheMetaZeroLatency)
   val nline = 1 << indexBits
-  val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
+  val data = Module(new TDPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
   val meta = Module(new DPMetaDataBRAM(nline));
 
   val worker0 = new DcacheStateMachine(true)
