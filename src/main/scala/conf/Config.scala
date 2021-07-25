@@ -37,7 +37,7 @@ trait Config {
   // Assertions ---- Dont Change!!!
   assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
-  assert(backendIssueN == 2 || backendIssueN == 3)
+  assert(backendIssueN == 2)
   assert(tagBits + indexBits + offsetBits == len)
   assert(backendFuN == 3)
 }

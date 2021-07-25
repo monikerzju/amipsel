@@ -42,7 +42,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     _.branch_type -> MicroOpCtrl.BrXXX,
     _.mem_width -> MicroOpCtrl.MemXXX,
     _.write_src -> MicroOpCtrl.WBALU,
-    _.pc -> 0.U
+    _.pc -> 0.U,
+    _.predict_taken -> false.B
   )
   val alu          = Module(new ALU)
   val mdu          = Module(new MDU)
@@ -71,10 +72,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exInstsValid = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
   val exFwdRsData  = Reg(Vec(backendFuN, UInt(len.W)))
   val exFwdRtData  = Reg(Vec(backendFuN, UInt(len.W)))
+  val isExPCBr     = exInsts(0).next_pc === MicroOpCtrl.Branch
   val reBranch     = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
   val brPC         = exInsts(0).pc + (exInsts(0).imm << 2.U)(len - 1, 0) + 4.U
-  val exReBranchPC = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
+  val exReBranchPC = Mux(isExPCBr, brPC, jumpPc)
   val aluValid     = Wire(Bool())
   val mduValid     = Wire(Bool())
   val ldstValid    = Wire(Bool())
@@ -99,16 +101,20 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
                           exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
+  val bpuV      = isExPCBr && exInstsValid(0)   // exInstsTrueValid is a long path and uncommon case, update BHT only
+  val bpuErrpr  = reBranch ^ exInsts(0).predict_taken || false.B // TODO wrong target
+  val bpuPCBr   = exInsts(0).pc
+  val bpuTarget = brPC
+  val bpuTaken  = reBranch
 
   // WB
   val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
-  val reBranchPC       = RegInit(startAddr.U(len.W))
+  val reBranchPC       = Reg(UInt(len.W))
   val hi               = RegInit(0.U(len.W))
   val lo               = RegInit(0.U(len.W))
-  val wbResult         = RegInit(VecInit(Seq.fill(backendFuN)(0.U(len.W))))
-  val wbInstsValid     = Reg(Vec(backendFuN, Bool()))
-//  val wbInstsOrder     = RegNext(exInstsOrder)
-  val wbInstsOrder     = RegInit(VecInit(Seq.fill(backendFuN)(0.U(2.W))))
+  val wbResult         = Reg(Vec(backendFuN, UInt(len.W)))
+  val wbInstsValid     = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
+  val wbInstsOrder     = Reg(Vec(backendFuN, UInt(2.W)))
   val wbInsts          = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val kill_w           = io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
@@ -124,6 +130,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbMDUOvf         = RegInit(false.B)
   val wbLdMa           = RegInit(false.B)
   val wbStMa           = RegInit(false.B)
+  val wbBpuV           = RegInit(false.B) 
+  val wbBpuErrpr       = RegNext(bpuErrpr)      
+  val wbBpuPCBr        = RegNext(bpuPCBr)     
+  val wbBpuTarget      = RegNext(bpuTarget)
+  val wbBpuTaken       = RegNext(bpuTaken)
 
   /**
    *  [---------- IS stage -----------]
@@ -363,7 +374,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // jump br
   val isExPCJump = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
-  val isExPCBr   = exInsts(0).next_pc === MicroOpCtrl.Branch
   reBranch := false.B
   jumpPc := Mux(
     exInsts(0).next_pc === MicroOpCtrl.Jump,
@@ -433,18 +443,17 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   when (kill_w) {
+    wbBpuV := false.B
+  }.otherwise {
+    wbBpuV := false.B // TODO bpuV
+  }
+
+  when (kill_w) {
     for(i <- 0 until backendFuN) {
       wbInstsValid(i) := false.B
     }
     wbReBranch := false.B
-  }.elsewhen (bubble_w) {
-    // write regFile until Stall ends
-    /*
-    for(i <- 0 until backendFuN) {
-      wbInstsValid(i) := false.B
-    }
-     */
-  }.otherwise {
+  }.elsewhen (!bubble_w) {
     latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump),
       exInsts(0).pc, latestBJPC
     )
@@ -473,6 +482,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   io.fb.bmfs.redirect_kill := !dcacheStall && ((wbReBranch && !wfds) || cp0.io.except.except_kill)
   io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
+  io.fb.bmfs.bpu.v         := wbBpuV
+  io.fb.bmfs.bpu.errpr     := wbBpuErrpr
+  io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
+  io.fb.bmfs.bpu.target    := wbBpuTarget
+  io.fb.bmfs.bpu.taken     := wbBpuTaken
 
   // regfile
   if (backendIssueN == 3) {

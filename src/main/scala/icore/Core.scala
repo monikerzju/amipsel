@@ -5,6 +5,7 @@ import chisel3.util._
 import conf.Config
 import isa.MicroOpCtrl._
 import fu.CauseExcCode
+import fu.BHTExeUpdate
 
 // for a 2-insts slot (cache/frontbackend), if only 1 is filled, it will go to the lower (least significant) Config.${len} bits
 
@@ -20,6 +21,7 @@ class BMFS extends Bundle with Config {
   // redirect, eg syscall, branch, jump. please_wait means the frontend is busy, eg icache fetching from memory
   val redirect_kill = Output(Bool())
   val redirect_pc = Output(UInt(len.W))
+  val bpu = Flipped(new BHTExeUpdate(len))
 }
 
 // Frontend master backend slave
