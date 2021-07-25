@@ -1,5 +1,4 @@
 package tile
-import cache._
 import chisel3._
 import chisel3.stage._
 import fu._

@@ -423,6 +423,37 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   wbData(1) := wbResult(1)
   wbData(2) := luData
 
+  if (diffTestV) {
+    def isLwCounterInst(Inst: Mops): Bool = {
+      // lw	v0,-8192(t9)
+      Inst.rd === 2.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.rs1 === 25.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.imm === 0xFFFFE000L.U(len.W) &&
+        Inst.alu_mdu_lsu === toLSU.U && Inst.write_dest =/= MicroOpCtrl.DMem
+    }
+    def isMfc0CounterInst(Inst: Mops): Bool = {
+      // mfc0	v0,$9
+      Inst.rd === 2.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.rs1 === 9.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.src_a === MicroOpCtrl.ACP0
+    }
+    val isLwFirst = RegInit(true.B)
+    val isMfc0First = RegInit(true.B)
+    when (wbInstsValid(2) && isLwCounterInst(wbInsts(2)) && !bubble_w) {
+      when (isLwFirst) {
+        wbData(2) := 0x0000375fL.U(len.W)
+        isLwFirst := false.B
+      } .otherwise {
+        wbData(2) := 0x0005b167L.U(len.W)
+      }
+    }
+    when (wbInstsValid(0) && isMfc0CounterInst(wbInsts(0)) && !bubble_w) {
+      when (isMfc0First) {
+        wbData(0) := 0x0000194dL.U(len.W)
+        isMfc0First := false.B
+      } .otherwise {
+        wbData(0) := 0x00029617L.U(len.W)
+      }
+    }
+
+  }
+
   // delay slot and then just jump
   when (!bubble_w) {
     when (exInstsTrueValid(0) && exIsBrFinal && reBranch) {
@@ -597,24 +628,24 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
             debug_pc(0) := wbInsts(i).pc
             // the inst which has exception should be discarded in the difftest
             debug_wen(0) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0)
-            debug_data(0) := MuxLookup(i.U, wbResult(0),
-            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
+            debug_data(0) := MuxLookup(i.U, wbData(0),
+            Seq(0.U -> wbData(0), 1.U -> wbData(1), 2.U -> wbData(2)))
             debug_nreg(0) := wbInsts(i).rd
           }
           is(1.U) {
             debug_pc(1) := wbInsts(i).pc
             // consider that previous insts have exception
             debug_wen(1) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0) && !debug_ordered_wbExcepts(1)
-            debug_data(1) := MuxLookup(i.U, wbResult(0),
-            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
+            debug_data(1) := MuxLookup(i.U, wbData(0),
+            Seq(0.U -> wbData(0), 1.U -> wbData(1), 2.U -> wbData(2)))
             debug_nreg(1) := wbInsts(i).rd
           }
           is(2.U) {
             debug_pc(2) := wbInsts(i).pc
             val tmp = if(backendIssueN == 3) !debug_ordered_wbExcepts(2) else true.B
             debug_wen(2) := wbInsts(i).write_dest === MicroOpCtrl.DReg && wbInsts(i).rd =/= 0.U && !debug_ordered_wbExcepts(0) && !debug_ordered_wbExcepts(1) && tmp
-            debug_data(2) := MuxLookup(i.U, wbResult(0),
-            Seq(0.U -> wbResult(0), 1.U -> wbResult(1), 2.U -> luData))
+            debug_data(2) := MuxLookup(i.U, wbData(0),
+            Seq(0.U -> wbData(0), 1.U -> wbData(1), 2.U -> wbData(2)))
             debug_nreg(2) := wbInsts(i).rd
           }
         }
