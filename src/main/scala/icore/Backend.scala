@@ -433,22 +433,47 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       // mfc0	v0,$9
       Inst.rd === 2.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.rs1 === 9.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.src_a === MicroOpCtrl.ACP0
     }
+    val test_files = Array (
+      "bitcount",
+      "bubble_sort",
+      "coremark",
+      "crc32",
+      "dhrystone",
+      "quick_sort",
+      "select_sort",
+      "sha",
+      "stream_copy",
+      "string_search"
+    )
+    val test_file = "stream_copy"
+    val lwCounterStart = Map (
+      "stream_copy" -> 0x0000375fL
+    )
+    val lwCounterEnd = Map (
+      "stream_copy" -> 0x0005b167L
+    )
+    val mfc0CounterStart = Map (
+      "stream_copy" -> 0x0000194dL
+    )
+    val mfc0CounterEnd = Map (
+      "stream_copy" -> 0x00029617L
+    )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
     when (wbInstsValid(2) && isLwCounterInst(wbInsts(2)) && !bubble_w) {
       when (isLwFirst) {
-        wbData(2) := 0x0000375fL.U(len.W)
+        wbData(2) := lwCounterStart(test_file).U(len.W)
         isLwFirst := false.B
       } .otherwise {
-        wbData(2) := 0x0005b167L.U(len.W)
+        wbData(2) := lwCounterEnd(test_file).U(len.W)
       }
     }
     when (wbInstsValid(0) && isMfc0CounterInst(wbInsts(0)) && !bubble_w) {
       when (isMfc0First) {
-        wbData(0) := 0x0000194dL.U(len.W)
+        wbData(0) := mfc0CounterStart(test_file).U(len.W)
         isMfc0First := false.B
       } .otherwise {
-        wbData(0) := 0x00029617L.U(len.W)
+        wbData(0) := mfc0CounterEnd(test_file).U(len.W)
       }
     }
 
