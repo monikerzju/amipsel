@@ -445,32 +445,49 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "stream_copy",
       "string_search"
     )
-    val test_file = "crc32"
+    val test_file = "dhrystone"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,
     )
     val lwCounterEnd = Map (
       "stream_copy" -> 0x0005b167L,
-      "crc32" -> 0x006db2daL
+      "crc32" -> 0x006db2daL,
     )
     val mfc0CounterStart = Map (
       "stream_copy" -> 0x0000194dL,
-      "crc32" -> 0x0000166aL
+      "crc32" -> 0x0000166aL,
+      "dhrystone" -> 0x00001766L,
     )
     val mfc0CounterEnd = Map (
       "stream_copy" -> 0x00029617L,
-      "crc32" -> 0x0031dca1L
+      "crc32" -> 0x0031dca1L,
+      "dhrystone" -> 0x0009a792L,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
+    val cntLw = RegInit(0.U(3.W))
     when (wbInstsValid(2) && isLwCounterInst(wbInsts(2)) && !bubble_w) {
-      when (isLwFirst) {
-        wbData(2) := lwCounterStart(test_file).U(len.W)
-        isLwFirst := false.B
-      } .otherwise {
-        wbData(2) := lwCounterEnd(test_file).U(len.W)
+      if (test_file == "dhrystone") {
+        when (cntLw === 0.U) {
+          wbData(2) := 0x0000332fL.U(len.W)
+        } .elsewhen (cntLw === 1.U) {
+          wbData(2) := 0x0001f756L.U(len.W)
+        } .elsewhen (cntLw === 2.U) {
+          wbData(2) := 0x00041f1fL.U(len.W)
+        } .elsewhen (cntLw === 3.U) {
+          wbData(2) := 0x00153e42L.U(len.W)
+        }
+        cntLw := cntLw + 1.U
+      } else {
+        when (isLwFirst) {
+          wbData(2) := lwCounterStart(test_file).U(len.W)
+          isLwFirst := false.B
+        } .otherwise {
+          wbData(2) := lwCounterEnd(test_file).U(len.W)
+        }
       }
+
     }
     when (wbInstsValid(0) && isMfc0CounterInst(wbInsts(0)) && !bubble_w) {
       when (isMfc0First) {
