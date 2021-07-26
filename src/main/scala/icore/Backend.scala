@@ -49,6 +49,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val mdu          = Module(new MDU)
 
   // Issue
+  val dcacheStall  = Wire(Bool())
   val issueNum     = Wire(UInt(2.W))
   val issueInsts   = Wire(Vec(backendIssueN, new Mops))
   val issueRss     = Wire(Vec(backendFuN, UInt(len.W)))
@@ -64,7 +65,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // Ex
   val stall_x      = stall_i
-  val kill_x       = kill_i
+  val kill_x       = !dcacheStall && kill_i
   val exNum        = RegInit(0.U(2.W))
   val exInsts      = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(backendFuN)(0.U(2.W)))) else Reg(Vec(backendFuN, UInt(2.W)))
@@ -116,7 +117,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbInstsValid     = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
   val wbInstsOrder     = Reg(Vec(backendFuN, UInt(2.W)))
   val wbInsts          = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
-  val kill_w           = io.fb.bmfs.redirect_kill
+  val kill_w           = !dcacheStall && io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
   val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN)) // 4 read port, 2 write port
   val cp0              = Module(new CP0(diffTestV))
@@ -329,7 +330,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
-  val dcacheStall = Wire(Bool())
   var sim = false
   if (sim) {
     dcacheStall := exLastMemReqValid && !RegNext(io.dcache.resp.valid)
@@ -480,7 +480,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     wbBpuV := false.B
   }
 
-  io.fb.bmfs.redirect_kill := !dcacheStall && ((wbReBranch && !wfds) || cp0.io.except.except_kill)
+  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
   io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
   io.fb.bmfs.bpu.v         := wbBpuV
   io.fb.bmfs.bpu.errpr     := wbBpuErrpr

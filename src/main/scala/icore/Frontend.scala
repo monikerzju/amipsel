@@ -24,7 +24,7 @@ class PCGenIO(va_width: Int = 32) extends Bundle with Config {
 class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int = 4) extends Module with Config {
   val io  = IO(new PCGenIO(va_width))
   val pc  = RegInit(UInt(va_width.W), start_va.U)
-  val bpu = Module(new BPU(depth=4, offset=3, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
+  val bpu = Module(new BPU(depth=256, offset=3, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
   val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), bpu.io.resp.target_first, pc + increment.U)))
 
   // BPU
