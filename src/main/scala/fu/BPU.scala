@@ -90,7 +90,8 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   val WN = 1
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  val history = RegInit(VecInit(Seq.fill(depth)(WN.U(2.W))))  // half a regfile's size
+  // TODO maybe block ram
+  val history = RegInit(VecInit(Seq.fill(depth)(2.U(2.W))))  // half a regfile's size
   val buffer = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
   // 0 for low addr, 1 for high addr
