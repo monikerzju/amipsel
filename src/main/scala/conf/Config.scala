@@ -25,11 +25,15 @@ trait Config {
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
-  var BPUEntryN: Int = 256
-  var BPUOffset: Int = 3
+  var withBPU: Boolean = false 
+  var BPUEntryN: Int = 512
+  var BPUoffset: Int = 2
   var enableRAS: Boolean = true
-  val withRAS: Boolean = enableRAS
+  val withRAS: Boolean = enableRAS && withBPU
   var RASEntryN: Int = 6
+  var withBS: Boolean = false 
+  var BSEntryN: Int = 3
+  var BSWayN: Int = 2
   // Assertions ---- Dont Change!!!
   assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)

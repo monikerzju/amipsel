@@ -7,8 +7,6 @@ tilediff:
 	rm $(DIR)/build/verilog/tile/firrtl*
 	rm $(DIR)/build/verilog/tile/single_port_ram.v
 	rm $(DIR)/build/verilog/tile/dual_port_ram.v
-	rm $(DIR)/build/verilog/tile/Tile.fir
-	rm $(DIR)/build/verilog/tile/Tile.anno.json
 
 tile:
 	sbt "runMain tile.GenT"
