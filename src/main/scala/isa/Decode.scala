@@ -24,12 +24,14 @@ class Mops extends Bundle with Config with InstType {
   val imm           = UInt(len.W)
   val pc            = UInt(len.W)
   val predict_taken = Bool()
+  val target_pc     = UInt(len.W)
 }
 
 class DecIO extends Bundle with Config {
   val pc                = Input(UInt(len.W))
   val inst              = Input(UInt(len.W))
   val bht_predict_taken = Input(Bool())
+  val target_pc         = Input(UInt(len.W))
   val mops              = Output(new Mops)
 }
 
@@ -277,4 +279,5 @@ class Dec extends Module with InstType {
                            )
   io.mops.pc            := io.pc
   io.mops.predict_taken := io.bht_predict_taken
+  io.mops.target_pc     := io.target_pc
 }

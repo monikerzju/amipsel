@@ -74,9 +74,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exFwdRtData  = Reg(Vec(backendFuN, UInt(len.W)))
   val isExPCBr     = exInsts(0).next_pc === MicroOpCtrl.Branch
   val reBranch     = Wire(Bool())
+  val reBranchBrTaken = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
   val brPC         = exInsts(0).pc + (exInsts(0).imm << 2.U)(len - 1, 0) + 4.U
-  val exReBranchPC = Mux(isExPCBr, brPC, jumpPc)
+  val exReBranchPC = Mux(isExPCBr, Mux(reBranchBrTaken, brPC, exInsts(0).pc + 8.U), jumpPc)
   val aluValid     = Wire(Bool())
   val mduValid     = Wire(Bool())
   val ldstValid    = Wire(Bool())
@@ -102,10 +103,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
   val bpuV      = isExPCBr && exInstsValid(0)   // exInstsTrueValid is a long path and uncommon case, update BHT only
-  val bpuErrpr  = reBranch ^ exInsts(0).predict_taken || false.B // TODO wrong target
+  val bpuErrpr  = exInsts(0).target_pc =/= brPC
   val bpuPCBr   = exInsts(0).pc
   val bpuTarget = brPC
-  val bpuTaken  = reBranch
+  val bpuTaken  = reBranchBrTaken
 
   // WB
   val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
@@ -375,6 +376,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   // jump br
   val isExPCJump = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
   reBranch := false.B
+  reBranchBrTaken := false.B
   jumpPc := Mux(
     exInsts(0).next_pc === MicroOpCtrl.Jump,
     Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)),
@@ -382,7 +384,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   )
   when(exInstsTrueValid(0)) {
     when (isExPCBr) {
-      reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
+      reBranchBrTaken := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
           MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
@@ -391,6 +393,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
+      reBranch := reBranchBrTaken ^ exInsts(0).predict_taken || exInsts(0).target_pc =/= brPC
     }.elsewhen (isExPCJump) {
       reBranch := true.B
     }
@@ -445,7 +448,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   when (kill_w) {
     wbBpuV := false.B
   }.otherwise {
-    wbBpuV := false.B // TODO bpuV
+    wbBpuV := bpuV
   }
 
   when (kill_w) {
@@ -487,28 +490,23 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
   io.fb.bmfs.bpu.target    := wbBpuTarget
   io.fb.bmfs.bpu.taken     := wbBpuTaken
+  when (exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Branch) {
+    printf("bpu pc %x, predict %x, target %x, act %x, act-target %x\n", exInsts(0).pc, exInsts(0).predict_taken, exInsts(0).target_pc, reBranchBrTaken, brPC)
+  }
 
   // regfile
-  if (backendIssueN == 3) {
-    for(i <- 0 until backendFuN) {
-      regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && !wbExcepts(i)
-      regFile.io.rd_addr_vec(i) := wbInsts(i).rd
-      regFile.io.rd_data_vec(i) := wbData(i)
-    }
-  } else {
-    regFile.io.wen_vec(0) := Mux(
-      wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0), 
-      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-    )
-    regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
-    regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
-    regFile.io.wen_vec(1) := Mux(
-      wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2), 
-      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-    )
-    regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
-    regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
-  }
+  regFile.io.wen_vec(0) := Mux(
+    wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0), 
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
+  regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
+  regFile.io.wen_vec(1) := Mux(
+    wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2), 
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
+  regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
 
   // cp0
   // TODO: cache stall should also influence the exception
@@ -555,7 +553,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
   
-  // difftest
+  /**
+   *  [---------- DiffTest stage -----------]
+   */
   if (diffTestV) {
     val instret    = RegInit(0.U(64.W))
     val counter    = RegInit(0.U(64.W))
