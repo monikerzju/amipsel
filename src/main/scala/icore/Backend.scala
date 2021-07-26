@@ -445,18 +445,22 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "stream_copy",
       "string_search"
     )
-    val test_file = "stream_copy"
+    val test_file = "crc32"
     val lwCounterStart = Map (
-      "stream_copy" -> 0x0000375fL
+      "stream_copy" -> 0x0000375fL,
+      "crc32" -> 0x000030e1L,
     )
     val lwCounterEnd = Map (
-      "stream_copy" -> 0x0005b167L
+      "stream_copy" -> 0x0005b167L,
+      "crc32" -> 0x006db2daL
     )
     val mfc0CounterStart = Map (
-      "stream_copy" -> 0x0000194dL
+      "stream_copy" -> 0x0000194dL,
+      "crc32" -> 0x0000166aL
     )
     val mfc0CounterEnd = Map (
-      "stream_copy" -> 0x00029617L
+      "stream_copy" -> 0x00029617L,
+      "crc32" -> 0x0031dca1L
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
