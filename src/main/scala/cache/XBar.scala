@@ -235,7 +235,18 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
   io.axi3.w.bits.id     := 0.U
   io.axi3.w.bits.data   := MuxLookup(
     wtype,
-    wbuff << (wptr << 5.U),
+    MuxLookup(
+      wptr, wbuff(31, 0),
+      Seq(
+        1.U -> wbuff(32*1+31, 32*1),
+        2.U -> wbuff(32*2+31, 32*2),
+        3.U -> wbuff(32*3+31, 32*3),
+        4.U -> wbuff(32*4+31, 32*4),
+        5.U -> wbuff(32*5+31, 32*5),
+        6.U -> wbuff(32*6+31, 32*6),
+        7.U -> wbuff(32*7+31, 32*7)
+      )
+    ),
     Seq(
       MEM_BYTE.U  -> (wbuff << (addr(wsel)(1, 0) << 3.U)),
       MEM_HALF.U  -> (wbuff << (addr(wsel)(1, 0) << 3.U))
