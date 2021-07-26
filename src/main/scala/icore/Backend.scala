@@ -351,6 +351,15 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     memReq
   }
   )
+
+  when (!dcacheStall) {
+    exLastMemReqValid := exInstsTrueValid(2) && !memMisaligned
+    exLastMemReq.mtype := exInsts(2).mem_width
+    exLastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
+    exLastMemReq.wdata := exFwdRtData(2)
+    exLastMemReq.addr := ldstAddr
+  }
+
   // 2 to 1
   io.dcache.req.bits.mtype := Mux(dcacheStall, exLastMemReq.mtype, exInsts(2).mem_width)
   io.dcache.req.bits.wen := Mux(dcacheStall, exLastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
@@ -411,17 +420,26 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   // handle load-inst separately
   val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
   val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
-  val luData = Wire(UInt(len.W))
-  luData := dataFromDcache
+  val wbLdData = Wire(UInt(len.W))
+
+  // to cope with the situation where load after mult happens,
+  // but cache only supplies the load data for only one cycle.
+  // Therefore, core should save the data by itself until the mdu stall ends,
+  // otherwise, load data will be lost since wbInst is valid when bubble
+  val wbLdDataForStall = Reg(UInt(len.W))
+  wbLdDataForStall := Mux(!mdu.io.resp.valid && RegNext(mdu.io.resp.valid), wbLdData, wbLdDataForStall)
+  val wbLdDataValid = RegNext(mdu.io.resp.valid)
+
+  wbLdData := dataFromDcache
   switch(wbInsts(2).mem_width) {
-    is(MicroOpCtrl.MemByte)  { luData := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0)) }
-    is(MicroOpCtrl.MemByteU) { luData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
-    is(MicroOpCtrl.MemHalf)  { luData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
-    is(MicroOpCtrl.MemHalfU) { luData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
+    is(MicroOpCtrl.MemByte)  { wbLdData := Cat(Fill(24, dataFromDcache(7)), dataFromDcache(7, 0)) }
+    is(MicroOpCtrl.MemByteU) { wbLdData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
+    is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
+    is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
   }
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
-  wbData(2) := luData
+  wbData(2) := Mux(wbLdDataValid, wbLdData, wbLdDataForStall)
 
   if (diffTestV) {
     def isLwCounterInst(Inst: Mops): Bool = {
@@ -515,6 +533,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     }
     wbReBranch := false.B
   }.elsewhen (bubble_w) {
+    // TODO: do not write regFile until Stall ends
     // write regFile until Stall ends
     /*
     for(i <- 0 until backendFuN) {
@@ -532,11 +551,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     wbInstsOrder := exInstsOrder
     wbResult(0) := aluWbData
     wbResult(1) := mdu.io.resp.lo
-    exLastMemReqValid := exInstsTrueValid(2) && !memMisaligned
-    exLastMemReq.mtype := exInsts(2).mem_width
-    exLastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
-    exLastMemReq.wdata := exFwdRtData(2)
-    exLastMemReq.addr := ldstAddr
+
 
     wbALUOvf := alu.io.ovf
     wbMDUOvf := mdu.io.resp.except
