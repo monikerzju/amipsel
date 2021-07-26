@@ -139,6 +139,33 @@ class DPBRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends M
   io.douta      := dpr.io.douta
   io.doutb      := dpr.io.doutb
 }
+class TDPBRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends Module {
+  val dpr = Module(new dual_port_ram(DATA_WIDTH, DEPTH, LATENCY))
+  val io = IO(new DPBRAMSyncReadMemIO(DATA_WIDTH, DEPTH))
+  val reg_din = RegInit(0.U(DATA_WIDTH.W))
+  val reg_forward = RegInit(false.B)
+
+  when(io.addra === io.addrb){
+	reg_forward := io.wea || io.web
+	when(io.wea){
+		reg_din := io.dina
+	}.elsewhen(io.web){
+		reg_din := io.dinb
+	}
+  }
+  dpr.io.clk    := clock
+  dpr.io.rst    := reset
+  dpr.io.wea    := io.wea
+  dpr.io.web    := io.web
+  dpr.io.ena    := true.B
+  dpr.io.enb    := true.B
+  dpr.io.addra  := io.addra
+  dpr.io.addrb  := io.addrb
+  dpr.io.dina   := io.dina
+  dpr.io.dinb   := io.dinb
+  io.douta      := Mux(reg_forward,reg_din,dpr.io.douta)
+  io.doutb      := Mux(reg_forward,reg_din,dpr.io.doutb)
+}
 
 // Single port
 class BRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
