@@ -17,6 +17,7 @@ class PCGenIO(va_width: Int = 32) extends Bundle with Config {
   val predict_taken_o = Output(Bool())
   val predict_target_o = Output(UInt(va_width.W))
   val narrow_o = if (frontendIssueN != 1) Output(Bool()) else null
+  val bpu_update = new BHTUpdate(va_width)
   override def cloneType = (new PCGenIO(va_width)).asInstanceOf[this.type]
 }
 
@@ -27,11 +28,8 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), bpu.io.resp.target_first, pc + increment.U)))
 
   // BPU
-  bpu.io.req.next_line     := npc
-  // TODO update phase
-  bpu.io.update.dec.pc_br  := 0.U
-  bpu.io.update.dec.v      := false.B  // TODO currently predict taken but not branch, to add backward jump
-  bpu.io.update.exe        := 0.U.asTypeOf(new BHTExeUpdate)
+  bpu.io.req.next_line := npc
+  bpu.io.update        := io.bpu_update
 
   pc := npc
   io.predict_taken_o  := bpu.io.resp.taken_vec(0)
@@ -83,6 +81,9 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   pc_gen.io.please_wait := stall_f
   pc_gen.io.redirect    := kill_f || (fetch_half && !cache_stall)
   pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), pc_gen.io.pc_o + 4.U)
+  pc_gen.io.bpu_update.dec.pc_br := decode_pc_low_reg
+  pc_gen.io.bpu_update.dec.v := dec_kill_d
+  pc_gen.io.bpu_update.exe := io.fb.bmfs.bpu
   dec_kill_redirect_pc  := decode_pc_low_reg + Mux(stall_d, 0.U, 4.U * fire_number_respn)
 
   repc := Mux(stall_f, repc, pc_gen.io.pc_o)

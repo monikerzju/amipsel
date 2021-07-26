@@ -84,14 +84,15 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
 
 class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0, instByte: Int = 4) extends Module {
   val io = IO(new BPUIO(width, issueN))
-
+  
   // strongly not taken
   val SN = 0
   val WN = 1
+  val WT = 2
+  val ST = 3
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  // TODO maybe block ram
-  val history = RegInit(VecInit(Seq.fill(depth)(2.U(2.W))))  // half a regfile's size
+  val history = RegInit(VecInit(Seq.fill(depth)(SN.U(2.W))))  // half a regfile's size
   val buffer = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
   // 0 for low addr, 1 for high addr
@@ -102,22 +103,20 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   }
 
   // Notice that the update from ID will only change BHT
-  buffer.io.we := io.update.exe.errpr
-  buffer.io.addr := Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line)(offset + log2Ceil(depth), offset)
+  buffer.io.we := io.update.exe.errpr && io.update.exe.v
+  buffer.io.addr := Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line)(offset + log2Ceil(depth) - 1, offset)
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
   
   // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
   // ID's priority is higher than EX
-  when (io.update.exe.v) {
-    val old_value = history(io.update.exe.pc_br(offset + log2Ceil(depth), offset))
-    history(io.update.exe.pc_br(offset + log2Ceil(depth), offset)) := Mux(
-      io.update.exe.taken,
+  val update_index = Mux(io.update.exe.v, io.update.exe.pc_br(offset + log2Ceil(depth) - 1, offset), io.update.dec.pc_br(offset + log2Ceil(depth) - 1, offset))
+  when (io.update.exe.v || io.update.dec.v) {
+    val old_value = history(update_index)
+    history(update_index) := Mux(
+      io.update.exe.taken && io.update.exe.v,
       Mux(old_value.andR, old_value, old_value + 1.U),
       Mux(!old_value.orR, old_value, old_value - 1.U)
     )
-  }
-  when (io.update.dec.v) {
-    history(io.update.dec.pc_br(offset + log2Ceil(depth), offset)) := SN.U
   }
 
   // RAS is ds-oriented and done in ID stage

@@ -55,7 +55,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val issueRts     = Wire(Vec(backendFuN, UInt(len.W)))
   val issueQueue   = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   val issueArbiter = Module(new IssueArbiter(queueSize))
-//  val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
   val stall_i      = Wire(Bool())
   val kill_i       = io.fb.bmfs.redirect_kill
   val rsFwdData    = Wire(Vec(backendIssueN, UInt(len.W)))
@@ -103,7 +102,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
   val bpuV      = isExPCBr && exInstsValid(0)   // exInstsTrueValid is a long path and uncommon case, update BHT only
-  val bpuErrpr  = exInsts(0).target_pc =/= brPC
+  val bpuErrpr  = exInsts(0).target_pc =/= brPC && reBranchBrTaken
   val bpuPCBr   = exInsts(0).pc
   val bpuTarget = brPC
   val bpuTaken  = reBranchBrTaken
@@ -446,17 +445,13 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   when (kill_w) {
-    wbBpuV := false.B
-  }.otherwise {
-    wbBpuV := bpuV
-  }
-
-  when (kill_w) {
     for(i <- 0 until backendFuN) {
       wbInstsValid(i) := false.B
     }
     wbReBranch := false.B
+    wbBpuV := false.B
   }.elsewhen (!bubble_w) {
+    wbBpuV := bpuV
     latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump),
       exInsts(0).pc, latestBJPC
     )
@@ -481,6 +476,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
     }
+  }.otherwise {
+    wbBpuV := false.B
   }
 
   io.fb.bmfs.redirect_kill := !dcacheStall && ((wbReBranch && !wfds) || cp0.io.except.except_kill)
@@ -490,9 +487,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
   io.fb.bmfs.bpu.target    := wbBpuTarget
   io.fb.bmfs.bpu.taken     := wbBpuTaken
-  when (exInstsValid(0) && exInsts(0).next_pc === MicroOpCtrl.Branch) {
-    printf("bpu pc %x, predict %x, target %x, act %x, act-target %x\n", exInsts(0).pc, exInsts(0).predict_taken, exInsts(0).target_pc, reBranchBrTaken, brPC)
-  }
 
   // regfile
   regFile.io.wen_vec(0) := Mux(
