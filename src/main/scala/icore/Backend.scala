@@ -463,13 +463,15 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "stream_copy",
       "string_search"
     )
-    val test_file = "coremark"
+    val test_file = "quick_sort"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,
       "select_sort" -> 0x0000374aL,
       "sha" -> 0x0000269dL,
       "string_search" -> 0x00003b90L,
+      "bubble_sort" -> 0x0000374aL,
+      "quick_sort" -> 0x00003531L,
     )
     val lwCounterEnd = Map (
       "stream_copy" -> 0x0005b167L,
@@ -477,6 +479,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "select_sort" -> 0x00466b30L,
       "sha" -> 0x004c2f7eL,
       "string_search" -> 0x003779b3L,
+      "bubble_sort" -> 0x00529750L,
+      "quick_sort" -> 0x004a4bfcL,
     )
     val mfc0CounterStart = Map (
       "stream_copy" -> 0x0000194dL,
@@ -486,6 +490,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "sha" -> 0x000011b0L,
       "string_search" -> 0x00001b35L,
       "coremark" -> 0x00001673L,
+      "bubble_sort" -> 0x00001959L,
+      "quick_sort" -> 0x00001865L,
     )
     val mfc0CounterEnd = Map (
       "stream_copy" -> 0x00029617L,
@@ -495,6 +501,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "sha" -> 0x0022a0dcL,
       "string_search" -> 0x001936f4L,
       "coremark" -> 0x004f4000L,
+      "bubble_sort" -> 0x00258a51L,
+      "quick_sort" -> 0x0021c52bL,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
