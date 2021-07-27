@@ -50,7 +50,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   last_req_valid := io.icache.req.valid
 
   pc_gen.io.please_wait := stall_f
-  pc_gen.io.redirect    := kill_f || (fetch_half && !cache_stall)
+  pc_gen.io.redirect    := kill_f || (fetch_half && !stall_f)
   pc_gen.io.redirect_pc := Mux(kill_f, io.fb.bmfs.redirect_pc, Mux(stall_f, repc, pc_gen.io.pc_o) + 4.U)
 
   repc := Mux(stall_f, repc, pc_gen.io.pc_o)
