@@ -25,8 +25,9 @@ trait Config {
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
+  var traceBPU: Boolean = true
   var BPUEntryN: Int = 128
-  var BPUOffset: Int = 3
+  var BPUOffset: Int = 2
   var enableRAS: Boolean = true
   val withRAS: Boolean = enableRAS
   var RASEntryN: Int = 6
@@ -39,5 +40,5 @@ trait Config {
   assert(backendIssueN == 2)
   assert(tagBits + indexBits + offsetBits == len)
   assert(backendFuN == 3)
-  assert(BPUOffset == 3 || BPUOffset == 4 || BPUOffset == 5)
+  assert(BPUOffset == 2)  // TODO because the delay slot, the lowest to deal with must be 2, we can use like bits(10,6) + bit(1), bit(1) is necessary
 }

@@ -64,6 +64,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val decs              = Array.fill(frontendIssueN)(Module(new Dec).io)
   val predict_taken_but_not_br = Wire(Bool())
   val dec_kill_d        = Wire(Bool())
+  val dec_kill_d_for_ds = Wire(Bool())
   val frontend_fire     = Wire(Bool())
   val fire_number_respn = Cat(0.U, RegNext(io.icache.resp.bits.respn)) + 1.U
   val stall_d           = Wire(Bool())
@@ -135,7 +136,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     decs(i).inst              := io.icache.resp.bits.rdata(i)
     decs(i).pc                := decode_pc_low_reg + (i.U << 2.U)
     if (i == 0) {
-      decs(0).bht_predict_taken := decode_pc_predict_taken
+      decs(0).bht_predict_taken := Mux(decode_pc_low_reg(offsetBits - 1, 2) + 1.U === 0.U, false.B, decode_pc_predict_taken) // TODO current ugly patch for DS, if the branch is the end of the cacheline, just ignore prediction
       decs(0).target_pc := decode_pc_predict_target
     } else {
       decs(i).bht_predict_taken := false.B
@@ -144,6 +145,12 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
   predict_taken_but_not_br := decode_pc_predict_taken && !quickCheckBranch(io.icache.resp.bits.rdata(0))
+  
+  if (traceBPU) {
+    when (predict_taken_but_not_br && frontend_fire) {
+      printf("misprediction at %x, not branch\n", decode_pc_low_reg)
+    }
+  }
   dec_kill_d := predict_taken_but_not_br && frontend_fire
 
   if (diffTestV) {

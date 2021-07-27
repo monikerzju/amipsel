@@ -402,6 +402,17 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
         )
       )
       reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && exInsts(0).target_pc =/= brPC)
+      
+      if (traceBPU) {
+        when (!stall_x && !kill_x) {
+          when (reBranch) {
+            printf("misprediction at %x, wrong target %x\n", exInsts(0).pc, exInsts(0).predict_taken && reBranchBrTaken && exInsts(0).target_pc =/= brPC)
+          }.otherwise {
+            printf("hit at %x\n", exInsts(0).pc)
+          }
+        }
+      }
+        
     }.elsewhen (isExPCJump) {
       reBranch := true.B
     }
@@ -475,7 +486,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "stream_copy",
       "string_search"
     )
-    val test_file = "coremark"
+    val test_file = "stream_copy"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,

@@ -82,7 +82,7 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
   override def cloneType = (new BPUIO(width, issueN)).asInstanceOf[this.type]
 }
 
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0, instByte: Int = 4) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0, instByte: Int = 4, delaySlot: Boolean = true) extends Module {
   val io = IO(new BPUIO(width, issueN))
   
   // strongly not taken
@@ -92,12 +92,14 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   val ST = 3
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  val history = RegInit(VecInit(Seq.fill(depth)(SN.U(2.W))))  // half a regfile's size
+  val history = RegInit(VecInit(Seq.fill(depth)(WN.U(2.W))))  // half a regfile's size
   val buffer = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
   // 0 for low addr, 1 for high addr
   for (i <- 0 until issueN) {
-    io.resp.taken_vec(i) := history(RegNext(io.req.next_line + (i.U << 2.U)))(1)  // 10 and 11 for WT and ST
+    val next_line_to_bht = RegNext((io.req.next_line + (i.U * 4.U))(offset + log2Ceil(depth) - 1, offset))
+    val history_entry =  history(next_line_to_bht)
+    io.resp.taken_vec(i) := history_entry(1)  // 10 and 11 for WT and ST
   }
 
   // Notice that the update from ID will only change BHT
@@ -108,8 +110,9 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   
   // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
   // ID's priority is higher than EX
-  val update_index = Mux(io.update.exe.v, io.update.exe.pc_br(offset + log2Ceil(depth) - 1, offset), io.update.dec.pc_br(offset + log2Ceil(depth) - 1, offset))
+  val update_index = Mux(!io.update.dec.v, io.update.exe.pc_br(offset + log2Ceil(depth) - 1, offset), io.update.dec.pc_br(offset + log2Ceil(depth) - 1, offset))
   when (io.update.exe.v || io.update.dec.v) {
+    // when(io.update.dec.v){printf("update pc is %x, taken is %x\n", Mux(io.update.exe.v, io.update.exe.pc_br, io.update.dec.pc_br), io.update.exe.taken && io.update.exe.v)}
     val old_value = history(update_index)
     history(update_index) := Mux(
       io.update.exe.taken && io.update.exe.v,
