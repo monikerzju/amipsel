@@ -56,6 +56,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val kill_f         = Wire(Bool())
   val illegal_pc     = pc_gen.io.pc_o(1, 0).orR
   val dec_kill_redirect_pc = Wire(UInt(len.W))
+  val may_illegal_req_addr = Mux(stall_f, repc, pc_gen.io.pc_o)
 
   // ID
   val decode_pc_low_reg = RegInit(UInt(len.W), startAddr.U)
@@ -76,14 +77,18 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   // IF Stage
   stall_f        := stall_d || cache_stall
   kill_f         := kill_d
-  fetch_half     := io.icache.resp.bits.respn === 0.U
+  if (frontendIssueN == 1) {
+    fetch_half := false.B
+  } else {
+    fetch_half := io.icache.resp.bits.respn === 0.U
+  }
   cache_stall    := !io.icache.resp.valid && last_req_valid
   last_req_valid := io.icache.req.valid
 
   // for predict taken but not br, detected in ID, if stall_d -> redirect the first pc in dec, else if dec has 1 instruction, redirect to pc + 4, else redirect to pc + 8
   pc_gen.io.please_wait := stall_f
   pc_gen.io.redirect    := kill_f || (fetch_half && !cache_stall)
-  pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), pc_gen.io.pc_o + 4.U)
+  pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), may_illegal_req_addr + 4.U)
   pc_gen.io.bpu_update.dec.pc_br := decode_pc_low_reg
   pc_gen.io.bpu_update.dec.v := dec_kill_d
   pc_gen.io.bpu_update.exe := io.fb.bmfs.bpu
@@ -96,7 +101,6 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     renarrow := Mux(stall_f, renarrow, pc_gen.io.narrow_o)
   }
 
-  val may_illegal_req_addr = Mux(stall_f, repc, pc_gen.io.pc_o)
   io.icache.req.valid      := true.B
   io.icache.resp.ready     := true.B 
   io.icache.req.bits.addr  := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))

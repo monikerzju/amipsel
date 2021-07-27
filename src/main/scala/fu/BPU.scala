@@ -97,15 +97,14 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
 
   // 0 for low addr, 1 for high addr
   for (i <- 0 until issueN) {
-    io.resp.taken_vec(i) := history(RegNext(io.req.next_line + (i.U << 2.U)))(1)  // 10 and 11 for WT and ST
-    if (i == 0)
-      io.resp.target_first := Cat(buffer.io.dout, 0.U(log2Ceil(instByte).W))
+    io.resp.taken_vec(i) := false.B// todo history(RegNext(io.req.next_line + (i.U << 2.U)))(1)  // 10 and 11 for WT and ST
   }
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
   buffer.io.addr := Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line)(offset + log2Ceil(depth) - 1, offset)
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
+  io.resp.target_first := Cat(buffer.io.dout, 0.U(log2Ceil(instByte).W))
   
   // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
   // ID's priority is higher than EX

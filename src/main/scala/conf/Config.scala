@@ -16,7 +16,7 @@ trait Config {
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
   var backendFuN: Int = 3
-  val queueSize: Int = 4
+  val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = false
   // var icachePref: Boolean = false
