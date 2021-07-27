@@ -362,7 +362,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   // 2 to 1
-  io.dcache.req.bits := Mux(dcacheStall, exLastMemReq, exCurMemReq)
+//  io.dcache.req.bits := Mux(dcacheStall, exLastMemReq, exCurMemReq)
+  io.dcache.req.bits := exCurMemReq
 
   stall_i := dcacheStall || !mdu.io.resp.valid
 
