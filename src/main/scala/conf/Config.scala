@@ -16,7 +16,7 @@ trait Config {
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
   var backendFuN: Int = 3
-  val queueSize: Int = 8
+  val queueSize: Int = 4
   // Cache
   var dcacheMetaZeroLatency: Boolean = false
   // var icachePref: Boolean = false
@@ -25,11 +25,10 @@ trait Config {
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
-  var withBPU: Boolean = false 
-  var BPUEntryN: Int = 512
-  var BPUoffset: Int = 2
+  var BPUEntryN: Int = 128
+  var BPUOffset: Int = 3
   var enableRAS: Boolean = true
-  val withRAS: Boolean = enableRAS && withBPU
+  val withRAS: Boolean = enableRAS
   var RASEntryN: Int = 6
   var withBS: Boolean = false 
   var BSEntryN: Int = 3
@@ -40,4 +39,5 @@ trait Config {
   assert(backendIssueN == 2)
   assert(tagBits + indexBits + offsetBits == len)
   assert(backendFuN == 3)
+  assert(BPUOffset == 3 || BPUOffset == 4 || BPUOffset == 5)
 }

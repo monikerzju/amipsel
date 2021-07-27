@@ -24,7 +24,7 @@ class PCGenIO(va_width: Int = 32) extends Bundle with Config {
 class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int = 4) extends Module with Config {
   val io  = IO(new PCGenIO(va_width))
   val pc  = RegInit(UInt(va_width.W), start_va.U)
-  val bpu = Module(new BPU(depth=256, offset=3, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
+  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
   val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), bpu.io.resp.target_first, pc + increment.U)))
 
   // BPU
@@ -69,6 +69,9 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val kill_d            = Wire(Bool())
   val decode_pc_predict_target = Reg(UInt(len.W))
   val decode_pc_predict_taken  = Reg(Bool())  // the first might be branch, the second must be delay slot which is not a branch instruction
+  def quickCheckBranch(inst: UInt) : Bool = {
+    inst(31, 26) === "b000001".U || inst(31, 28) === "b0001".U
+  }
 
   // IF Stage
   stall_f        := stall_d || cache_stall
@@ -136,7 +139,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     }
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
-  predict_taken_but_not_br := decode_pc_predict_taken && decs(0).mops.next_pc =/= Branch
+  predict_taken_but_not_br := decode_pc_predict_taken && !quickCheckBranch(decode_pc_low_reg)
   dec_kill_d := predict_taken_but_not_br && frontend_fire
 
   if (diffTestV) {
