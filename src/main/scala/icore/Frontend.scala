@@ -87,7 +87,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
 
   // for predict taken but not br, detected in ID, if stall_d -> redirect the first pc in dec, else if dec has 1 instruction, redirect to pc + 4, else redirect to pc + 8
   pc_gen.io.please_wait := stall_f
-  pc_gen.io.redirect    := kill_f || (fetch_half && !cache_stall)
+  pc_gen.io.redirect    := kill_f || (fetch_half && !stall_f)
   pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), may_illegal_req_addr + 4.U)
   pc_gen.io.bpu_update.dec.pc_br := decode_pc_low_reg
   pc_gen.io.bpu_update.dec.v := dec_kill_d
@@ -143,7 +143,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     }
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
-  predict_taken_but_not_br := decode_pc_predict_taken && !quickCheckBranch(decode_pc_low_reg)
+  predict_taken_but_not_br := decode_pc_predict_taken && !quickCheckBranch(io.icache.resp.bits.rdata(0))
   dec_kill_d := predict_taken_but_not_br && frontend_fire
 
   if (diffTestV) {
