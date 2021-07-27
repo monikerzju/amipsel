@@ -32,9 +32,9 @@ THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ------------------------------------------------------------------------------*/
 `timescale 1ns / 1ps
 
-`define TRACE_REF_FILE "C:/Users/mywindows/Desktop/perf_test_v0.01/bitcount.txt"
+`define TRACE_REF_FILE "../../../../../../../trace/golden_trace_steam_copy.txt"
 `define CONFREG_NUM_REG      soc_lite.u_confreg.num_data
-`define CONFREG_OPEN_TRACE   1'b1//soc_lite.u_confreg.open_trace
+`define CONFREG_OPEN_TRACE   1'b1 // soc_lite.u_confreg.open_trace
 `define CONFREG_NUM_MONITOR  soc_lite.u_confreg.num_monitor
 `define CONFREG_UART_DISPLAY soc_lite.u_confreg.write_uart_valid
 `define CONFREG_UART_DATA    soc_lite.u_confreg.write_uart_data
@@ -54,7 +54,7 @@ wire [7 :0] switch;
 wire [3 :0] btn_key_col;
 wire [3 :0] btn_key_row;
 wire [1 :0] btn_step;
-assign switch      = 8'b00001110;
+assign switch      = 8'hff;
 assign btn_key_row = 4'd0;
 assign btn_step    = 2'd3;
 
@@ -102,6 +102,7 @@ wire [31:0] debug_wb_pc_2;
 wire debug_wb_rf_wen_2;
 wire [4 :0] debug_wb_rf_wnum_2;
 wire [31:0] debug_wb_rf_wdata_2;
+
 assign cpu_clk             = soc_lite.cpu_clk;
 assign sys_clk             = soc_lite.sys_clk;
 assign debug_wb_pc_0       = soc_lite.debug_wb_pc_0;
@@ -116,6 +117,7 @@ assign debug_wb_pc_2       = soc_lite.debug_wb_pc_2;
 assign debug_wb_rf_wen_2   = soc_lite.debug_wb_rf_wen_2;
 assign debug_wb_rf_wnum_2  = soc_lite.debug_wb_rf_wnum_2;
 assign debug_wb_rf_wdata_2 = soc_lite.debug_wb_rf_wdata_2;
+
 
 // open the trace file;
 integer trace_ref;
@@ -270,7 +272,7 @@ begin
         else begin
             while (!trace_cmp_flag_0 && !($feof(trace_ref)))
             begin
-                $fscanf(trace_ref, "%h %h %h %h",ref_wb_pc_0 ,
+                $fscanf(trace_ref, "%h %h %h %h", ref_wb_pc_0,
                         trace_cmp_flag_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
             end
         end
@@ -310,18 +312,18 @@ begin
     end
     else if(|go && !debug_end && `CONFREG_OPEN_TRACE)
     begin
-        /*if (debug_wb_rf_wen_0) begin
-            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2d, wb_rf_wdata = 0x%8h",
+        if (debug_wb_rf_wen_0) begin
+            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_0, debug_wb_rf_wnum_0, debug_wb_rf_wdata_v_0);
         end
         if (debug_wb_rf_wen_1) begin
-            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2d, wb_rf_wdata = 0x%8h",
+            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_1, debug_wb_rf_wnum_1, debug_wb_rf_wdata_v_1);
         end
         if (debug_wb_rf_wen_2) begin
-            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2d, wb_rf_wdata = 0x%8h",
+            $display("    amipsel: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
                       debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_v_2);
-        end*/
+        end
         if (
             three_bad && ref_wb_pc_1 != `END_PC && ref_wb_pc_0 != `END_PC
             ||
@@ -351,20 +353,20 @@ begin
                             debug_wb_pc_1, debug_wb_rf_wnum_1, debug_wb_rf_wdata_1);
             end
             if (third) begin
-            if (first && sec) begin
-            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      ref_wb_pc_2, ref_wb_rf_wnum_2, ref_wb_rf_wdata_2);
-            end
-            if (first || sec) begin
-            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_1);
-            end
-            else begin
-            $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
-            end
-            $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
-                      debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_2);
+                if (first && sec) begin
+                $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                        ref_wb_pc_2, ref_wb_rf_wnum_2, ref_wb_rf_wdata_2);
+                end
+                if (first || sec) begin
+                $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                        ref_wb_pc_1, ref_wb_rf_wnum_1, ref_wb_rf_wdata_1);
+                end
+                else begin
+                $display("    reference: PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                        ref_wb_pc_0, ref_wb_rf_wnum_0, ref_wb_rf_wdata_0);
+                end
+                $display("    mycpu    : PC = 0x%8h, wb_rf_wnum = 0x%2h, wb_rf_wdata = 0x%8h",
+                        debug_wb_pc_2, debug_wb_rf_wnum_2, debug_wb_rf_wdata_2);
             end
             $display("--------------------------------------------------------------");
             debug_wb_err <= 1'b1;
