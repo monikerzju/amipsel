@@ -331,15 +331,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
   io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || dcacheStall
   io.dcache.resp.ready := true.B
-  io.dcache.req.bits.flush := false.B
-  io.dcache.req.bits.invalidate := false.B
-  /*
-  io.dcache.req.bits.mtype := exInsts(2).mem_width
-  io.dcache.req.bits.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
-  io.dcache.req.bits.wdata := exFwdRtData(2)
-  io.dcache.req.bits.addr := ldstAddr
 
-   */
+
   val exLastMemReq = RegInit({
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
@@ -352,20 +345,24 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
   )
 
+  val exCurMemReq = {
+    val memReq = Wire(new MemReq)
+    memReq.flush := false.B
+    memReq.invalidate := false.B
+    memReq.mtype := exInsts(2).mem_width
+    memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
+    memReq.wdata := exFwdRtData(2)
+    memReq.addr := ldstAddr
+    memReq
+  }
+
   when (!dcacheStall) {
     exLastMemReqValid := exInstsTrueValid(2) && !memMisaligned
-    exLastMemReq.mtype := exInsts(2).mem_width
-    exLastMemReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
-    exLastMemReq.wdata := exFwdRtData(2)
-    exLastMemReq.addr := ldstAddr
+    exLastMemReq := exCurMemReq
   }
 
   // 2 to 1
-  io.dcache.req.bits.mtype := Mux(dcacheStall, exLastMemReq.mtype, exInsts(2).mem_width)
-  io.dcache.req.bits.wen := Mux(dcacheStall, exLastMemReq.wen, exInsts(2).write_dest === MicroOpCtrl.DMem)
-  io.dcache.req.bits.wdata := Mux(dcacheStall, exLastMemReq.wdata, exFwdRtData(2))
-  io.dcache.req.bits.addr := Mux(dcacheStall, exLastMemReq.addr, ldstAddr)
-
+  io.dcache.req.bits := Mux(dcacheStall, exLastMemReq, exCurMemReq)
 
   stall_i := dcacheStall || !mdu.io.resp.valid
 
