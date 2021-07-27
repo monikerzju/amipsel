@@ -48,17 +48,17 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
   assert(!dcacheMetaZeroLatency)
   // FIXME: io.write-> reg_write
   val io = IO(new MetaIODSimple)
-  val blk = Module(new BRAMSyncReadMem(nline, tagBits + 2))
+  val blk = Module(new BRAMSyncReadMem(nline, dTagBits + 2))
   blk.io.we := io.update || (io.hit && io.write)
   blk.io.addr := io.index_in
-  val v = blk.io.dout(tagBits)
-  val t = blk.io.dout(tagBits - 1, 0)
+  val v = blk.io.dout(dTagBits)
+  val t = blk.io.dout(dTagBits - 1, 0)
 
   val dirty = Mux(io.update, io.write, true.B)
   val tag = Mux(io.update, io.tags_in, t)
 
   blk.io.din := Cat(Seq(dirty, true.B, tag))
-  io.dirty := blk.io.dout(tagBits + 1)
+  io.dirty := blk.io.dout(dTagBits + 1)
   io.hit := RegNext(io.tags_in) === t && v
   io.tag := t
 }
@@ -69,31 +69,31 @@ class DPMetaDataBRAM(nline: Int) extends Module with Config {
     val a = new MetaIODSimple
     val b = new MetaIODSimple
   })
-  val blk = Module(new TDPBRAMSyncReadMem(nline, tagBits + 2))
+  val blk = Module(new TDPBRAMSyncReadMem(nline, dTagBits + 2))
   
   blk.io.wea := io.a.update || (io.a.hit && io.a.write)
   blk.io.addra := io.a.index_in
-  val v0 = blk.io.douta(tagBits)
-  val t0 = blk.io.douta(tagBits - 1, 0)
+  val v0 = blk.io.douta(dTagBits)
+  val t0 = blk.io.douta(dTagBits - 1, 0)
 
   val dirty0 = Mux(io.a.update, io.a.write, true.B)
   val tag0 = Mux(io.a.update, io.a.tags_in, t0)
 
   blk.io.dina := Cat(Seq(dirty0, true.B, tag0))
-  io.a.dirty := blk.io.douta(tagBits + 1)
+  io.a.dirty := blk.io.douta(dTagBits + 1)
   io.a.hit := RegNext(io.a.tags_in) === t0 && v0
   io.a.tag := t0
 
   blk.io.web := io.b.update || (io.b.hit && io.b.write)
   blk.io.addrb := io.b.index_in
-  val v1 = blk.io.doutb(tagBits)
-  val t1 = blk.io.doutb(tagBits - 1, 0)
+  val v1 = blk.io.doutb(dTagBits)
+  val t1 = blk.io.doutb(dTagBits - 1, 0)
 
   val dirty1 = Mux(io.b.update, io.b.write, true.B)
   val tag1 = Mux(io.b.update, io.b.tags_in, t1)
 
   blk.io.dinb := Cat(Seq(dirty1, true.B, tag1))
-  io.b.dirty := blk.io.doutb(tagBits + 1)
+  io.b.dirty := blk.io.doutb(dTagBits + 1)
   io.b.hit := RegNext(io.b.tags_in) === t1 && v1
   io.b.tag := t1
 }
@@ -103,7 +103,7 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
     val state_out = Output(UInt(3.W))
     val state_in = Input(UInt(3.W))
     val meta = Flipped(new MetaIODSimple)
-    val bram = Flipped(new BRAMSyncReadMemIO(1 << (offsetBits + 3),1 << indexBits))
+    val bram = Flipped(new BRAMSyncReadMemIO(1 << (offsetBits + 3),1 << dIndexBits))
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
   val responsive = Wire(Bool())
@@ -141,10 +141,10 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
   // translate virtual addr from start
   val tag_raw = Cat(
     Mux(unmaped, 0.U(3.W), __reg(io.cpu.req.bits.addr(31, 29))),
-    __reg(io.cpu.req.bits.addr(28, 32 - tagBits))
+    __reg(io.cpu.req.bits.addr(28, 32 - dTagBits))
   )
   val index_raw =
-    __reg(io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits))
+    __reg(io.cpu.req.bits.addr(len - dTagBits - 1, len - dTagBits - dIndexBits))
   val reg_index = RegNext(index_raw)
   val mmio = __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
@@ -158,8 +158,8 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
     )
   }
   writeline := line
-  val reg_tag_refill = RegInit(0.U(tagBits.W))
-  val reg_index_refill = RegInit(0.U(indexBits.W))
+  val reg_tag_refill = RegInit(0.U(dTagBits.W))
+  val reg_index_refill = RegInit(0.U(dIndexBits.W))
   val reg_word1 = RegEnable(io.cpu.req.bits.addr(offsetBits - 1, 2), responsive)
 
   // bram defaults
@@ -209,7 +209,7 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
   val wd =
     ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
 
-  val reg_tag_evict = RegInit(0.U(tagBits.W))
+  val reg_tag_evict = RegInit(0.U(dTagBits.W))
   val reg_rdata = RegInit(0.U(len.W))
 
   // val reg_write = RegNext(wen)
@@ -345,7 +345,7 @@ class DCacheSimple(real_dcache: Boolean = true)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
   assert(!dcacheMetaZeroLatency)
-  val nline = 1 << indexBits
+  val nline = 1 << dIndexBits
   val data = Module(new TDPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
   val meta = Module(new DPMetaDataBRAM(nline));
 

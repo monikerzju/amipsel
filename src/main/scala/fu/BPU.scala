@@ -91,26 +91,34 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   val WT = 2
   val ST = 3
 
+  def getIndex(addr: UInt) : UInt = {
+    if (delaySlot && offset >= 3) {
+      Cat(addr(offset + log2Ceil(depth) - 2, offset), addr(2))
+    } else {
+      addr(offset + log2Ceil(depth) - 1, offset)
+    }
+  }
+
   // BHT are registers, because it is relatively small and BRAM does not support reset
   val history = RegInit(VecInit(Seq.fill(depth)(WN.U(2.W))))  // half a regfile's size
   val buffer = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
   // 0 for low addr, 1 for high addr
   for (i <- 0 until issueN) {
-    val next_line_to_bht = RegNext((io.req.next_line + (i.U * 4.U))(offset + log2Ceil(depth) - 1, offset))
+    val next_line_to_bht = RegNext(getIndex(io.req.next_line + (i.U * 4.U)))
     val history_entry =  history(next_line_to_bht)
     io.resp.taken_vec(i) := history_entry(1)  // 10 and 11 for WT and ST
   }
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
-  buffer.io.addr := Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line)(offset + log2Ceil(depth) - 1, offset)
+  buffer.io.addr := getIndex(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
   io.resp.target_first := Cat(buffer.io.dout, 0.U(log2Ceil(instByte).W))
   
   // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
   // ID's priority is higher than EX
-  val update_index = Mux(!io.update.dec.v, io.update.exe.pc_br(offset + log2Ceil(depth) - 1, offset), io.update.dec.pc_br(offset + log2Ceil(depth) - 1, offset))
+  val update_index = Mux(!io.update.dec.v, getIndex(io.update.exe.pc_br), getIndex(io.update.dec.pc_br))
   when (io.update.exe.v || io.update.dec.v) {
     // when(io.update.dec.v){printf("update pc is %x, taken is %x\n", Mux(io.update.exe.v, io.update.exe.pc_br, io.update.dec.pc_br), io.update.exe.taken && io.update.exe.v)}
     val old_value = history(update_index)

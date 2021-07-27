@@ -64,7 +64,8 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val decs              = Array.fill(frontendIssueN)(Module(new Dec).io)
   val predict_taken_but_not_br = Wire(Bool())
   val dec_kill_d        = Wire(Bool())
-  val dec_kill_d_for_ds = Wire(Bool())
+  val wfds              = if (predictLastWordInCache) RegInit(false.B) else null
+  val wfds_target       = if (predictLastWordInCache) Reg(UInt(len.W)) else null
   val frontend_fire     = Wire(Bool())
   val fire_number_respn = Cat(0.U, RegNext(io.icache.resp.bits.respn)) + 1.U
   val stall_d           = Wire(Bool())
@@ -89,9 +90,14 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   // for predict taken but not br, detected in ID, if stall_d -> redirect the first pc in dec, else if dec has 1 instruction, redirect to pc + 4, else redirect to pc + 8
   pc_gen.io.please_wait := stall_f
   pc_gen.io.redirect    := kill_f || (fetch_half && !stall_f)
-  pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), may_illegal_req_addr + 4.U)
+  if (predictLastWordInCache) {
+    pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, Mux(wfds, wfds_target, dec_kill_redirect_pc)), may_illegal_req_addr + 4.U)
+  } else {
+    pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), may_illegal_req_addr + 4.U)
+  }
+  
   pc_gen.io.bpu_update.dec.pc_br := decode_pc_low_reg
-  pc_gen.io.bpu_update.dec.v := dec_kill_d
+  pc_gen.io.bpu_update.dec.v := predict_taken_but_not_br && frontend_fire
   pc_gen.io.bpu_update.exe := io.fb.bmfs.bpu
   dec_kill_redirect_pc  := decode_pc_low_reg + Mux(stall_d, 0.U, 4.U * fire_number_respn)
 
@@ -129,14 +135,25 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   }
 
   frontend_fire := !cache_stall && decode_valid_reg
-  io.fb.fmbs.instn := Mux(stall_d, 0.U,
-    Mux(frontend_fire, fire_number_respn, 0.U)
-  ) // here resp number can be inferred from the address, if cross line 0, else 1. The actual number is respn + 1.
+  if (predictLastWordInCache) {
+    io.fb.fmbs.instn := Mux(stall_d, 0.U,
+      Mux(frontend_fire, Mux(wfds, 1.U, fire_number_respn), 0.U)
+    )
+  } else {
+    io.fb.fmbs.instn := Mux(stall_d, 0.U,
+      Mux(frontend_fire, fire_number_respn, 0.U)
+    )
+  }
+
   for (i <- 0 until frontendIssueN) {
     decs(i).inst              := io.icache.resp.bits.rdata(i)
     decs(i).pc                := decode_pc_low_reg + (i.U << 2.U)
     if (i == 0) {
-      decs(0).bht_predict_taken := Mux(decode_pc_low_reg(offsetBits - 1, 2) + 1.U === 0.U, false.B, decode_pc_predict_taken) // TODO current ugly patch for DS, if the branch is the end of the cacheline, just ignore prediction
+      if (predictLastWordInCache) {
+        decs(0).bht_predict_taken := decode_pc_predict_taken
+      } else {
+        decs(0).bht_predict_taken := Mux(decode_pc_low_reg(offsetBits - 1, 2) + 1.U === 0.U, false.B, decode_pc_predict_taken)
+      }      
       decs(0).target_pc := decode_pc_predict_target
     } else {
       decs(i).bht_predict_taken := false.B
@@ -145,14 +162,24 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
   predict_taken_but_not_br := decode_pc_predict_taken && !quickCheckBranch(io.icache.resp.bits.rdata(0))
-  
+
+  if (predictLastWordInCache) {
+    wfds := Mux(io.fb.bmfs.redirect_kill, false.B, Mux(!stall_d && frontend_fire && decode_pc_low_reg(offsetBits - 1, 2) + 1.U === 0.U && decode_pc_predict_taken && quickCheckBranch(io.icache.resp.bits.rdata(0)), true.B, Mux(frontend_fire, false.B, wfds)))
+    wfds_target := Mux(!wfds, decode_pc_predict_target, wfds_target)
+  }
+
   if (traceBPU) {
     when (predict_taken_but_not_br && frontend_fire) {
       printf("misprediction at %x, not branch\n", decode_pc_low_reg)
     }
   }
-  dec_kill_d := predict_taken_but_not_br && frontend_fire
 
+  if (predictLastWordInCache) {
+    dec_kill_d := (predict_taken_but_not_br || wfds) && frontend_fire
+  } else {
+    dec_kill_d := predict_taken_but_not_br && frontend_fire
+  }
+  
   if (diffTestV) {
     BoringUtils.addSource(cache_stall, "icache_stall")
   }

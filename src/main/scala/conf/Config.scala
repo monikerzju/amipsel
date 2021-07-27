@@ -19,15 +19,17 @@ trait Config {
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = false
-  // var icachePref: Boolean = false
-  var tagBits: Int = 19
-  var indexBits: Int = 8   // 8KB now
+  var iTagBits: Int = 20
+  var iIndexBits: Int = 7   // 4KB now
+  var dTagBits: Int = 19
+  var dIndexBits: Int = 8   // 8KB now
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
-  var traceBPU: Boolean = true
+  var predictLastWordInCache: Boolean = false  // TODO try this switch to balance IPC and frequency
+  var traceBPU: Boolean = false
   var BPUEntryN: Int = 128
-  var BPUOffset: Int = 2
+  var BPUOffset: Int = 2  // 2 is same with 3
   var enableRAS: Boolean = true
   val withRAS: Boolean = enableRAS
   var RASEntryN: Int = 6
@@ -38,7 +40,8 @@ trait Config {
   assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
   assert(backendIssueN == 2)
-  assert(tagBits + indexBits + offsetBits == len)
+  assert(iTagBits + iIndexBits + offsetBits == len)
+  assert(dTagBits + dIndexBits + offsetBits == len)
   assert(backendFuN == 3)
-  assert(BPUOffset == 2)  // TODO because the delay slot, the lowest to deal with must be 2, we can use like bits(10,6) + bit(1), bit(1) is necessary
+  assert(BPUOffset >= 2 && BPUOffset <= 5)
 }
