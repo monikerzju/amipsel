@@ -401,7 +401,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
-      reBranch := reBranchBrTaken ^ exInsts(0).predict_taken || exInsts(0).target_pc =/= brPC
+      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && exInsts(0).target_pc =/= brPC)
     }.elsewhen (isExPCJump) {
       reBranch := true.B
     }
