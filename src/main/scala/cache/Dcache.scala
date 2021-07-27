@@ -261,9 +261,9 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
       }.elsewhen(mmio && __reg(io.cpu.req.valid)(0) && bar_ready) {
         nstate := s_uncached
         io.bar.req.valid := true.B
-        io.bar.req.addr := io.cpu.req.bits.addr
-        io.bar.req.data := io.cpu.req.bits.wdata
-        io.bar.req.wen := io.cpu.req.bits.wen
+        io.bar.req.addr := __reg(io.cpu.req.bits.addr)
+        io.bar.req.data := __reg(io.cpu.req.bits.wdata)
+        io.bar.req.wen := __reg(io.cpu.req.bits.wen)
       }
     }
     is(s_refill) {
