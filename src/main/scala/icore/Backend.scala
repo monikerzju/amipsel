@@ -362,8 +362,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   // 2 to 1
-//  io.dcache.req.bits := Mux(dcacheStall, exLastMemReq, exCurMemReq)
-  io.dcache.req.bits := exCurMemReq
+  io.dcache.req.bits := Mux(dcacheStall, exLastMemReq, exCurMemReq)
+//  io.dcache.req.bits := exCurMemReq
+  io.dcache.req.bits.flush := false.B
+  io.dcache.req.bits.invalidate := false.B
 
   stall_i := dcacheStall || !mdu.io.resp.valid
 
@@ -461,7 +463,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "stream_copy",
       "string_search"
     )
-    val test_file = "quick_sort"
+    val test_file = "coremark"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,

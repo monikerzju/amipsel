@@ -146,7 +146,8 @@ class DcacheStateMachine(primal: Boolean = true) extends Module with Config with
   val index_raw =
     __reg(io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits))
   val reg_index = RegNext(index_raw)
-  val mmio = __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
+//  val mmio = __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
+  val mmio = true.B
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0
