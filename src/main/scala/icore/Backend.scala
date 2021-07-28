@@ -494,9 +494,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "select_sort",
       "sha",
       "stream_copy",
-      "string_search"
+      "string_search",
+      "qsorta"
     )
-    val test_file = "quick_sort"
+    val test_file = "qsorta"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,
@@ -504,6 +505,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "sha" -> 0x0000269dL,
       "string_search" -> 0x00003b90L,
       "quick_sort" -> 0x00003531L,
+      "qsorta" -> 0x00003532L,
     )
     val lwCounterEnd = Map (
       "stream_copy" -> 0x0005b167L,
@@ -512,6 +514,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "sha" -> 0x004c2f7eL,
       "string_search" -> 0x003779b3L,
       "quick_sort" -> 0x004a4bfcL,
+      "qsorta" -> 0x004a4bfcL,
     )
     val mfc0CounterStart = Map (
       "stream_copy" -> 0x0000194dL,
@@ -522,6 +525,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "string_search" -> 0x00001b35L,
       "coremark" -> 0x00001673L,
       "quick_sort" -> 0x00001865L,
+      "qsorta" -> 0x00001865L,
     )
     val mfc0CounterEnd = Map (
       "stream_copy" -> 0x00029617L,
@@ -532,6 +536,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "string_search" -> 0x001936f4L,
       "coremark" -> 0x004f4000L,
       "quick_sort" -> 0x0021c52bL,
+      "qsorta" -> 0x0021c52bL,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
