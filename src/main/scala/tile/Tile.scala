@@ -57,6 +57,8 @@ class Tile(diffTestV: Boolean) extends Module with Config {
 
 // Verilator Shell, only for Loooooongson CUP, not configurable for simple
 class TileForVerilator extends RawModule {
+  override val desiredName = s"mycpu_top"
+
   val aclk         = IO(Input(Clock()))
   val aresetn      = IO(Input(Bool()))
   val ext_int      = IO(Input(UInt(6.W)))
@@ -98,10 +100,10 @@ class TileForVerilator extends RawModule {
   val bvalid       = IO(Input(Bool()))
   val bready       = IO(Output(Bool()))
   // DBG
-  // val debug_wb_pc       = IO(Output(UInt(32.W)))
-  // val debug_wb_rf_wen   = IO(Output(UInt(4.W)))
-  // val debug_wb_rf_wnum  = IO(Output(UInt(5.W)))
-  // val debug_wb_rf_wdata = IO(Output(UInt(32.W)))
+  val debug_wb_pc       = IO(Output(UInt(32.W)))
+  val debug_wb_rf_wen   = IO(Output(UInt(4.W)))
+  val debug_wb_rf_wnum  = IO(Output(UInt(5.W)))
+  val debug_wb_rf_wdata = IO(Output(UInt(32.W)))
 
   withClockAndReset(aclk, !aresetn) {
     val tile = Module(new Tile(false))
@@ -149,7 +151,10 @@ class TileForVerilator extends RawModule {
 
     tile.io.intr := ext_int.asBools
 
-
+    debug_wb_pc       := 0.U
+    debug_wb_rf_wen   := 0.U 
+    debug_wb_rf_wnum  := 0.U
+    debug_wb_rf_wdata := 0.U 
   }
 }
 
