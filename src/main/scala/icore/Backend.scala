@@ -752,7 +752,4 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     BoringUtils.addSource(debug_data, "dt_data"     )
     BoringUtils.addSource(debug_nreg, "dt_nreg"     )
   }
-  io.dcache1.req.bits := 0.U.asTypeOf(io.dcache1.req.bits)
-  io.dcache1.req.valid := false.B
-  io.dcache1.resp.ready := true.B
 }
