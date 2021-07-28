@@ -78,6 +78,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val aluValid     = Wire(Bool())
   val mduValid     = Wire(Bool())
   val ldstValid    = Wire(Bool())
+  val dcacheStall  = Wire(Bool())
   val ldstAddr     = exFwdRsData(2) + exInsts(2).imm 
   val aluWbData    = Wire(UInt(len.W))
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
@@ -289,7 +290,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   alu.io.aluOp := exInsts(0).alu_op
 
   // mdu execution
-  mdu.io.req.valid := mduValid
+  // one inst only issues one req
+  val exMduReqIssued = RegEnable(false.B, dcacheStall)
+  mdu.io.req.valid := mduValid && !exMduReqIssued
   mdu.io.req.reg1  := exFwdRsData(1)
   mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, exFwdRsData(1),
     Seq(
@@ -318,7 +321,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
-  val dcacheStall = Wire(Bool())
+
   var sim = false
   if (sim) {
     dcacheStall := exLastMemReqValid && !RegNext(io.dcache.resp.valid)
