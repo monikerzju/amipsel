@@ -303,8 +303,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // mdu execution
   // one inst only issues one req
-  val exMduReqIssued = RegEnable(false.B, dcacheStall)
-  mdu.io.req.valid := mduValid && !exMduReqIssued
+  mdu.io.req.valid := mduValid && !RegNext(dcacheStall)
   mdu.io.req.reg1  := exFwdRsData(1)
   mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, exFwdRsData(1),
     Seq(
