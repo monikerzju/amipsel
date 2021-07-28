@@ -73,7 +73,8 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val decode_pc_predict_target = Reg(UInt(len.W))
   val decode_pc_predict_taken  = Reg(Bool())  // the first might be branch, the second must be delay slot which is not a branch instruction
   def quickCheckBranch(inst: UInt) : Bool = {
-    inst(31, 26) === "b000001".U || inst(31, 28) === "b0001".U
+    // BXX BXXZAL JAL J
+    inst(31, 29) === "b000".U && inst(28, 26) =/= "b000".U
   }
 
   // IF Stage

@@ -27,15 +27,11 @@ trait Config {
   var dataBits: Int = 256
   // BPU
   var predictLastWordInCache: Boolean = false  // TODO try this switch to balance IPC and frequency
-  var traceBPU: Boolean = false
+  var traceBPU: Boolean = true
   var BPUEntryN: Int = 128
-  var BPUOffset: Int = 2  // 2 is same with 3
-  var enableRAS: Boolean = true
-  val withRAS: Boolean = enableRAS
-  var RASEntryN: Int = 6
-  var withBS: Boolean = false 
-  var BSEntryN: Int = 3
-  var BSWayN: Int = 2
+  var BPUOffset: Int = 32  // 2 is same with 3
+  val withRAS: Boolean = true
+  var RASEntryN: Int = if (withRAS) 6 else 0
   // Assertions ---- Dont Change!!!
   assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
@@ -43,5 +39,6 @@ trait Config {
   assert(iTagBits + iIndexBits + offsetBits == len)
   assert(dTagBits + dIndexBits + offsetBits == len)
   assert(backendFuN == 3)
-  assert(BPUOffset >= 2 && BPUOffset <= 5)
+  assert(BPUOffset >= 2 && BPUOffset <= 5 || BPUOffset == 32)
+  assert(BPUEntryN == 128 || BPUEntryN == 256)
 }

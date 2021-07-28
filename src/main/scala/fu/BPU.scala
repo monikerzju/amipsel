@@ -91,8 +91,10 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   val WT = 2
   val ST = 3
 
-  def getIndex(addr: UInt) : UInt = {
-    if (delaySlot && offset >= 3) {
+  def getHashedIndex(addr: UInt) : UInt = { // a good hash function should convert the sparse list to a dense but not conflict one
+    if (offset == 32 && depth == 128) { // TODO for 128 BTBs only, need 256. hard-coded
+      Cat(addr(15) ^ addr(14) ^ addr(8), addr(14) ^ addr(13) ^ addr(7), addr(13) ^ addr(12) ^ addr(6), addr(12) ^ addr(11) ^ addr(5), addr(11) ^ addr(10) ^ addr(4), addr(10) ^ addr(9) ^ addr(3), addr(2))
+    } else if (delaySlot && offset >= 3) {
       Cat(addr(offset + log2Ceil(depth) - 2, offset), addr(2))
     } else {
       addr(offset + log2Ceil(depth) - 1, offset)
@@ -105,20 +107,20 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
 
   // 0 for low addr, 1 for high addr
   for (i <- 0 until issueN) {
-    val next_line_to_bht = RegNext(getIndex(io.req.next_line + (i.U * 4.U)))
+    val next_line_to_bht = RegNext(getHashedIndex(io.req.next_line + (i.U * 4.U)))
     val history_entry =  history(next_line_to_bht)
     io.resp.taken_vec(i) := history_entry(1)  // 10 and 11 for WT and ST
   }
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
-  buffer.io.addr := getIndex(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
+  buffer.io.addr := getHashedIndex(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
   io.resp.target_first := Cat(buffer.io.dout, 0.U(log2Ceil(instByte).W))
   
   // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
   // ID's priority is higher than EX
-  val update_index = Mux(!io.update.dec.v, getIndex(io.update.exe.pc_br), getIndex(io.update.dec.pc_br))
+  val update_index = Mux(!io.update.dec.v, getHashedIndex(io.update.exe.pc_br), getHashedIndex(io.update.dec.pc_br))
   when (io.update.exe.v || io.update.dec.v) {
     // when(io.update.dec.v){printf("update pc is %x, taken is %x\n", Mux(io.update.exe.v, io.update.exe.pc_br, io.update.dec.pc_br), io.update.exe.taken && io.update.exe.v)}
     val old_value = history(update_index)
