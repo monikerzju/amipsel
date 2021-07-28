@@ -19,25 +19,26 @@ trait Config {
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = false
-  // var icachePref: Boolean = false
-  var tagBits: Int = 19
-  var indexBits: Int = 8   // 8KB now
+  var iTagBits: Int = 20
+  var iIndexBits: Int = 7   // 4KB now
+  var dTagBits: Int = 19
+  var dIndexBits: Int = 8   // 8KB now
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
-  var withBPU: Boolean = false 
-  var BPUEntryN: Int = 512
-  var BPUoffset: Int = 2
-  var enableRAS: Boolean = true
-  val withRAS: Boolean = enableRAS && withBPU
-  var RASEntryN: Int = 6
-  var withBS: Boolean = false 
-  var BSEntryN: Int = 3
-  var BSWayN: Int = 2
+  var predictLastWordInCache: Boolean = false  // TODO try this switch to balance IPC and frequency
+  var traceBPU: Boolean = false
+  var BPUEntryN: Int = 128
+  var BPUOffset: Int = 32  // 2 is same with 3
+  val withRAS: Boolean = true
+  var RASEntryN: Int = if (withRAS) 6 else 0
   // Assertions ---- Dont Change!!!
   assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
-  assert(backendIssueN == 2 || backendIssueN == 3)
-  assert(tagBits + indexBits + offsetBits == len)
+  assert(backendIssueN == 2)
+  assert(iTagBits + iIndexBits + offsetBits == len)
+  assert(dTagBits + dIndexBits + offsetBits == len)
   assert(backendFuN == 3)
+  assert(BPUOffset >= 2 && BPUOffset <= 5 || BPUOffset == 32)
+  assert(BPUEntryN == 128 || BPUEntryN == 256)
 }

@@ -30,18 +30,18 @@ class ICache extends Module with Config with MemAccessType {
     val cpu = new MemIO()
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
-  val nline = 1 << indexBits
+  val nline = 1 << iIndexBits
 
   val data = Module(new BRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = Module(new ICacheMeta(nline, tagBits + 1))
-  val tag_req   = io.cpu.req.bits.addr(len - 1, len - tagBits)
-  val index_req = io.cpu.req.bits.addr(len - tagBits - 1, len - tagBits - indexBits)
+  val meta = Module(new ICacheMeta(nline, iTagBits + 1))
+  val tag_req   = io.cpu.req.bits.addr(len - 1, len - iTagBits)
+  val index_req = io.cpu.req.bits.addr(len - iTagBits - 1, len - iTagBits - iIndexBits)
 
   // Meta Tile
   val req_addr = RegNext(io.cpu.req.bits.addr)
   val word1 = req_addr(offsetBits - 1, 2)
   val word2 = word1 + 1.U
-  val hit   = meta.io.dout(tagBits).asBool && meta.io.dout(tagBits - 1, 0) === req_addr(len - 1, len - tagBits)
+  val hit   = meta.io.dout(iTagBits).asBool && meta.io.dout(iTagBits - 1, 0) === req_addr(len - 1, len - iTagBits)
   meta.io.we   := false.B
   meta.io.addr := index_req
   meta.io.din  := Cat(true.B, tag_req)

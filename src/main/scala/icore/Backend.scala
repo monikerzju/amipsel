@@ -42,19 +42,21 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     _.branch_type -> MicroOpCtrl.BrXXX,
     _.mem_width -> MicroOpCtrl.MemXXX,
     _.write_src -> MicroOpCtrl.WBALU,
-    _.pc -> 0.U
+    _.pc -> 0.U,
+    _.predict_taken -> false.B,
+    _.target_pc -> 0.U,
   )
   val alu          = Module(new ALU)
   val mdu          = Module(new MDU)
 
   // Issue
+  val dcacheStall  = Wire(Bool())
   val issueNum     = Wire(UInt(2.W))
   val issueInsts   = Wire(Vec(backendIssueN, new Mops))
   val issueRss     = Wire(Vec(backendFuN, UInt(len.W)))
   val issueRts     = Wire(Vec(backendFuN, UInt(len.W)))
   val issueQueue   = Module(new FIFO(queueSize, new Mops(), backendIssueN, frontendIssueN))
   val issueArbiter = Module(new IssueArbiter(queueSize))
-//  val stall_i      = io.dcache.req.valid && !io.dcache.resp.valid || !mdu.io.resp.valid
   val stall_i      = Wire(Bool())
   val kill_i       = io.fb.bmfs.redirect_kill
   val rsFwdData    = Wire(Vec(backendIssueN, UInt(len.W)))
@@ -64,21 +66,22 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // Ex
   val stall_x      = stall_i
-  val kill_x       = kill_i
+  val kill_x       = !dcacheStall && kill_i
   val exNum        = RegInit(0.U(2.W))
   val exInsts      = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val exInstsOrder = if(diffTestV) RegInit(VecInit(Seq.fill(backendFuN)(0.U(2.W)))) else Reg(Vec(backendFuN, UInt(2.W)))
   val exInstsValid = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
   val exFwdRsData  = Reg(Vec(backendFuN, UInt(len.W)))
   val exFwdRtData  = Reg(Vec(backendFuN, UInt(len.W)))
+  val isExPCBr     = exInsts(0).next_pc === MicroOpCtrl.Branch
   val reBranch     = Wire(Bool())
+  val reBranchBrTaken = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
   val brPC         = exInsts(0).pc + (exInsts(0).imm << 2.U)(len - 1, 0) + 4.U
-  val exReBranchPC = Mux(exInsts(0).next_pc === MicroOpCtrl.Branch, brPC, jumpPc)
+  val exReBranchPC = Mux(isExPCBr, Mux(reBranchBrTaken, brPC, exInsts(0).pc + 8.U), jumpPc)
   val aluValid     = Wire(Bool())
   val mduValid     = Wire(Bool())
   val ldstValid    = Wire(Bool())
-  val dcacheStall  = Wire(Bool())
   val ldstAddr     = exFwdRsData(2) + exInsts(2).imm 
   val aluWbData    = Wire(UInt(len.W))
   val exIsBrFinal  = exInstsOrder(0) === exNum - 1.U
@@ -100,18 +103,22 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
                           exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
+  val bpuV      = (isExPCBr || exInsts(0).next_pc === MicroOpCtrl.Jump) && exInstsValid(0)
+  val bpuErrpr  = isExPCBr && exInsts(0).target_pc =/= brPC && reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump && exInsts(0).target_pc =/= jumpPc
+  val bpuPCBr   = exInsts(0).pc
+  val bpuTarget = Mux(isExPCBr, brPC, jumpPc)
+  val bpuTaken  = reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump
 
   // WB
   val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
-  val reBranchPC       = RegInit(startAddr.U(len.W))
+  val reBranchPC       = Reg(UInt(len.W))
   val hi               = RegInit(0.U(len.W))
   val lo               = RegInit(0.U(len.W))
-  val wbResult         = RegInit(VecInit(Seq.fill(backendFuN)(0.U(len.W))))
-  val wbInstsValid     = Reg(Vec(backendFuN, Bool()))
-//  val wbInstsOrder     = RegNext(exInstsOrder)
-  val wbInstsOrder     = RegInit(VecInit(Seq.fill(backendFuN)(0.U(2.W))))
+  val wbResult         = Reg(Vec(backendFuN, UInt(len.W)))
+  val wbInstsValid     = RegInit(VecInit(Seq.fill(backendFuN)(false.B)))
+  val wbInstsOrder     = Reg(Vec(backendFuN, UInt(2.W)))
   val wbInsts          = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
-  val kill_w           = io.fb.bmfs.redirect_kill
+  val kill_w           = !dcacheStall && io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
   val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN)) // 4 read port, 2 write port
   val cp0              = Module(new CP0(diffTestV))
@@ -125,6 +132,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbMDUOvf         = RegInit(false.B)
   val wbLdMa           = RegInit(false.B)
   val wbStMa           = RegInit(false.B)
+  val wbBpuV           = RegInit(false.B)
+  val wbBpuErrpr       = RegNext(bpuErrpr)
+  val wbBpuPCBr        = RegNext(bpuPCBr)
+  val wbBpuTarget      = RegNext(bpuTarget)
+  val wbBpuTaken       = RegNext(bpuTaken)
 
   /**
    *  [---------- IS stage -----------]
@@ -321,7 +333,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
-
   var sim = false
   if (sim) {
     dcacheStall := exLastMemReqValid && !RegNext(io.dcache.resp.valid)
@@ -375,8 +386,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // jump br
   val isExPCJump = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
-  val isExPCBr   = exInsts(0).next_pc === MicroOpCtrl.Branch
   reBranch := false.B
+  reBranchBrTaken := false.B
   jumpPc := Mux(
     exInsts(0).next_pc === MicroOpCtrl.Jump,
     Cat(exInsts(0).pc(31, 28), exInsts(0).imm(25, 0), 0.U(2.W)),
@@ -384,7 +395,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   )
   when(exInstsTrueValid(0)) {
     when (isExPCBr) {
-      reBranch := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
+      reBranchBrTaken := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
           MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
@@ -393,8 +404,30 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
+      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && exInsts(0).target_pc =/= brPC)
+
+      if (traceBPU) {
+        when (!stall_x && !kill_x) {
+          when (reBranch) {
+            printf("misprediction at %x, wrong target %x\n", exInsts(0).pc, exInsts(0).predict_taken && reBranchBrTaken && exInsts(0).target_pc =/= brPC)
+          }.otherwise {
+            printf("hit at %x\n", exInsts(0).pc)
+          }
+        }
+      }
+
     }.elsewhen (isExPCJump) {
-      reBranch := true.B
+      reBranch := exInsts(0).target_pc =/= jumpPc || !exInsts(0).predict_taken
+
+      if (traceBPU) {
+        when (!stall_x && !kill_x) {
+          when (reBranch) {
+            printf("jump at %x, indirect %x, target %x, wrong target %x, not taken %x\n", exInsts(0).pc, exInsts(0).next_pc === MicroOpCtrl.PCReg, jumpPc, exInsts(0).target_pc =/= jumpPc, !exInsts(0).predict_taken)
+          }.otherwise {
+            printf("hit jump at %x\n", exInsts(0).pc)
+          }
+        }
+      }
     }
   }
 
@@ -464,17 +497,19 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "select_sort",
       "sha",
       "stream_copy",
-      "string_search"
+      "string_search",
+      "qsorta"
     )
-    val test_file = "coremark"
+    val test_file = "qsorta"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,
       "select_sort" -> 0x0000374aL,
       "sha" -> 0x0000269dL,
       "string_search" -> 0x00003b90L,
-      "bubble_sort" -> 0x0000374aL,
       "quick_sort" -> 0x00003531L,
+      "qsorta" -> 0x00003532L,
+      "bubble_sort" -> 0x0000374aL,
     )
     val lwCounterEnd = Map (
       "stream_copy" -> 0x0005b167L,
@@ -484,6 +519,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "string_search" -> 0x003779b3L,
       "bubble_sort" -> 0x00529750L,
       "quick_sort" -> 0x004a4bfcL,
+      "qsorta" -> 0x004a4bfcL,
     )
     val mfc0CounterStart = Map (
       "stream_copy" -> 0x0000194dL,
@@ -495,6 +531,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "coremark" -> 0x00001673L,
       "bubble_sort" -> 0x00001959L,
       "quick_sort" -> 0x00001865L,
+      "qsorta" -> 0x00001865L,
     )
     val mfc0CounterEnd = Map (
       "stream_copy" -> 0x00029617L,
@@ -506,6 +543,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "coremark" -> 0x004f4000L,
       "bubble_sort" -> 0x00258a51L,
       "quick_sort" -> 0x0021c52bL,
+      "qsorta" -> 0x0021c52bL,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
@@ -568,15 +606,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       wbInstsValid(i) := false.B
     }
     wbReBranch := false.B
-  }.elsewhen (bubble_w) {
-    // TODO: do not write regFile until Stall ends
-    // write regFile until Stall ends
-    /*
-    for(i <- 0 until backendFuN) {
-      wbInstsValid(i) := false.B
-    }
-     */
-  }.otherwise {
+    wbBpuV := false.B
+  }.elsewhen (!bubble_w) {
+    wbBpuV := bpuV
     latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump),
       exInsts(0).pc, latestBJPC
     )
@@ -597,32 +629,32 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
     }
+  }.otherwise {
+    // TODO: do not write regFile until Stall ends
+    wbBpuV := false.B
   }
 
-  io.fb.bmfs.redirect_kill := !dcacheStall && ((wbReBranch && !wfds) || cp0.io.except.except_kill)
+  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
   io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
+  io.fb.bmfs.bpu.v         := wbBpuV
+  io.fb.bmfs.bpu.errpr     := wbBpuErrpr
+  io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
+  io.fb.bmfs.bpu.target    := wbBpuTarget
+  io.fb.bmfs.bpu.taken     := wbBpuTaken
 
   // regfile
-  if (backendIssueN == 3) {
-    for(i <- 0 until backendFuN) {
-      regFile.io.wen_vec(i) := wbInstsValid(i) && wbInsts(i).write_dest === MicroOpCtrl.DReg && !wbExcepts(i)
-      regFile.io.rd_addr_vec(i) := wbInsts(i).rd
-      regFile.io.rd_data_vec(i) := wbData(i)
-    }
-  } else {
-    regFile.io.wen_vec(0) := Mux(
-      wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0), 
-      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-    )
-    regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
-    regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
-    regFile.io.wen_vec(1) := Mux(
-      wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2), 
-      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-    )
-    regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
-    regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
-  }
+  regFile.io.wen_vec(0) := Mux(
+    wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0),
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
+  regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
+  regFile.io.wen_vec(1) := Mux(
+    wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2),
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
+  regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
 
   // cp0
   // TODO: cache stall should also influence the exception
@@ -669,7 +701,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
   
-  // difftest
+  /**
+   *  [---------- DiffTest stage -----------]
+   */
   if (diffTestV) {
     val instret    = RegInit(0.U(64.W))
     val counter    = RegInit(0.U(64.W))

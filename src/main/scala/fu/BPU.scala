@@ -1,4 +1,3 @@
-// TODO RAS and BS
 // DONE BTBv1
 
 package fu
@@ -6,7 +5,7 @@ package fu
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
-import cache.DPBRAMSyncReadMem 
+import cache.BRAMSyncReadMem
 
 class RAS(depth: Int = 8, width: Int = 32) {
   val count = RegInit(0.U(log2Up(depth + 1).W))
@@ -34,31 +33,36 @@ class RAS(depth: Int = 8, width: Int = 32) {
 // Thanks to the delay slot, the next-instrcution prediction will bring out no penalty even if the first instruction is JMP.
 class BHTReq(width: Int = 32) extends Bundle {
   val next_line = Input(UInt(width.W))
+  override def cloneType = (new BHTReq(width)).asInstanceOf[this.type]
 }
 
 class BHTResp(width: Int = 32, issueN: Int = 2) extends Bundle {
   val taken_vec = Output(Vec(issueN, Bool()))
-  val target_vec = Output(Vec(issueN, UInt(width.W)))
+  val target_first = Output(UInt(width.W))
+  override def cloneType = (new BHTResp(width, issueN)).asInstanceOf[this.type]
 }
 
 class BHTExeUpdate(width: Int = 32) extends Bundle {
   val v = Input(Bool())
   val errpr = Input(Bool())          // wrong 1, reinforce 0
-  val pc_ds = Input(UInt(width.W))   // bht[pc_ds] will change
+  val pc_br = Input(UInt(width.W))   // bht[pc_br] will change
   val target = Input(UInt(width.W))
   val taken = Input(Bool())
+  override def cloneType = (new BHTExeUpdate(width)).asInstanceOf[this.type]
 }
 
 // If predict taken but not a branch instruction, CPU will not jump after the so-called branch slot is fetched.
 // So, the pipeline needs flushing
-class BHTDecUpdate(width: Int = 32, decodeFuN: Int = 2) extends Bundle {
-  val v_vec = Input(Vec(decodeFuN, Bool()))
-  val pc_ds = Input(Vec(decodeFuN, UInt(width.W)))   // bht[pc_ds] to not taken, the original state
+class BHTDecUpdate(width: Int = 32) extends Bundle {
+  val v = Input(Bool())
+  val pc_br = Input(UInt(width.W))   // bht[pc_br] to not taken, the original state
+  override def cloneType = (new BHTDecUpdate(width)).asInstanceOf[this.type]
 }
 
-class BHTUpdate(width: Int = 32, decodeFuN: Int = 2) extends Bundle {
-  val dec = new BHTDecUpdate(width, decodeFuN)
+class BHTUpdate(width: Int = 32) extends Bundle {
+  val dec = new BHTDecUpdate(width)
   val exe = new BHTExeUpdate(width)
+  override def cloneType = (new BHTUpdate(width)).asInstanceOf[this.type]
 }
 
 class RASReq() extends Bundle {
@@ -73,51 +77,58 @@ class RASResp() extends Bundle {
 // resp.taken_vec(0) is for pc, (1) is for pc + 4, this signal also influence how many instructions to decode
 class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
   val req = new BHTReq(width)
-  val resp = new BHTResp(width)
-  val update = new BHTUpdate(width, issueN)
+  val resp = new BHTResp(width, issueN)
+  val update = new BHTUpdate(width)
+  override def cloneType = (new BPUIO(width, issueN)).asInstanceOf[this.type]
 }
 
-// DS-oriented programming
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0, instByte: Int = 4, delaySlot: Boolean = true) extends Module {
   val io = IO(new BPUIO(width, issueN))
-
+  
+  // strongly not taken
   val SN = 0
+  val WN = 1
+  val WT = 2
+  val ST = 3
+
+  def getHashedIndex(addr: UInt) : UInt = { // a good hash function should convert the sparse list to a dense but not conflict one
+    if (offset == 32 && depth == 128) { // TODO for 128 BTBs only, need 256. hard-coded
+      Cat(addr(15) ^ addr(14) ^ addr(8), addr(14) ^ addr(13) ^ addr(7), addr(13) ^ addr(12) ^ addr(6), addr(12) ^ addr(11) ^ addr(5), addr(11) ^ addr(10) ^ addr(4), addr(10) ^ addr(9) ^ addr(3), addr(2))
+    } else if (delaySlot && offset >= 3) {
+      Cat(addr(offset + log2Ceil(depth) - 2, offset), addr(2))
+    } else {
+      addr(offset + log2Ceil(depth) - 1, offset)
+    }
+  }
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  val history = RegInit(VecInit(Seq.fill(depth)(SN.U(2.W))))  // half a regfile's size
-  val buffer = Module(new DPBRAMSyncReadMem(depth, width, 1))
+  val history = RegInit(VecInit(Seq.fill(depth)(WN.U(2.W))))  // half a regfile's size
+  val buffer = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
   // 0 for low addr, 1 for high addr
   for (i <- 0 until issueN) {
-    io.resp.taken_vec(i) := RegNext(history(io.req.next_line + (i.U << 2.U))(1))  // 10 and 11 for WT and ST
-    if (i == 0)
-      io.resp.target_vec(0) := buffer.io.douta
-    else
-      io.resp.target_vec(i) := buffer.io.doutb
+    val next_line_to_bht = RegNext(getHashedIndex(io.req.next_line + (i.U * 4.U)))
+    val history_entry =  history(next_line_to_bht)
+    io.resp.taken_vec(i) := history_entry(1)  // 10 and 11 for WT and ST
   }
 
   // Notice that the update from ID will only change BHT
-  buffer.io.wea := io.update.exe.errpr
-  buffer.io.web := false.B
-  buffer.io.addra := Mux(io.update.exe.errpr, io.update.exe.pc_ds, io.req.next_line)
-  buffer.io.addrb := io.req.next_line + 4.U
-  buffer.io.dina := io.update.exe.target
-  buffer.io.dinb := DontCare
+  buffer.io.we := io.update.exe.errpr && io.update.exe.v
+  buffer.io.addr := getHashedIndex(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
+  buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
+  io.resp.target_first := Cat(buffer.io.dout, 0.U(log2Ceil(instByte).W))
   
   // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
   // ID's priority is higher than EX
-  when (io.update.exe.v) {
-    val old_value = history(io.update.exe.pc_ds(offset + log2Ceil(depth), offset))
-    history(io.update.exe.pc_ds(offset + log2Ceil(depth), offset)) := Mux(
-      io.update.exe.taken,
+  val update_index = Mux(!io.update.dec.v, getHashedIndex(io.update.exe.pc_br), getHashedIndex(io.update.dec.pc_br))
+  when (io.update.exe.v || io.update.dec.v) {
+    // when(io.update.dec.v){printf("update pc is %x, taken is %x\n", Mux(io.update.exe.v, io.update.exe.pc_br, io.update.dec.pc_br), io.update.exe.taken && io.update.exe.v)}
+    val old_value = history(update_index)
+    history(update_index) := Mux(
+      io.update.exe.taken && io.update.exe.v,
       Mux(old_value.andR, old_value, old_value + 1.U),
       Mux(!old_value.orR, old_value, old_value - 1.U)
     )
-  }
-  for (i <- 0 until issueN) {
-    when (io.update.dec.v_vec(i)) {
-      history(io.update.dec.pc_ds(i)(offset + log2Ceil(depth), offset)) := SN.U
-    }
   }
 
   // RAS is ds-oriented and done in ID stage

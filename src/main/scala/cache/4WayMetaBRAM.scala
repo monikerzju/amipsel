@@ -7,25 +7,25 @@ import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
 class MetaBRAMIOD4Way extends Bundle with Config{
-  val index_in = Input(UInt(indexBits.W))
-  val tags_in = Input(UInt(tagBits.W))
+  val index_in = Input(UInt(dIndexBits.W))
+  val tags_in = Input(UInt(dTagBits.W))
   val update = Input(Bool())
   val hit = Output(Bool())
 
   val write = Input(Bool())
-  val tag = Output(UInt(tagBits.W))
+  val tag = Output(UInt(dTagBits.W))
   val dirty = Output(Bool())
   
   val hit_way = Output(UInt(2.W))
   val evict_way = Output(UInt(2.W))
 }
-class StructuredMeta(tagBits: Int) extends Bundle{
+class StructuredMeta(dTagBits: Int) extends Bundle{
     val valid = Bool()
-    val tag = UInt(tagBits.W)
+    val tag = UInt(dTagBits.W)
 }
 class MetaDataBRAM4Way(nline:Int) extends Module with Config{
     val io=IO(new MetaBRAMIOD4Way)
-    val blk = Module(new BRAMSyncReadMem(nline/4, (tagBits +1)*4))
+    val blk = Module(new BRAMSyncReadMem(nline/4, (dTagBits +1)*4))
     val dirty_bits = RegInit(VecInit(Seq.fill(nline)(false.B)))
     val lru_bits = RegInit(VecInit(Seq.fill(nline)(
         VecInit(Seq.fill(4)(false.B))
@@ -38,8 +38,8 @@ class MetaDataBRAM4Way(nline:Int) extends Module with Config{
     }) 
     
     // valid and tags for the whole group of 4
-    val vt = VecInit(Seq.fill(4)(new StructuredMeta(tagBits)))
-    val w = VecInit(Seq.fill(4)(new StructuredMeta(tagBits)))
+    val vt = VecInit(Seq.fill(4)(new StructuredMeta(dTagBits)))
+    val w = VecInit(Seq.fill(4)(new StructuredMeta(dTagBits)))
     val hit_way = vt.indexWhere({
         c:StructuredMeta => c.tag===io.tags_in && c.valid
     }) 
@@ -52,7 +52,7 @@ class MetaDataBRAM4Way(nline:Int) extends Module with Config{
     
     var i = 0
     for(i<- 0 until 4){
-        vt(i) :=  blk.io.dout(tagBits+(tagBits+1)*i,(tagBits+1)*i).asTypeOf(vt(i))
+        vt(i) :=  blk.io.dout(dTagBits+(dTagBits+1)*i,(dTagBits+1)*i).asTypeOf(vt(i))
         w(i) := Mux(
             !RegNext(io.hit) && io.update && replace_way === i.U,
             Cat(true.B,io.tags_in).asTypeOf(w(i)),
