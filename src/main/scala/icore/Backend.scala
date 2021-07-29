@@ -688,7 +688,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   cp0.io.except.except_vec    := wb_ev
   cp0.io.except.valid_inst    := wbInstsValid.asUInt.orR
   cp0.io.except.hard_int_vec  := io.interrupt
-  cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret
+  cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret && wbInstsValid(0)
   cp0.io.except.epc           := Mux(wbALUSysReal || wbALUBpReal || wbALUOvfReal || illegal || respInt, wbInsts(0).pc, 
                                   Mux(wbMDUOvfReal, wbInsts(1).pc, wbInsts(2).pc)
                                  )
