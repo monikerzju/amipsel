@@ -5,7 +5,7 @@ package fu
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
-import cache.BRAMSyncReadMem
+import cache._
 
 class RAS(depth: Int = 8, width: Int = 32) {
   val count = RegInit(0.U(log2Up(depth + 1).W))
@@ -92,44 +92,65 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   val ST = 3
 
   def getHashedIndex(addr: UInt) : UInt = { // a good hash function should convert the sparse list to a dense but not conflict one
-    if (offset == 32 && depth == 128) { // TODO for 128 BTBs only, need 256. hard-coded
-      Cat(addr(15) ^ addr(14) ^ addr(8), addr(14) ^ addr(13) ^ addr(7), addr(13) ^ addr(12) ^ addr(6), addr(12) ^ addr(11) ^ addr(5), addr(11) ^ addr(10) ^ addr(4), addr(10) ^ addr(9) ^ addr(3), addr(2))
+    if (offset == 32 && (depth == 128 || depth == 256)) {
+      val oft = if (depth == 128) 0 else 1
+      val higher = Cat(addr(15 + oft) ^ addr(14 + oft) ^ addr(8 + oft), addr(14 + oft) ^ addr(13 + oft) ^ addr(7 + oft), addr(13 + oft) ^ addr(12 + oft) ^ addr(6 + oft), addr(12 + oft) ^ addr(11 + oft) ^ addr(5 + oft), addr(11 + oft) ^ addr(10 + oft) ^ addr(4 + oft), addr(10 + oft) ^ addr(9 + oft) ^ addr(3 + oft))
+      if (depth == 128) {
+        higher
+      } else {
+        Cat(higher, addr(10) ^ addr(9) ^ addr(3))
+      }
     } else if (delaySlot && offset >= 3) {
-      Cat(addr(offset + log2Ceil(depth) - 2, offset), addr(2))
+      addr(offset + log2Ceil(depth) - 2, offset)
     } else {
       addr(offset + log2Ceil(depth) - 1, offset)
     }
   }
 
+  def getHashedIndexWith2(addr: UInt) : UInt = {
+    Cat(getHashedIndex(addr), addr(2))
+  }
+
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  val history = RegInit(VecInit(Seq.fill(depth)(WN.U(2.W))))  // half a regfile's size
-  val buffer = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
+  val history_odd  = Module(new DPBRAMSyncReadMem(depth / 2, 2, 1))
+  val history_even = Module(new DPBRAMSyncReadMem(depth / 2, 2, 1))
+  val buffer       = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
+
+  val low_raddr  = getHashedIndex(io.req.next_line)
+  val high_raddr = getHashedIndex(io.req.next_line + 4.U)
+  val low_odd    = io.req.next_line(2)
+  val waddr      = Mux(!io.update.dec.v, io.update.exe.pc_br, io.update.dec.pc_br)
+  val wdata      = Mux(!io.update.dec.v, Mux(io.update.exe.taken, io.update.exe.pc_br(1, 0) + 1.U, io.update.exe.pc_br(1, 0) - 1.U), io.update.dec.pc_br(1, 0) - 1.U)
+  val wodd       = waddr(2)
+  val may_update = io.update.exe.v || io.update.dec.v
+  val update     = Mux(!io.update.dec.v, Mux(io.update.exe.taken, !io.update.exe.pc_br(1, 0).andR, io.update.exe.pc_br(1, 0).orR), io.update.dec.pc_br(1, 0).orR)
+
+  history_even.io.addra := Mux(low_odd, high_raddr, low_raddr)
+  history_even.io.addrb := getHashedIndex(waddr)
+  history_even.io.dina  := DontCare
+  history_even.io.dinb  := wdata
+  history_even.io.wea   := false.B
+  history_even.io.web   := !wodd && update
+
+  history_odd.io.addra  := Mux(!low_odd, high_raddr, low_raddr)
+  history_odd.io.addrb  := getHashedIndex(waddr)
+  history_odd.io.dina   := DontCare
+  history_odd.io.dinb   := wdata
+  history_odd.io.wea    := false.B
+  history_odd.io.web    := wodd && update
 
   // 0 for low addr, 1 for high addr
-  for (i <- 0 until issueN) {
-    val next_line_to_bht = RegNext(getHashedIndex(io.req.next_line + (i.U * 4.U)))
-    val history_entry =  history(next_line_to_bht)
-    io.resp.taken_vec(i) := history_entry(1)  // 10 and 11 for WT and ST
-  }
+  val last_low_odd = RegNext(low_odd)
+  io.resp.taken_vec(0)  := Mux(last_low_odd, history_odd.io.douta, history_even.io.douta)(1) && !io.update.exe.errpr
+  io.resp.taken_vec(1)  := Mux(!last_low_odd, history_odd.io.douta, history_even.io.douta)(1)
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
-  buffer.io.addr := getHashedIndex(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
+  buffer.io.addr := getHashedIndexWith2(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
-  io.resp.target_first := Cat(buffer.io.dout, 0.U(log2Ceil(instByte).W))
-  
-  // HT update, do not care the prediction because when the prediction is wrong, the pipeline shall be flushed anyway
-  // ID's priority is higher than EX
-  val update_index = Mux(!io.update.dec.v, getHashedIndex(io.update.exe.pc_br), getHashedIndex(io.update.dec.pc_br))
-  when (io.update.exe.v || io.update.dec.v) {
-    // when(io.update.dec.v){printf("update pc is %x, taken is %x\n", Mux(io.update.exe.v, io.update.exe.pc_br, io.update.dec.pc_br), io.update.exe.taken && io.update.exe.v)}
-    val old_value = history(update_index)
-    history(update_index) := Mux(
-      io.update.exe.taken && io.update.exe.v,
-      Mux(old_value.andR, old_value, old_value + 1.U),
-      Mux(!old_value.orR, old_value, old_value - 1.U)
-    )
-  }
+  io.resp.target_first := Cat(buffer.io.dout, Mux(last_low_odd, history_odd.io.douta, history_even.io.douta))
+
+  assert(instByte == 4)
 
   // RAS is ds-oriented and done in ID stage
   if (rasDepth > 0) {

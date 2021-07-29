@@ -104,7 +104,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
   val bpuV      = (isExPCBr || exInsts(0).next_pc === MicroOpCtrl.Jump) && exInstsValid(0)
-  val bpuErrpr  = isExPCBr && exInsts(0).target_pc =/= brPC && reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump && exInsts(0).target_pc =/= jumpPc
+  val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
   val bpuPCBr   = exInsts(0).pc
   val bpuTarget = Mux(isExPCBr, brPC, jumpPc)
   val bpuTaken  = reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump
@@ -134,7 +134,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbStMa           = RegInit(false.B)
   val wbBpuV           = RegInit(false.B)
   val wbBpuErrpr       = RegNext(bpuErrpr)
-  val wbBpuPCBr        = RegNext(bpuPCBr)
+  val wbBpuPCBr        = RegNext(Cat(bpuPCBr(len - 1, 2), exInsts(0).target_pc(1, 0)))
   val wbBpuTarget      = RegNext(bpuTarget)
   val wbBpuTaken       = RegNext(bpuTaken)
 
@@ -403,12 +403,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
-      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && exInsts(0).target_pc =/= brPC)
+      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && exInsts(0).target_pc(len - 1, 2)  =/= brPC(len - 1, 2))
 
       if (traceBPU) {
         when (!stall_x && !kill_x) {
           when (reBranch) {
-            printf("misprediction at %x, wrong target %x\n", exInsts(0).pc, exInsts(0).predict_taken && reBranchBrTaken && exInsts(0).target_pc =/= brPC)
+            printf("misprediction at %x, wrong target %x\n", exInsts(0).pc, exInsts(0).predict_taken && reBranchBrTaken && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2))
           }.otherwise {
             printf("hit at %x\n", exInsts(0).pc)
           }
@@ -416,12 +416,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       }
 
     }.elsewhen (isExPCJump) {
-      reBranch := exInsts(0).target_pc =/= jumpPc || !exInsts(0).predict_taken
+      reBranch := exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2) || !exInsts(0).predict_taken
 
       if (traceBPU) {
         when (!stall_x && !kill_x) {
           when (reBranch) {
-            printf("jump at %x, indirect %x, target %x, wrong target %x, not taken %x\n", exInsts(0).pc, exInsts(0).next_pc === MicroOpCtrl.PCReg, jumpPc, exInsts(0).target_pc =/= jumpPc, !exInsts(0).predict_taken)
+            printf("jump at %x, indirect %x, target %x, wrong target %x, not taken %x\n", exInsts(0).pc, exInsts(0).next_pc === MicroOpCtrl.PCReg, jumpPc, exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2), !exInsts(0).predict_taken)
           }.otherwise {
             printf("hit jump at %x\n", exInsts(0).pc)
           }

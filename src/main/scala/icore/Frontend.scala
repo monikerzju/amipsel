@@ -25,7 +25,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   val io  = IO(new PCGenIO(va_width))
   val pc  = RegInit(UInt(va_width.W), start_va.U)
   val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
-  val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), bpu.io.resp.target_first, pc + increment.U)))
+  val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), Cat(bpu.io.resp.target_first(len - 1, 2), "b00".U), pc + increment.U)))
 
   // BPU
   bpu.io.req.next_line := npc
@@ -67,7 +67,8 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val wfds              = if (predictLastWordInCache) RegInit(false.B) else null
   val wfds_target       = if (predictLastWordInCache) Reg(UInt(len.W)) else null
   val frontend_fire     = Wire(Bool())
-  val fire_number_respn = Cat(0.U, RegNext(io.icache.resp.bits.respn)) + 1.U
+  val next_respn        = RegNext(io.icache.resp.bits.respn)
+  val fire_number_respn = Cat(0.U, next_respn) + 1.U
   val stall_d           = Wire(Bool())
   val kill_d            = Wire(Bool())
   val decode_pc_predict_target = Reg(UInt(len.W))
@@ -97,10 +98,10 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     pc_gen.io.redirect_pc := Mux(kill_f, Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc), may_illegal_req_addr + 4.U)
   }
 
-  pc_gen.io.bpu_update.dec.pc_br := decode_pc_low_reg
+  pc_gen.io.bpu_update.dec.pc_br := Cat(decode_pc_low_reg(len - 1, 2), decode_pc_predict_target(1, 0))
   pc_gen.io.bpu_update.dec.v := predict_taken_but_not_br && frontend_fire
   pc_gen.io.bpu_update.exe := io.fb.bmfs.bpu
-  dec_kill_redirect_pc  := decode_pc_low_reg + Mux(stall_d, 0.U, 4.U * fire_number_respn)
+  dec_kill_redirect_pc  := Mux(stall_d, decode_pc_low_reg, Mux(next_respn.orR, decode_pc_low_reg + 8.U, decode_pc_low_reg + 4.U))
 
   repc := Mux(stall_f, repc, pc_gen.io.pc_o)
   reptar := Mux(stall_f, reptar, pc_gen.io.predict_target_o)

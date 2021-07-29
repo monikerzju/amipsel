@@ -28,7 +28,7 @@ trait Config {
   // BPU
   var predictLastWordInCache: Boolean = false  // TODO try this switch to balance IPC and frequency
   var traceBPU: Boolean = false
-  var BPUEntryN: Int = 128
+  var BPUEntryN: Int = 256
   var BPUOffset: Int = 32  // 2 is same with 3
   val withRAS: Boolean = true
   var RASEntryN: Int = if (withRAS) 6 else 0

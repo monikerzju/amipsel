@@ -22,9 +22,96 @@ class DPBRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
   override def cloneType = (new DPBRAMWrapperIO(width, depth)).asInstanceOf[this.type]
 }
 
-class dual_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map("DATA_WIDTH" -> DATA_WIDTH,
-                                                                                        "DEPTH" -> DEPTH,
-                                                                                        "LATENCY" -> LATENCY)) with HasBlackBoxInline {
+class DPLUTRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
+  val clk = Input(Clock())
+  val rst = Input(Reset())
+  val wea = Input(Bool())
+  val ena = Input(Bool())
+  val enb = Input(Bool())
+  val addra = Input(UInt(log2Ceil(depth).W))
+  val addrb = Input(UInt(log2Ceil(depth).W))
+  val dina = Input(UInt(width.W))
+  val douta = Output(UInt(width.W))
+  val doutb = Output(UInt(width.W))
+  override def cloneType = (new DPLUTRAMWrapperIO(width, depth)).asInstanceOf[this.type]
+}
+
+class dual_port_lutram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map(
+																					"DATA_WIDTH" -> DATA_WIDTH,
+                                                                                    "DEPTH" -> DEPTH,
+                                                                                    "LATENCY" -> LATENCY
+																					)) with HasBlackBoxInline {
+
+  val io = IO(new DPLUTRAMWrapperIO(DATA_WIDTH, DEPTH))
+
+  setInline("dual_port_lutram.v",
+  s"""
+module dual_port_lutram #(
+
+	// default data width if the fifo is of type logic
+	parameter DATA_WIDTH = 32,
+	parameter DEPTH      = 1024,
+	parameter LATENCY    = 1,
+    parameter LATENCY_A  = LATENCY,
+    parameter LATENCY_B  = LATENCY
+) (
+	input  clk,
+	input  rst,
+	input  wea,
+	input  ena,
+	input  enb,
+	input  [$$clog2(DEPTH)-1:0] addra,
+	input  [$$clog2(DEPTH)-1:0] addrb,
+	input  [DATA_WIDTH-1:0]  dina,
+	output [DATA_WIDTH-1:0]  douta,
+	output [DATA_WIDTH-1:0]  doutb
+);
+
+// xpm_memory_dpdistram: Dual Port Distributed RAM
+// Xilinx Parameterized Macro, Version 2016.2
+xpm_memory_dpdistram #(
+	// Common module parameters
+	.MEMORY_SIZE(DATA_WIDTH * DEPTH),
+	.CLOCKING_MODE("common_clock"),
+	.USE_MEM_INIT(0),
+	.MESSAGE_CONTROL(0),
+
+	// Port A module parameters
+	.WRITE_DATA_WIDTH_A(DATA_WIDTH),
+	.READ_DATA_WIDTH_A(DATA_WIDTH),
+	.READ_RESET_VALUE_A("0"),
+	.READ_LATENCY_A(LATENCY_A),
+
+	// Port B module parameters
+	.READ_DATA_WIDTH_B(DATA_WIDTH),
+	.READ_RESET_VALUE_B("0"),
+	.READ_LATENCY_B(LATENCY_B)
+) xpm_mem (
+	// Port A module ports
+	.clka           ( clk   ),
+	.rsta           ( rst   ),
+	.ena            ( ena   ),
+	.regcea         ( 1'b0  ),
+	.wea            ( wea   ),
+	.addra          ( addra ),
+	.dina           ( dina  ),
+	.douta          ( douta ),
+
+	// Port B module ports
+	.clkb           ( clk   ),
+	.rstb           ( rst   ),
+	.enb            ( enb   ),
+	.regceb         ( 1'b0  ),
+	.addrb          ( addrb ),
+	.doutb          ( doutb )
+);
+
+endmodule
+  """.stripMargin)
+}
+
+class dual_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map("DATA_WIDTH" -> DATA_WIDTH, "DEPTH" -> DEPTH, "LATENCY" -> LATENCY)) with HasBlackBoxInline {
+	
   val io = IO(new DPBRAMWrapperIO(DATA_WIDTH, DEPTH))
 
   setInline("dual_port_ram.v",
@@ -107,7 +194,7 @@ xpm_memory_tdpram #(
 );
 
 endmodule
-""".stripMargin)
+  """.stripMargin)
 }
 
 class DPBRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
@@ -122,49 +209,37 @@ class DPBRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
   override def cloneType = (new DPBRAMSyncReadMemIO(DATA_WIDTH, DEPTH)).asInstanceOf[this.type]
 }
 
-class DPBRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends Module {
-  val dpr = Module(new dual_port_ram(DATA_WIDTH, DEPTH, LATENCY))
+class DPBRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1, LUTRAM: Int = 0) extends Module {
   val io = IO(new DPBRAMSyncReadMemIO(DATA_WIDTH, DEPTH))
 
-  dpr.io.clk    := clock
-  dpr.io.rst    := reset
-  dpr.io.wea    := io.wea
-  dpr.io.web    := io.web
-  dpr.io.ena    := true.B
-  dpr.io.enb    := true.B
-  dpr.io.addra  := io.addra
-  dpr.io.addrb  := io.addrb
-  dpr.io.dina   := io.dina
-  dpr.io.dinb   := io.dinb
-  io.douta      := dpr.io.douta
-  io.doutb      := dpr.io.doutb
-}
-class TDPBRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends Module {
-  val dpr = Module(new dual_port_ram(DATA_WIDTH, DEPTH, LATENCY))
-  val io = IO(new DPBRAMSyncReadMemIO(DATA_WIDTH, DEPTH))
-  val reg_din = RegInit(0.U(DATA_WIDTH.W))
-  val reg_forward = RegInit(false.B)
-
-  when(io.addra === io.addrb){
-	reg_forward := io.wea || io.web
-	when(io.wea){
-		reg_din := io.dina
-	}.elsewhen(io.web){
-		reg_din := io.dinb
-	}
+  if (LUTRAM == 0) {
+	val dpr = Module(new dual_port_ram(DATA_WIDTH, DEPTH, LATENCY))
+	dpr.io.clk    := clock
+	dpr.io.rst    := reset
+	dpr.io.wea    := io.wea
+	dpr.io.web    := io.web
+	dpr.io.ena    := true.B
+	dpr.io.enb    := true.B
+	dpr.io.addra  := io.addra
+	dpr.io.addrb  := io.addrb
+	dpr.io.dina   := io.dina
+	dpr.io.dinb   := io.dinb
+	io.douta      := dpr.io.douta
+	io.doutb      := dpr.io.doutb
+  } else {
+	val dpr = Module(new dual_port_lutram(DATA_WIDTH, DEPTH, LATENCY))
+	dpr.io.clk    := clock
+	dpr.io.rst    := reset
+	dpr.io.wea    := io.wea || io.web
+	dpr.io.ena    := true.B
+	dpr.io.enb    := true.B
+	dpr.io.addra  := io.addra
+	dpr.io.addrb  := io.addrb
+	dpr.io.dina   := Mux(io.wea, io.dina, io.dinb)
+	io.douta      := dpr.io.douta
+	io.doutb      := dpr.io.doutb
   }
-  dpr.io.clk    := clock
-  dpr.io.rst    := reset
-  dpr.io.wea    := io.wea
-  dpr.io.web    := io.web
-  dpr.io.ena    := true.B
-  dpr.io.enb    := true.B
-  dpr.io.addra  := io.addra
-  dpr.io.addrb  := io.addrb
-  dpr.io.dina   := io.dina
-  dpr.io.dinb   := io.dinb
-  io.douta      := Mux(reg_forward,reg_din,dpr.io.douta)
-  io.doutb      := Mux(reg_forward,reg_din,dpr.io.doutb)
+
 }
 
 // Single port
@@ -178,13 +253,19 @@ class BRAMWrapperIO(width: Int = 128, depth: Int = 16) extends Bundle {
   override def cloneType = (new BRAMWrapperIO(width,depth)).asInstanceOf[this.type]
 }
 
-class single_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1) extends BlackBox(Map("DATA_WIDTH" -> DATA_WIDTH,
+class single_port_ram(DATA_WIDTH: Int, DEPTH: Int, LATENCY: Int = 1, LUTRAM: Boolean = false) extends BlackBox(Map(
+																						"DATA_WIDTH" -> DATA_WIDTH,
                                                                                         "DEPTH" -> DEPTH,
                                                                                         "LATENCY" -> LATENCY)) with HasBlackBoxInline {
   val io = IO(new BRAMWrapperIO(DATA_WIDTH, DEPTH))
 
-  setInline("single_port_ram.v",
-  s"""
+  if (LUTRAM) {
+	// setInline("single_port_lutram.v",
+	// s""""
+	// """.stripMargin)
+  } else {
+  	setInline("single_port_ram.v",
+  	s"""
 module single_port_ram # (
   parameter DATA_WIDTH = 32,
 	parameter DEPTH      = 1024,
@@ -232,7 +313,8 @@ xpm_memory_spram #(
 );
 
 endmodule
-""".stripMargin)
+	""".stripMargin)
+  }
 }
 
 class BRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
@@ -243,8 +325,8 @@ class BRAMSyncReadMemIO(DATA_WIDTH: Int, DEPTH: Int) extends Bundle {
   override def cloneType = (new BRAMSyncReadMemIO(DATA_WIDTH, DEPTH)).asInstanceOf[this.type]
 }
 
-class BRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1) extends Module {
-  val spr = Module(new single_port_ram(DATA_WIDTH, DEPTH, LATENCY))
+class BRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1, LUTRAM: Boolean = false) extends Module {
+  val spr = Module(new single_port_ram(DATA_WIDTH, DEPTH, LATENCY, LUTRAM))
   val io = IO(new BRAMSyncReadMemIO(DATA_WIDTH, DEPTH))
 
   spr.io.clk    := clock
