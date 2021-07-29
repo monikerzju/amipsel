@@ -46,7 +46,6 @@ class FrontendIO extends Bundle with Config {
 class BackendIO extends Bundle with Config with CauseExcCode {
   val fb = Flipped(new FrontBackIO)
   val dcache = Flipped(new MemIO(1))
-  val dcache1 = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
 }
 
@@ -86,7 +85,6 @@ class MemIO(val issueN:Int = 2) extends Bundle with Config {
 class CoreIO extends Bundle with Config with CauseExcCode {
   val icache = Flipped(new MemIO)
   val dcache = Flipped(new MemIO(1))
-  val dcache1 = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
 }
 
@@ -101,5 +99,4 @@ class Core(diffTestV: Boolean) extends Module with Config {
 
   io.icache <> fe.io.icache
   io.dcache <> be.io.dcache
-  io.dcache1 <> be.io.dcache1
 }
