@@ -79,6 +79,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val decode_pc_predict_target = Reg(UInt(len.W))
   val decode_pc_second_state   = Reg(UInt(2.W))
   val decode_pc_predict_taken  = Reg(Bool())  // the first might be branch, the second must be delay slot which is not a branch instruction
+  val delayed_early_update = RegInit(false.B)
   def quickCheckBranch(inst: UInt) : Bool = {
     // BXX BXXZAL JAL J
     inst(31, 29) === 0.U && inst(28, 26) =/= 0.U
@@ -104,10 +105,10 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     pc_gen.io.redirect_pc := Mux(io.fb.bmfs.redirect_kill, io.fb.bmfs.redirect_pc, dec_kill_redirect_pc)
   }
 
-  pc_gen.io.bpu_update.dec.pc_br := Cat(decode_pc_low_reg(len - 1, 2), decode_pc_predict_target(1, 0))
-  pc_gen.io.bpu_update.dec.v := predict_taken_but_not_br && frontend_fire
+  pc_gen.io.bpu_update.dec.pc_br := RegNext(Cat(decode_pc_low_reg(len - 1, 2), decode_pc_predict_target(1, 0)))
+  pc_gen.io.bpu_update.dec.v := delayed_early_update
   pc_gen.io.bpu_update.exe := io.fb.bmfs.bpu
-  dec_kill_redirect_pc  := Mux(stall_d, decode_pc_low_reg, Mux(next_respn.orR, decode_pc_low_reg + 8.U, decode_pc_low_reg + 4.U))
+  dec_kill_redirect_pc  := RegNext(Mux(stall_d, decode_pc_low_reg, Mux(next_respn.orR, decode_pc_low_reg + 8.U, decode_pc_low_reg + 4.U)))
 
   repc := Mux(stall_f, repc, pc_gen.io.pc_o)
   reptar := Mux(stall_f, reptar, pc_gen.io.predict_target_o)
@@ -144,7 +145,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     decode_valid_reg  := io.icache.req.valid
   }
 
-  frontend_fire := !cache_stall && decode_valid_reg
+  frontend_fire := !cache_stall && decode_valid_reg && !delayed_early_update
   if (predictLastWordInCache) {
     io.fb.fmbs.instn := Mux(stall_d, 0.U,
       Mux(frontend_fire, Mux(wfds, 1.U, fire_number_respn), 0.U)
@@ -179,7 +180,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   }
 
   if (traceBPU) {
-    when (predict_taken_but_not_br && frontend_fire) {
+    when (delayed_early_update) {
       printf("misprediction at %x, not branch\n", decode_pc_low_reg)
     }
   }
@@ -187,8 +188,10 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   if (predictLastWordInCache) {
     dec_kill_d := (predict_taken_but_not_br || wfds) && frontend_fire
   } else {
-    dec_kill_d := predict_taken_but_not_br && frontend_fire
+    dec_kill_d := delayed_early_update
   }
+
+  delayed_early_update := Mux(io.fb.bmfs.redirect_kill, false.B, predict_taken_but_not_br && frontend_fire)
 
   if (diffTestV) {
     BoringUtils.addSource(cache_stall, "icache_stall")
