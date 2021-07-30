@@ -498,9 +498,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "sha",
       "stream_copy",
       "string_search",
-      "qsorta"
+      "qsorta",
+      "allbench_coremark",
     )
-    val test_file = "bubble_sort"
+    val test_file = "allbench_coremark"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,
@@ -533,6 +534,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "quick_sort" -> 0x00001865L,
       "qsorta" -> 0x00001865L,
       "bitcount" -> 0x00001673L,
+      "allbench_coremark" -> 0x00001673L,
     )
     val mfc0CounterEnd = Map (
       "stream_copy" -> 0x00029617L,
@@ -546,6 +548,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "quick_sort" -> 0x0021c52bL,
       "qsorta" -> 0x0021c52bL,
       "bitcount" -> 0x0005e2d4L,
+      "allbench_coremark" -> 0x004f4000L,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
@@ -582,6 +585,17 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           wbData(2) := 0x000cf034L.U(len.W)
         } .elsewhen (cntLw === 3.U) {
           wbData(2) := 0x000cf3d2L.U(len.W)
+        }
+        cntLw := cntLw + 1.U
+      } else if (test_file == "allbench_coremark") {
+        when (cntLw === 0.U) {
+          wbData(2) := 0x00003117L.U(len.W)
+        } .elsewhen (cntLw === 1.U) {
+          wbData(2) := 0x00075335L.U(len.W)
+        } .elsewhen (cntLw === 2.U) {
+          wbData(2) := 0x00a66e9aL.U(len.W)
+        } .elsewhen (cntLw === 3.U) {
+          wbData(2) := 0x00ae5a66L.U(len.W)
         }
         cntLw := cntLw + 1.U
       } else {
