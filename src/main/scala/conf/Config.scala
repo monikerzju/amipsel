@@ -19,10 +19,10 @@ trait Config {
   val queueSize: Int = 8
   // Cache
   var dcacheMetaZeroLatency: Boolean = false
-  var iTagBits: Int = 20
-  var iIndexBits: Int = 7   // 4KB now
-  var dTagBits: Int = 19
-  var dIndexBits: Int = 8   // 8KB now
+  var iTagBits: Int = 19
+  var iIndexBits: Int = 8   // 8KB now
+  var dTagBits: Int = 18
+  var dIndexBits: Int = 9   // 16KB now
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
