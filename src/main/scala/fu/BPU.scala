@@ -39,6 +39,7 @@ class BHTReq(width: Int = 32) extends Bundle {
 class BHTResp(width: Int = 32, issueN: Int = 2) extends Bundle {
   val taken_vec = Output(Vec(issueN, Bool()))
   val target_first = Output(UInt(width.W))
+  val state_second = Output(UInt(2.W))
   override def cloneType = (new BHTResp(width, issueN)).asInstanceOf[this.type]
 }
 
@@ -112,43 +113,32 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   }
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  val history_odd  = Module(new DPBRAMSyncReadMem(depth / 2, 2, 1))
-  val history_even = Module(new DPBRAMSyncReadMem(depth / 2, 2, 1))
+  val history      = Module(new DPBRAMSyncReadMem(depth, 2, 1))
   val buffer       = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
-  val low_raddr  = getHashedIndex(io.req.next_line)
-  val high_raddr = getHashedIndex(io.req.next_line + 4.U)
-  val low_odd    = io.req.next_line(2)
+  // for BHT
   val waddr      = Mux(!io.update.dec.v, io.update.exe.pc_br, io.update.dec.pc_br)
-  val wdata      = Mux(!io.update.dec.v, Mux(io.update.exe.taken, io.update.exe.pc_br(1, 0) + 1.U, io.update.exe.pc_br(1, 0) - 1.U), io.update.dec.pc_br(1, 0) - 1.U)
-  val wodd       = waddr(2)
   val may_update = io.update.exe.v || io.update.dec.v
-  val update     = Mux(!io.update.dec.v, Mux(io.update.exe.taken, !io.update.exe.pc_br(1, 0).andR, io.update.exe.pc_br(1, 0).orR), io.update.dec.pc_br(1, 0).orR)
+  val update     = Mux(!io.update.dec.v, Mux(io.update.exe.taken, !io.update.exe.pc_br(1, 0).andR, io.update.exe.pc_br(1, 0).orR), true.B)
+  val wdata      = Mux(!io.update.dec.v, Mux(io.update.exe.taken, io.update.exe.pc_br(1, 0) + 1.U, io.update.exe.pc_br(1, 0) - 1.U), io.update.dec.pc_br(1, 0) - 1.U)
 
-  history_even.io.addra := Mux(low_odd, high_raddr, low_raddr)
-  history_even.io.addrb := getHashedIndex(waddr)
-  history_even.io.dina  := DontCare
-  history_even.io.dinb  := wdata
-  history_even.io.wea   := false.B
-  history_even.io.web   := !wodd && update
+  history.io.addra := Mux(update, getHashedIndexWith2(waddr), getHashedIndexWith2(io.req.next_line))
+  history.io.addrb := getHashedIndexWith2(io.req.next_line + 4.U)
+  history.io.dina  := wdata
+  history.io.dinb  := DontCare
+  history.io.wea   := update
+  history.io.web   := false.B
 
-  history_odd.io.addra  := Mux(!low_odd, high_raddr, low_raddr)
-  history_odd.io.addrb  := getHashedIndex(waddr)
-  history_odd.io.dina   := DontCare
-  history_odd.io.dinb   := wdata
-  history_odd.io.wea    := false.B
-  history_odd.io.web    := wodd && update
-
-  // 0 for low addr, 1 for high addr
-  val last_low_odd = RegNext(low_odd)
-  io.resp.taken_vec(0)  := Mux(last_low_odd, history_odd.io.douta, history_even.io.douta)(1) && !io.update.exe.errpr
-  io.resp.taken_vec(1)  := Mux(!last_low_odd, history_odd.io.douta, history_even.io.douta)(1)
+  val last_update = RegNext(update)
+  io.resp.taken_vec(0)  := Mux(last_update, false.B, history.io.douta(1)) // TODO 1. Mux(last_low_odd, history_odd.io.douta, history_even.io.douta)(1) && !io.update.exe.errpr 2. WFDS must be added to gain performance
+  io.resp.taken_vec(1)  := history.io.doutb(1)
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
   buffer.io.addr := getHashedIndexWith2(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
-  io.resp.target_first := Cat(buffer.io.dout, Mux(last_low_odd, history_odd.io.douta, history_even.io.douta))
+  io.resp.target_first := Cat(buffer.io.dout, history.io.douta)
+  io.resp.state_second := history.io.doutb
 
   assert(instByte == 4)
 

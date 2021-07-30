@@ -14,6 +14,7 @@ class PCGenIO(va_width: Int = 32) extends Bundle with Config {
   val redirect = Input(Bool())
   val redirect_pc = Input(UInt(va_width.W))
   val pc_o = Output(UInt(va_width.W))
+  val predict_sstat_o = Output(UInt(2.W))
   val predict_taken_o = Output(Bool())
   val predict_target_o = Output(UInt(va_width.W))
   val narrow_o = if (frontendIssueN != 1) Output(Bool()) else null
@@ -25,7 +26,8 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   val io  = IO(new PCGenIO(va_width))
   val pc  = RegInit(UInt(va_width.W), start_va.U)
   val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
-  val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), Cat(bpu.io.resp.target_first(len - 1, 2), "b00".U), pc + increment.U)))
+  val legal_target = Cat(bpu.io.resp.target_first(len - 1, 2), "b00".U(2.W))
+  val npc = Mux(io.redirect, io.redirect_pc, Mux(io.please_wait, pc, Mux(bpu.io.resp.taken_vec(0), legal_target, pc + increment.U)))
 
   // BPU
   bpu.io.req.next_line := npc
@@ -35,6 +37,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   io.predict_taken_o  := bpu.io.resp.taken_vec(0)
   io.predict_target_o := bpu.io.resp.target_first
   io.pc_o := pc
+  io.predict_sstat_o := bpu.io.resp.state_second
   if (frontendIssueN != 1) {
     io.narrow_o := !bpu.io.resp.taken_vec(0) && bpu.io.resp.taken_vec(1)
   }
@@ -50,6 +53,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val last_req_valid = RegInit(false.B)
   val repc           = Reg(UInt(len.W))
   val reptar         = Reg(UInt(len.W))
+  val repstat        = Reg(UInt(2.W))
   val repred         = Reg(Bool())
   val renarrow       = if (frontendIssueN != 1) Reg(Bool()) else null
   val stall_f        = Wire(Bool())
@@ -72,10 +76,11 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val stall_d           = Wire(Bool())
   val kill_d            = Wire(Bool())
   val decode_pc_predict_target = Reg(UInt(len.W))
+  val decode_pc_second_state   = Reg(UInt(2.W))
   val decode_pc_predict_taken  = Reg(Bool())  // the first might be branch, the second must be delay slot which is not a branch instruction
   def quickCheckBranch(inst: UInt) : Bool = {
     // BXX BXXZAL JAL J
-    inst(31, 29) === "b000".U && inst(28, 26) =/= "b000".U
+    inst(31, 29) === 0.U && inst(28, 26) =/= 0.U
   }
 
   // IF Stage
@@ -105,6 +110,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
 
   repc := Mux(stall_f, repc, pc_gen.io.pc_o)
   reptar := Mux(stall_f, reptar, pc_gen.io.predict_target_o)
+  repstat := Mux(stall_f, repstat, pc_gen.io.predict_sstat_o)
   repred := Mux(stall_f, repred, pc_gen.io.predict_taken_o)
   if (frontendIssueN != 1) {
     renarrow := Mux(stall_f, renarrow, pc_gen.io.narrow_o)
@@ -132,6 +138,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   }.elsewhen (!stall_d && !cache_stall) {
     decode_pc_low_reg := may_illegal_req_addr
     decode_pc_predict_target := Mux(stall_f, reptar, pc_gen.io.predict_target_o)
+    decode_pc_second_state   := Mux(stall_f, repstat, pc_gen.io.predict_sstat_o)
     decode_pc_predict_taken  := Mux(stall_f, repred, pc_gen.io.predict_taken_o)
     decode_valid_reg  := io.icache.req.valid
   }
@@ -159,7 +166,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
       decs(0).target_pc := decode_pc_predict_target
     } else {
       decs(i).bht_predict_taken := false.B
-      decs(i).target_pc := DontCare
+      decs(i).target_pc := Cat(Fill(30, 0.U), decode_pc_second_state)
     }
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }

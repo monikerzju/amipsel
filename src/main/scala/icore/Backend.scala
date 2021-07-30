@@ -542,7 +542,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "coremark" -> 0x004f4000L,
       "bubble_sort" -> 0x00258a51L,
       "quick_sort" -> 0x0021c52bL,
-      "qsorta" -> 0x0021c52bL,
+      "qsorta" -> 0x0021c52cL,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
