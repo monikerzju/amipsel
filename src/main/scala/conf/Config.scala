@@ -26,7 +26,7 @@ trait Config {
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
-  var predictLastWordInCache: Boolean = false  // TODO try this switch to balance IPC and frequency
+  var predictLastWordInCache: Boolean = false  // TODO try this switch to balance IPC and frequency, add return address stack, look into dhrystone and stringsearch
   var traceBPU: Boolean = false
   var BPUEntryN: Int = 256
   var BPUOffset: Int = 32  // 2 is same with 3
