@@ -303,6 +303,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // mdu execution
   // one inst only issues one req
+  // mul/div may issues req continuously when there is no dcache stall
   mdu.io.req.valid := mduValid && !RegNext(dcacheStall)
   mdu.io.req.reg1  := exFwdRsData(1)
   mdu.io.req.in1 := MuxLookup(exInsts(1).src_a, exFwdRsData(1),
@@ -396,7 +397,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     when (isExPCBr) {
       reBranchBrTaken := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
-          MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
+          MicroOpCtrl.BrNE -> (alu.io.zero === 0 .U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
           MicroOpCtrl.BrGT -> (alu.io.a.asSInt > 0.S),
           MicroOpCtrl.BrLE -> (alu.io.a.asSInt <= 0.S),
@@ -497,9 +498,10 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "sha",
       "stream_copy",
       "string_search",
-      "qsorta"
+      "qsorta",
+      "allbench_coremark",
     )
-    val test_file = "qsorta"
+    val test_file = "allbench_coremark"
     val lwCounterStart = Map (
       "stream_copy" -> 0x0000375fL,
       "crc32" -> 0x000030e1L,
@@ -531,6 +533,8 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "bubble_sort" -> 0x00001959L,
       "quick_sort" -> 0x00001865L,
       "qsorta" -> 0x00001865L,
+      "bitcount" -> 0x00001673L,
+      "allbench_coremark" -> 0x00001673L,
     )
     val mfc0CounterEnd = Map (
       "stream_copy" -> 0x00029617L,
@@ -542,7 +546,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       "coremark" -> 0x004f4000L,
       "bubble_sort" -> 0x00258a51L,
       "quick_sort" -> 0x0021c52bL,
-      "qsorta" -> 0x0021c52cL,
+      "qsorta" -> 0x0021c52bL,
+      "bitcount" -> 0x0005e2d4L,
+      "allbench_coremark" -> 0x004f4000L,
     )
     val isLwFirst = RegInit(true.B)
     val isMfc0First = RegInit(true.B)
@@ -560,6 +566,28 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
         }
         cntLw := cntLw + 1.U
       } else if (test_file == "coremark"){
+        when (cntLw === 0.U) {
+          wbData(2) := 0x00003117L.U(len.W)
+        } .elsewhen (cntLw === 1.U) {
+          wbData(2) := 0x00075335L.U(len.W)
+        } .elsewhen (cntLw === 2.U) {
+          wbData(2) := 0x00a66e9aL.U(len.W)
+        } .elsewhen (cntLw === 3.U) {
+          wbData(2) := 0x00ae5a66L.U(len.W)
+        }
+        cntLw := cntLw + 1.U
+      } else if (test_file == "bitcount") {
+        when (cntLw === 0.U) {
+          wbData(2) := 0x00003117L.U(len.W)
+        } .elsewhen (cntLw === 1.U) {
+          wbData(2) := 0x0000800bL.U(len.W)
+        } .elsewhen (cntLw === 2.U) {
+          wbData(2) := 0x000cf034L.U(len.W)
+        } .elsewhen (cntLw === 3.U) {
+          wbData(2) := 0x000cf3d2L.U(len.W)
+        }
+        cntLw := cntLw + 1.U
+      } else if (test_file == "allbench_coremark") {
         when (cntLw === 0.U) {
           wbData(2) := 0x00003117L.U(len.W)
         } .elsewhen (cntLw === 1.U) {
@@ -709,6 +737,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     val dstall     = RegInit(0.U(64.W))
     val istallw    = WireDefault(false.B)
     val istall     = RegInit(0.U(64.W))
+    val mduStall   = RegInit(0.U(64.W))
     val common     = RegInit(0.U(64.W))
 
     dstall  := dstall + Mux(dcacheStall, 1.U, 0.U)
@@ -716,8 +745,9 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
     common  := common + Mux(dcacheStall && istallw, 1.U, 0.U)
     counter := counter + 1.U
     instret := Mux(bubble_w, instret, instret + (wbInstsValid(0) && !wbExcepts(0)).asUInt + (wbInstsValid(1) && !wbExcepts(1)).asUInt + (wbInstsValid(2) && !wbExcepts(2)).asUInt)
+    mduStall := mduStall + (!mdu.io.resp.valid).asUInt()
     when (wbInsts(0).pc === endAddr.U || wbInsts(1).pc === endAddr.U || wbInsts(2).pc === endAddr.U) {
-      printf("%d insts, %d cycles, %d d$ stalls, %d i$ stalls, %d common stalls\n", instret + 1.U, counter, dstall, istall, common)
+      printf("%d insts, %d cycles, %d d$ stalls, %d i$ stalls, %d mdu stalls, %d common stalls\n", instret + 1.U, counter, dstall, istall, mduStall, common)
       // TODO BPU mis-prediction, icache miss, dcache miss, mdu stall
     }
 

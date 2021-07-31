@@ -39,14 +39,33 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
 
   val mul_res = RegNext(io.req.in1.asSInt * io.req.in2.asSInt)
   val mulu_res = RegNext(io.req.in1.asUInt * io.req.in2.asUInt)
-  val diving = (io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U) && io.req.valid
-  val multing = (io.req.op === MDU_MUL.U || io.req.op === MDU_MULU.U) && io.req.valid
+
+  val div_valid = (io.req.op === MDU_DIV.U || io.req.op === MDU_DIVU.U) && io.req.valid
+  val mult_valid = (io.req.op === MDU_MUL.U || io.req.op === MDU_MULU.U) && io.req.valid
+  val divider = Module(new Div32)
+
+
+  def stateMachine(req: Bool, resp: Bool): Bool = {
+    val state = RegInit(false.B)
+    switch(state) {
+      is (false.B) {
+        state := req
+      }
+      is (true.B) {
+        state := !resp
+      }
+    }
+    state
+  }
+  val mult_resp_valid = Wire(Bool())
+  val diving = stateMachine(div_valid, divider.io.vo)
+  val multing = stateMachine(mult_valid, mult_resp_valid) // mult use 2 cycles
+
   val last_valid = RegInit(false.B)
 
-  val divider = Module(new Div32)
   val sign1   = io.req.in1(width - 1)
   val sign2   = io.req.in2(width - 1)
-  divider.io.vi   := diving
+  divider.io.vi   := div_valid
   divider.io.in1  := Mux(io.req.op === MDU_DIV.U && sign1.asBool, ((~io.req.in1).asUInt + 1.U), io.req.in1)
   divider.io.in2  := Mux(io.req.op === MDU_DIV.U && sign2.asBool, ((~io.req.in2).asUInt + 1.U), io.req.in2)
 
@@ -105,7 +124,8 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
       io.req.reg1(width - 1) =/= io.req.in2(width - 1) && io.req.reg1(width - 1) =/= subrResult(width - 1), false.B)
   )
   last_valid := io.resp.valid
-  io.resp.valid  := Mux(diving, divider.io.vo, Mux(multing, !last_valid && RegNext(multing), true.B))
+  mult_resp_valid := !last_valid && RegNext(mult_valid)
+  io.resp.valid  := Mux(div_valid || diving, divider.io.vo, Mux(mult_valid || multing, mult_resp_valid, true.B))
 }
 
 class Div32 extends Module with Config {
