@@ -45,7 +45,6 @@ import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
 class MetaDataBRAM(nline: Int) extends Module with Config {
-  assert(!dcacheMetaZeroLatency)
   // FIXME: io.write-> reg_write
   val io = IO(new MetaIODSimple)
   val blk = Module(new BRAMSyncReadMem(nline, dTagBits + 2))
@@ -70,7 +69,6 @@ class DCacheSimple(real_dcache: Boolean = true)
     val cpu = new MemIO(1)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
-  assert(!dcacheMetaZeroLatency)
   val responsive = Wire(Bool())
   val reg_tmp = RegInit(true.B)
   reg_tmp := io.cpu.resp.valid || !io.cpu.req.valid

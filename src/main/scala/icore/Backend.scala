@@ -104,6 +104,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
                           exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
+  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned
   val bpuV      = (isExPCBr || isExPCJump) && exInstsValid(0)
   val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || isExPCJump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
   val bpuPCBr   = exInsts(0).pc
@@ -334,17 +335,15 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
-  var sim = false
-  if (sim) {
-    dcacheStall := exLastMemReqValid && !RegNext(io.dcache.resp.valid)
-  }
-  else {
-    dcacheStall := exLastMemReqValid && !io.dcache.resp.valid
-  }
+  dcacheStall := exLastMemReqValid && !io.dcache.resp.valid
 
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
-  io.dcache.req.valid := exInstsTrueValid(2) && !memMisaligned || dcacheStall
+  if (simpleNBDCache) {
+    io.dcache.req.valid := exMemRealValid && !(io.dcache.req.bits.wen && io.dcache.req.bits.addr(28, 0) === "h1faffff0".U) || dcacheStall
+  } else {
+    io.dcache.req.valid := exMemRealValid || dcacheStall
+  }
   io.dcache.resp.ready := true.B
 
 
@@ -372,7 +371,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   }
 
   when (!dcacheStall) {
-    exLastMemReqValid := exInstsTrueValid(2) && !memMisaligned
+    if (simpleNBDCache) {
+      exLastMemReqValid := exMemRealValid && !(io.dcache.req.bits.wen && io.dcache.req.bits.addr(28, 0) === "h1faffff0".U)
+    } else {
+      exLastMemReqValid := exMemRealValid
+    }
+    
     exLastMemReq := exCurMemReq
   }
 

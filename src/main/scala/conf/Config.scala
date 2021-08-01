@@ -18,7 +18,7 @@ trait Config {
   var backendFuN: Int = 3
   val queueSize: Int = 8
   // Cache
-  var dcacheMetaZeroLatency: Boolean = false
+  var simpleNBDCache: Boolean = true
   var iTagBits: Int = 19
   var iIndexBits: Int = 8   // 8KB now
   var dTagBits: Int = 18
@@ -39,5 +39,5 @@ trait Config {
   assert(backendFuN == 3)
   assert(BPUOffset >= 2 && BPUOffset <= 5 || BPUOffset == 32)
   assert(BPUEntryN == 128 || BPUEntryN == 256)
-  assert(BHTCacheEntryN == 2 || BHTCacheEntryN == 1)
+  assert(BHTCacheEntryN == 1)
 }
