@@ -74,6 +74,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val exFwdRsData  = Reg(Vec(backendFuN, UInt(len.W)))
   val exFwdRtData  = Reg(Vec(backendFuN, UInt(len.W)))
   val isExPCBr     = exInsts(0).next_pc === MicroOpCtrl.Branch
+  val isExPCJump   = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
   val reBranch     = Wire(Bool())
   val reBranchBrTaken = Wire(Bool())
   val jumpPc       = Wire(UInt(len.W))
@@ -103,11 +104,11 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
                           exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
-  val bpuV      = (isExPCBr || exInsts(0).next_pc === MicroOpCtrl.Jump) && exInstsValid(0)
-  val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
+  val bpuV      = (isExPCBr || isExPCJump) && exInstsValid(0)
+  val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || isExPCJump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
   val bpuPCBr   = exInsts(0).pc
   val bpuTarget = Mux(isExPCBr, brPC, jumpPc)
-  val bpuTaken  = reBranchBrTaken || exInsts(0).next_pc === MicroOpCtrl.Jump
+  val bpuTaken  = reBranchBrTaken || isExPCJump
 
   // WB
   val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
@@ -385,7 +386,6 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
 
 
   // jump br
-  val isExPCJump = exInsts(0).next_pc === MicroOpCtrl.PCReg || exInsts(0).next_pc === MicroOpCtrl.Jump
   reBranch := false.B
   reBranchBrTaken := false.B
   jumpPc := Mux(
@@ -404,7 +404,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
-      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && exInsts(0).target_pc(len - 1, 2)  =/= brPC(len - 1, 2))
+      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && (exInsts(0).target_pc(len - 1, 2)  =/= brPC(len - 1, 2) || brPC(1, 0).orR))
 
       if (traceBPU) {
         when (!stall_x && !kill_x) {
@@ -417,12 +417,14 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
       }
 
     }.elsewhen (isExPCJump) {
-      reBranch := exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2) || !exInsts(0).predict_taken
+      reBranch := exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2) || !exInsts(0).predict_taken || jumpPc(1, 0).orR
 
       if (traceBPU) {
+        val indirect_cnt = RegInit(0.U(len.W))
         when (!stall_x && !kill_x) {
           when (reBranch) {
-            printf("jump at %x, indirect %x, target %x, wrong target %x, not taken %x\n", exInsts(0).pc, exInsts(0).next_pc === MicroOpCtrl.PCReg, jumpPc, exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2), !exInsts(0).predict_taken)
+            indirect_cnt := indirect_cnt + Mux(exInsts(0).next_pc === MicroOpCtrl.PCReg, 1.U, 0.U)
+            printf("jump at %x, indirect %x, target %x, wrong target %x, not taken %x, indirect_count %d\n", exInsts(0).pc, exInsts(0).next_pc === MicroOpCtrl.PCReg, jumpPc, exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2), !exInsts(0).predict_taken, indirect_cnt)
           }.otherwise {
             printf("hit jump at %x\n", exInsts(0).pc)
           }

@@ -26,7 +26,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   val io  = IO(new PCGenIO(va_width))
 
   val pc  = RegInit(UInt(va_width.W), start_va.U)
-  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, rasDepth=0, instByte=4))
+  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, instByte=4))
 
   val legal_target = Cat(bpu.io.resp.target_first(len - 1, 2), "b00".U(2.W))
   val cross_line = pc(offsetBits - 1, 2) === Fill(offsetBits - 2, 1.U)
@@ -169,7 +169,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     }
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
-  predict_taken_but_not_br := decs(0).bht_predict_taken && !quickCheckBranch(io.icache.resp.bits.rdata(0))
+  predict_taken_but_not_br := decs(0).bht_predict_taken && decs(0).mops.next_pc =/= Branch && decs(0).mops.next_pc =/= Jump && decs(0).mops.next_pc =/= PCReg // TODO !quickCheckBranch(io.icache.resp.bits.rdata(0))
 
   if (traceBPU) {
     when (delayed_early_update) {

@@ -7,6 +7,14 @@ import chisel3.util._
 import chisel3.experimental._
 import cache._
 
+class RASReq() extends Bundle {
+  val call = Input(Bool())  // 
+}
+
+class RASResp() extends Bundle {
+
+}
+
 class RAS(depth: Int = 8, width: Int = 32) {
   val count = RegInit(0.U(log2Up(depth + 1).W))
   val pos = RegInit(0.U(log2Up(depth).W))
@@ -66,14 +74,6 @@ class BHTUpdate(width: Int = 32) extends Bundle {
   override def cloneType = (new BHTUpdate(width)).asInstanceOf[this.type]
 }
 
-class RASReq() extends Bundle {
-
-}
-
-class RASResp() extends Bundle {
-
-}
-
 // req.nextline = pc + 8
 // resp.taken_vec(0) is for pc, (1) is for pc + 4, this signal also influence how many instructions to decode
 class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
@@ -83,7 +83,7 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
   override def cloneType = (new BPUIO(width, issueN)).asInstanceOf[this.type]
 }
 
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, rasDepth: Int = 0, instByte: Int = 4, delaySlot: Boolean = true) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true) extends Module {
   val io = IO(new BPUIO(width, issueN))
   
   // strongly not taken
@@ -130,7 +130,7 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
   history.io.web   := false.B
 
   val last_update = RegNext(update)
-  io.resp.taken_vec(0)  := Mux(last_update, false.B, history.io.douta(1)) // TODO 1. Mux(last_low_odd, history_odd.io.douta, history_even.io.douta)(1) && !io.update.exe.errpr 2. WFDS must be added to gain performance
+  io.resp.taken_vec(0)  := Mux(last_update, false.B, history.io.douta(1))
   io.resp.taken_vec(1)  := history.io.doutb(1)
 
   // Notice that the update from ID will only change BHT
@@ -142,8 +142,4 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, r
 
   assert(instByte == 4)
 
-  // RAS is ds-oriented and done in ID stage
-  if (rasDepth > 0) {
-    val ras = new RAS(rasDepth, width)
-  }
 }
