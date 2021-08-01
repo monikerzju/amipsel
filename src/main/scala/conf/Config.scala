@@ -29,8 +29,7 @@ trait Config {
   var traceBPU: Boolean = false
   var BPUEntryN: Int = 256
   var BPUOffset: Int = 32  // 2 is same with 3
-  val withRAS: Boolean = true
-  var RASEntryN: Int = if (withRAS) 6 else 0
+  val BHTCacheEntryN: Int = 1
   // Assertions ---- Dont Change!!!
   assert(len == 32)
   assert(frontendIssueN == 1 || frontendIssueN == 2)
@@ -40,4 +39,5 @@ trait Config {
   assert(backendFuN == 3)
   assert(BPUOffset >= 2 && BPUOffset <= 5 || BPUOffset == 32)
   assert(BPUEntryN == 128 || BPUEntryN == 256)
+  assert(BHTCacheEntryN == 2 || BHTCacheEntryN == 1)
 }

@@ -26,7 +26,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   val io  = IO(new PCGenIO(va_width))
 
   val pc  = RegInit(UInt(va_width.W), start_va.U)
-  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, instByte=4))
+  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, instByte=4, cacheDepth=BHTCacheEntryN))
 
   val legal_target = Cat(bpu.io.resp.target_first(len - 1, 2), "b00".U(2.W))
   val cross_line = pc(offsetBits - 1, 2) === Fill(offsetBits - 2, 1.U)

@@ -83,7 +83,7 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
   override def cloneType = (new BPUIO(width, issueN)).asInstanceOf[this.type]
 }
 
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true, cacheDepth: Int = 4) extends Module {
   val io = IO(new BPUIO(width, issueN))
   
   // strongly not taken
@@ -112,6 +112,14 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
     Cat(getHashedIndex(addr), addr(2))
   }
 
+  val bht_cache_tag  = Reg(Vec(cacheDepth, UInt(log2Ceil(depth).W)))
+  val bht_cache_stat = RegInit(VecInit(Seq.fill(cacheDepth)(0.U(2.W))))
+  val hit_in_bht_cache = Wire(Bool())
+  val bht_cache_result = Wire(UInt(2.W))
+  val update_cache_index = if (cacheDepth > 1) RegInit(0.U(log2Ceil(cacheDepth).W)) else 0.U
+  val cache_or_update_hit = Reg(Bool())
+  val chosen_result = Reg(UInt(2.W))
+
   // BHT are registers, because it is relatively small and BRAM does not support reset
   val history      = Module(new DPBRAMSyncReadMem(depth, 2, 1))
   val buffer       = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
@@ -130,15 +138,44 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
   history.io.web   := false.B
 
   val last_update = RegNext(update)
-  io.resp.taken_vec(0)  := Mux(last_update, false.B, history.io.douta(1))
+  val bht_first   = Mux(last_update, Mux(cache_or_update_hit, chosen_result, Fill(2, 0.U)), history.io.douta)
+  io.resp.taken_vec(0)  := bht_first(1)
   io.resp.taken_vec(1)  := history.io.doutb(1)
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
   buffer.io.addr := getHashedIndexWith2(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
-  io.resp.target_first := Cat(buffer.io.dout, history.io.douta)
+  io.resp.target_first := Cat(buffer.io.dout, bht_first)
   io.resp.state_second := history.io.doutb
+
+  // BHT cache
+  hit_in_bht_cache := false.B
+  bht_cache_result := bht_cache_stat(0)
+  for (i <- 0 until cacheDepth) {
+    when (bht_cache_tag(i) === getHashedIndexWith2(io.req.next_line)) {
+      hit_in_bht_cache := true.B
+      if (i != 0) {
+        bht_cache_result := bht_cache_stat(i)
+      }
+    }
+  }
+  when(update && hit_in_bht_cache) {
+    for (i <- 0 until cacheDepth) {
+      bht_cache_stat(i) := 0.U
+    }
+  }.elsewhen(io.resp.taken_vec(0) && !hit_in_bht_cache) {
+    if (cacheDepth > 1) {
+      update_cache_index := update_cache_index + 1.U
+    }
+    bht_cache_tag(update_cache_index) := RegNext(getHashedIndexWith2(io.req.next_line))
+    bht_cache_stat(update_cache_index) := bht_first
+  }
+
+  // cache or update hit
+  val update_query_hit = getHashedIndexWith2(io.req.next_line) === getHashedIndexWith2(waddr)
+  cache_or_update_hit := hit_in_bht_cache || update_query_hit
+  chosen_result := Mux(update_query_hit, wdata, bht_cache_result)
 
   assert(instByte == 4)
 
