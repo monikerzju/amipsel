@@ -38,7 +38,7 @@ class Tile(diffTestV: Boolean) extends Module with Config {
     io.debug := debug
   }
 
-  val core = Module(new Core(diffTestV))
+  val core = Module(new Core(diffTestV, false))
   val icache = Module(new ICache)
   val dcache = Module(new DCacheSimple)
   val xbar = Module(new AXI3Server(2, 1 << (offsetBits + 3), 4, "Seq", len, 1, 0))
@@ -174,7 +174,7 @@ object GenC {
 
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new Core(args.contains("-diff")))))
+      Seq(ChiselGeneratorAnnotation(() => new Core(false, args.contains("-verilator")))))
   }
 }
 

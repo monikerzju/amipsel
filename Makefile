@@ -21,10 +21,9 @@ tile:
 	rm $(DIR)/build/verilog/tile/mycpu_top.anno.json
 
 tilevery:
-	sbt "runMain tile.GenTV"
-	rm $(DIR)/build/verilog/tile/firrtl*
-	rm $(DIR)/build/verilog/tile/TileForVerilator.fir
-	rm $(DIR)/build/verilog/tile/TileForVerilator.anno.json
+	sbt "runMain tile.GenC -verilator"
+	rm $(DIR)/build/verilog/tile/Core.fir
+	rm $(DIR)/build/verilog/tile/Core.anno.json
 
 clean:
 	rm -rf build/

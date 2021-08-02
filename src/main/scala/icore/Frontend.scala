@@ -22,11 +22,11 @@ class PCGenIO(va_width: Int = 32) extends Bundle with Config {
   override def cloneType = (new PCGenIO(va_width)).asInstanceOf[this.type]
 }
 
-class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int = 4) extends Module with Config {
+class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int = 4, verilator: Boolean) extends Module with Config {
   val io  = IO(new PCGenIO(va_width))
 
   val pc  = RegInit(UInt(va_width.W), start_va.U)
-  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, instByte=4, cacheDepth=BHTCacheEntryN))
+  val bpu = Module(new BPU(depth=BPUEntryN, offset=BPUOffset, width=len, issueN=frontendIssueN, instByte=4, cacheDepth=BHTCacheEntryN, verilator=verilator))
 
   val legal_target = Cat(bpu.io.resp.target_first(len - 1, 2), "b00".U(2.W))
   val cross_line = pc(offsetBits - 1, 2) === Fill(offsetBits - 2, 1.U)
@@ -59,11 +59,11 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   }
 }
 
-class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType with FrontToBack {
+class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with MemAccessType with FrontToBack {
   val io = IO(new FrontendIO)
 
   // IF
-  val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN))
+  val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN, verilator))
   val cache_stall    = Wire(Bool())
   val fetch_half     = Wire(Bool())
   val last_req_valid = RegInit(false.B)

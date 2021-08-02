@@ -14,7 +14,7 @@ class RegFileIO(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3)
   override def cloneType = (new RegFileIO(nregs, len, nread, nwrite)).asInstanceOf[this.type]
 }
 
-class RegFile(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3) extends Module {
+class RegFile(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3, verilator: Boolean = false) extends Module {
   val io = IO(new RegFileIO(nregs, len, nread, nwrite))
 
   val regs = RegInit(VecInit(Seq.fill(nregs)(0.U(len.W))))
@@ -25,5 +25,9 @@ class RegFile(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3) e
     when(io.wen_vec(i) && io.rd_addr_vec(i).orR) {
       regs(io.rd_addr_vec(i)) := io.rd_data_vec(i)
     }
+  }
+
+  if (verilator) {
+    BoringUtils.addSource(VecInit((0 to 31).map(i => regs(i))), "difftestRegs")
   }
 }

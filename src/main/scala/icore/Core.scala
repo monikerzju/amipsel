@@ -2,6 +2,7 @@ package icore
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental._
 import conf.Config
 import isa.MicroOpCtrl._
 import fu.CauseExcCode
@@ -82,21 +83,37 @@ class MemIO(val issueN:Int = 2) extends Bundle with Config {
 
 // Memory or MMIO is judged in icache and dcache, not in core
 // From the view of core, MemIO should be in-out flipped
-class CoreIO extends Bundle with Config with CauseExcCode {
+class CoreIO(verilator: Boolean = false) extends Bundle with Config with CauseExcCode {
   val icache = Flipped(new MemIO)
   val dcache = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
+  val difftest = if (verilator) new DifftestIO else null
+  override def cloneType = (new CoreIO(verilator)).asInstanceOf[this.type]
 }
 
-class Core(diffTestV: Boolean) extends Module with Config {
-  val io = IO(new CoreIO)
+class DifftestIO extends Bundle {
+  val regs     = Output(Vec(32, UInt(32.W)))
+  val valids   = Output(Vec(3, UInt(1.W)))
+  val pcs      = Output(Vec(3, UInt(32.W)))
+}
 
-  val fe = Module(new Frontend(diffTestV))
-  val be = Module(new Backend(diffTestV))
+class Core(diffTestV: Boolean = false, verilator: Boolean = false) extends Module with Config {
+  val io = IO(new CoreIO(verilator))
+
+  val fe = Module(new Frontend(diffTestV, verilator))
+  val be = Module(new Backend(diffTestV, verilator))
 
   fe.io.fb <> be.io.fb
   be.io.interrupt := io.interrupt.map((i: Bool) => RegNext(i))
 
   io.icache <> fe.io.icache
   io.dcache <> be.io.dcache
+
+  if (verilator) {
+    val difftest = WireInit(0.U.asTypeOf(new DifftestIO))
+    BoringUtils.addSink(difftest.regs,    "difftestRegs")
+    BoringUtils.addSink(difftest.valids,  "difftestValids")
+    BoringUtils.addSink(difftest.pcs ,    "difftestPCs")
+    io.difftest := difftest
+  }
 }

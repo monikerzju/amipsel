@@ -23,7 +23,7 @@ class StoreInfo extends Bundle with Config {
 }
 
 // TODO ALU_LSU ALU_MDU LSU_BJU
-class Backend(diffTestV: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
+class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
   // Global
@@ -122,7 +122,7 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   val wbInsts          = RegInit(VecInit(Seq.fill(backendFuN)(nop)))
   val kill_w           = !dcacheStall && io.fb.bmfs.redirect_kill
   val bubble_w         = stall_x
-  val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN)) // 4 read port, 2 write port
+  val regFile          = Module(new RegFile(nread = 2 * backendIssueN, nwrite = backendIssueN, verilator = verilator)) // 4 read port, 2 write port
   val cp0              = Module(new CP0(diffTestV))
   val wbData           = Wire(Vec(backendFuN, UInt(len.W)))
   val wbReBranch       = RegInit(false.B)
@@ -737,6 +737,12 @@ class Backend(diffTestV: Boolean) extends Module with Config with InstType with 
   /**
    *  [---------- DiffTest stage -----------]
    */
+  if (verilator) {
+    BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
+    BoringUtils.addSource(VecInit((0 to 2).map(i => wbInsts(i).pc)), "difftestPCs")
+  }
+
+
   if (diffTestV) {
     val instret    = RegInit(0.U(64.W))
     val counter    = RegInit(0.U(64.W))

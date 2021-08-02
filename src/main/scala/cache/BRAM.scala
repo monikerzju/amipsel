@@ -336,3 +336,31 @@ class BRAMSyncReadMem(DEPTH: Int, DATA_WIDTH: Int, LATENCY: Int = 1, LUTRAM: Boo
   spr.io.din    := io.din
   io.dout       := spr.io.dout
 }
+
+class SPSyncReadMem(DEPTH: Int, DATA_WIDTH: Int) extends Module {
+  val io = IO(new BRAMSyncReadMemIO(DATA_WIDTH, DEPTH))
+
+  val mem = RegInit(VecInit(Seq.fill(DEPTH)(0.U(DATA_WIDTH.W))))
+
+  io.dout := RegNext(mem(io.addr))	// read first
+
+  when (io.we) {
+	mem(io.addr) := io.din
+  }
+}
+
+class DPSyncReadMem(DEPTH: Int, DATA_WIDTH: Int) extends Module {
+  val io = IO(new DPBRAMSyncReadMemIO(DATA_WIDTH, DEPTH))
+
+  val mem = RegInit(VecInit(Seq.fill(DEPTH)(0.U(DATA_WIDTH.W))))
+
+  io.douta := RegNext(mem(io.addra))	// read first
+  io.doutb := RegNext(mem(io.addrb))
+
+  when (io.wea) {
+	mem(io.addra) := io.dina
+  }
+  when (io.web) {
+	mem(io.addrb) := io.dinb
+  }
+}
