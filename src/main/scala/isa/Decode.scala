@@ -69,7 +69,8 @@ class Dec extends Module with InstType {
       DIV        -> List(F ,  toMDU.U),
       DIVU       -> List(F ,  toMDU.U),
       MULT       -> List(F ,  toMDU.U),
-      MULTU      -> List(F ,  toMDU.U),      
+      MULTU      -> List(F ,  toMDU.U),
+      MUL        -> List(F ,  toMDU.U),
       AND        -> List(F ,  toALU.U),
       ANDI       -> List(F ,  toALU.U),
       LUI        -> List(F ,  toALU.U),
@@ -156,7 +157,8 @@ class Dec extends Module with InstType {
       MULT  -> List(DHiLo  , MDU_MUL.U  , IRT ),
       MULTU -> List(DHiLo  , MDU_MULU.U , IRT ),
       MTHI  -> List(DHi    , aluAddu.U  , IXX ),
-      MTLO  -> List(DLo    , aluAddu.U  , IXX )
+      MTLO  -> List(DLo    , aluAddu.U  , IXX ),
+      MUL   -> List(DReg   , MDU_MUL.U  , IRT )
     )
   )
 
@@ -266,7 +268,7 @@ class Dec extends Module with InstType {
                            )
   io.mops.rd            := MuxLookup(control_signal(1), lsu_signal(3),
                              Seq(
-                               toMDU.U -> IXX,
+                               toMDU.U -> Mux(mdu_signal(0) === DReg, IRD, IXX),
                                toALU.U -> alu_signal(5),
                                toBJU.U -> bju_signal(6)
                              )
