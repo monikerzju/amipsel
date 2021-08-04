@@ -434,6 +434,16 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
           }
         }
       }
+
+      if (traceCallRet) {
+        when (!stall_x && !kill_x) {
+          when (exInsts(0).next_pc === MicroOpCtrl.Jump && exInsts(0).write_dest === MicroOpCtrl.DReg) {
+            printf("call at %x, target %x, hit %x\n", exInsts(0).pc, jumpPc, !reBranch)
+          }.elsewhen (exInsts(0).next_pc === MicroOpCtrl.PCReg && exInsts(0).write_dest === MicroOpCtrl.DXXX) {
+            printf("return at %x, target %x, hit %x\n", exInsts(0).pc, jumpPc, !reBranch)
+          }
+        }
+      }
     }
   }
 

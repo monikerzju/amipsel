@@ -122,11 +122,20 @@ class AXI3ServerIO(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1
 }
 
 class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, policy: String = "Seq", 
-  len: Int = 32, nwrite: Int = 1, writer: Int = 0) extends Module with MemAccessType{
+  len: Int = 32, nwrite: Int = 1, writer: Int = 0, trace: Boolean = true) extends Module with MemAccessType {
   val io = IO(new AXI3ServerIO(nclient, bit_cacheline, id_width))
 
   def mapAddr(addr: UInt): UInt = {
     Cat("b000".U, addr(len - 4, 0))
+  }
+
+  if (trace) {
+    when (!RegNext(io.cache(0).req.valid) && io.cache(0).req.valid) {
+      printf("dcache addr %x, wen %x\n", io.cache(0).req.addr, io.cache(0).req.wen)
+    }
+    when (!RegNext(io.cache(1).req.valid) && io.cache(1).req.valid) {
+      printf("icache addr %x\n", io.cache(1).req.addr)
+    }
   }
 
   assert(bit_cacheline <= 256) 
