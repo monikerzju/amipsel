@@ -129,7 +129,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val latestBJPC       = RegInit(startAddr.U) // cannot deal with the second is Exception and the first is non-bj
   val wbExcepts        = Wire(Vec(backendFuN, Bool()))
   val wbMisalignedAddr = RegNext(io.dcache.req.bits.addr)
-  val wbInterruptd     = RegNext(exInterruptd)
+  val wbInterruptd     = RegNext(exInterruptd && !io.fb.bmfs.redirect_kill)
   val wbALUOvf         = RegInit(false.B)
   val wbMDUOvf         = RegInit(false.B)
   val wbLdMa           = RegInit(false.B)
