@@ -20,8 +20,8 @@ trait Config {
   // Cache
   val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
-  var iTagBits: Int = 19
-  var iIndexBits: Int = 8   // 8KB now
+  var iTagBits: Int = 18
+  var iIndexBits: Int = 9   // 8KB now
   var dTagBits: Int = 18
   var dIndexBits: Int = 9   // 16KB now
   var offsetBits: Int = 5
