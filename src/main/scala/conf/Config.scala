@@ -18,7 +18,7 @@ trait Config {
   var backendFuN: Int = 3
   val queueSize: Int = 8
   // Cache
-  val traceCache: Boolean = true
+  val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
   var iTagBits: Int = 19
   var iIndexBits: Int = 8   // 8KB now
