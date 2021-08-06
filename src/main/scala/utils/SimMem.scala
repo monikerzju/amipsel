@@ -16,7 +16,7 @@ class SimMem extends Module with Config with MemAccessType {
 
   val write_ram = WireDefault(true.B)
 
-  val ram_mask = "h4000000".U
+  val ram_mask = "h3ffffff".U
   val icandidates = Wire(Vec(32, UInt(8.W)))
   val dcandidates = Wire(Vec(32, UInt(8.W)))
 

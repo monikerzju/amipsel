@@ -127,6 +127,12 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     renarrow := Mux(stall_f, renarrow, pc_gen.io.narrow_o)
   }
 
+  if (verilator) {
+    when(io.icache.resp.valid) {
+      printf("Inst at [%x] is [%x]\n", RegNext(io.icache.req.bits.addr), io.icache.resp.bits.rdata(0))
+    }
+  }
+
   io.icache.req.valid      := true.B
   io.icache.resp.ready     := true.B 
   io.icache.req.bits.addr  := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
