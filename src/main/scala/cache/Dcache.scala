@@ -46,6 +46,21 @@ import conf._
 import icore._
 import chisel3.util.experimental.BoringUtils
 
+class MetaIOISimple extends Bundle with Config {
+  val index_in = Input(UInt(dIndexBits.W))
+  val tags_in = Input(UInt(dTagBits.W))
+  val update = Input(Bool())
+  val hit = Output(Bool())
+  // val aux_index = Input(UInt((dIndexBits).W))
+  // val aux_tag = Input(UInt((dTagBits).W))
+}
+
+class MetaIODSimple extends MetaIOISimple with Config {
+  val write = Input(Bool())
+  val tag = Output(UInt(dTagBits.W))
+  val dirty = Output(Bool())
+}
+
 class MetaDataBRAM(nline: Int) extends Module with Config {
   // to support simutanious write and read, implement dirty bit with regs
 
