@@ -129,7 +129,7 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
 
   if (verilator) {
     when(io.icache.resp.valid) {
-      printf("Inst at [%x] is [%x]\n", RegNext(io.icache.req.bits.addr), io.icache.resp.bits.rdata(0))
+      // printf("Inst at [%x] is [%x]\n", RegNext(io.icache.req.bits.addr), io.icache.resp.bits.rdata(0))
     }
   }
 

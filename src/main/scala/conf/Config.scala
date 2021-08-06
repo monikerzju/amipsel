@@ -10,7 +10,7 @@ trait Config {
   var startAddr: String = "h80000000" // TODO configurable "hbfc00000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
-  var statusVal: String = "b00000000010000000000000000000000"
+  var statusVal: String = "b00000000000000000000000000000000" // TODO configurable "b00000000010000000000000000000000"
   var withBigCore: Boolean = false   // big core for final
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2

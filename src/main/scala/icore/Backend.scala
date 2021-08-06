@@ -750,7 +750,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   if (verilator) {
     // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
     BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
-    BoringUtils.addSource(VecInit((0 to 2).map(i => wbInsts(i).pc)), "difftestPCs")
+    BoringUtils.addSource(VecInit((0 to 2).map(i => Mux(wbInstsValid(i), wbInsts(i).pc, 0.U))), "difftestPCs")
   }
 
 

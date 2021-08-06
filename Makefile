@@ -1,5 +1,7 @@
 DIR := $(CURDIR)
 
+default: veri
+
 diff:
 	sbt "runMain tile.GenT -diff"
 	cat $(DIR)/build/verilog/tile/single_port_ram.v >> build/verilog/tile/Tile.v

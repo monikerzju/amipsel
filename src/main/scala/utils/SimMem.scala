@@ -31,7 +31,7 @@ class SimMem extends Module with Config with MemAccessType {
     when(io.icache_io.req.addr >= "h84000000".U) {
       printf("icache is accessing %x, ram overflow\n", io.icache_io.req.addr)
     }
-    printf("icache reading %x, inst is %x\n", io.icache_io.req.addr, icandidates(0))
+    // printf("icache reading %x, inst is %x\n", io.icache_io.req.addr, icandidates(0))
   }
 
   // For simplicity, fixed at 0x8000_0000 to 0x8400_0000 RAM, 64MB
@@ -43,6 +43,8 @@ class SimMem extends Module with Config with MemAccessType {
     icandidates(i) := memory.read(ram_mask & (io.icache_io.req.addr + i.U))
     dcandidates(i) := memory.read(ram_mask & (io.dcache_io.req.addr + i.U))
   }
+
+//   printf("mem 0x80000000 is %x\n", Cat(memory.read(3.U), memory.read(2.U), memory.read(1.U), memory.read(0.U)))
 
   // read is simple
   io.icache_io.resp.valid := RegNext(io.icache_io.req.valid)
