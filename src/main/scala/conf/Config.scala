@@ -7,7 +7,7 @@ trait Config {
   var useLookupBi: Boolean = false
   // Basic Option
   var len: Int = 32
-  var startAddr: String = "hbfc00000"
+  var startAddr: String = "h80000000" // TODO configurable "hbfc00000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"

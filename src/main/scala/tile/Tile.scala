@@ -2,6 +2,7 @@ package tile
 import chisel3._
 import chisel3.stage._
 import fu._
+import utils._
 import icore._
 import cache._
 import conf.Config
@@ -54,8 +55,38 @@ class Tile(diffTestV: Boolean) extends Module with Config {
   io.axi3 <> xbar.io.axi3
 }
 
+class DifftestIO extends Bundle {
+  val regs     = Output(Vec(32, UInt(32.W)))
+  val valids   = Output(Vec(3, UInt(1.W)))
+  val pcs      = Output(Vec(3, UInt(32.W)))
+}
+
+class TileForVerilator extends Module with Config {
+  val io = IO(new Bundle{
+    val difftest = new DifftestIO
+  })
+
+  val core = Module(new Core(false, true))  // difftest = false, verilator = true
+  val icache = Module(new ICache(verilator=true))
+  val dcache = Module(new DCacheSimple(verilator=true))
+  val mem = Module(new SimMem)
+
+  // TODO sim UART and interrupt
+  core.io.interrupt := 0.U(6.W).asBools
+  core.io.icache <> icache.io.cpu
+  core.io.dcache <> dcache.io.cpu
+  mem.io.icache_io <> icache.io.bar
+  mem.io.dcache_io <> dcache.io.bar
+
+  val difftest = WireInit(0.U.asTypeOf(new DifftestIO))
+  BoringUtils.addSink(difftest.regs,    "difftestRegs")
+  BoringUtils.addSink(difftest.valids,  "difftestValids")
+  BoringUtils.addSink(difftest.pcs,     "difftestPCs")
+  io.difftest := difftest
+}
+
 // Verilator Shell, only for Loooooongson CUP, not configurable for simple
-class TileForVerilator extends RawModule {
+class TileForProject extends RawModule {
   override val desiredName = s"mycpu_top"
 
   val aclk         = IO(Input(Clock()))
@@ -167,23 +198,21 @@ object GenT {
   }
 }
 
-// run `sbt "runMain tile.GenC"` in terminal
-object GenC {
-  def main(args: Array[String]): Unit = {
-    val packageName = this.getClass.getPackage.getName
-
-    (new chisel3.stage.ChiselStage).execute(
-      Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
-      Seq(ChiselGeneratorAnnotation(() => new Core(false, args.contains("-verilator")))))
-  }
-}
-
 object GenTV {
   def main(args: Array[String]): Unit = {
     val packageName = this.getClass.getPackage.getName
-
     (new chisel3.stage.ChiselStage).execute(
       Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
       Seq(ChiselGeneratorAnnotation(() => new TileForVerilator)))
+  }
+}
+
+object GenTP {
+  def main(args: Array[String]): Unit = {
+    val packageName = this.getClass.getPackage.getName
+
+    (new chisel3.stage.ChiselStage).execute(
+      Array("-td", "build/verilog/"+packageName, "-X", "verilog"),
+      Seq(ChiselGeneratorAnnotation(() => new TileForProject)))
   }
 }

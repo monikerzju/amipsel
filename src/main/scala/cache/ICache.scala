@@ -7,7 +7,7 @@ import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
 
-class ICacheMeta(DEPTH: Int, DATA_WIDTH: Int) extends Module with Config {
+class ICacheMeta(DEPTH: Int, DATA_WIDTH: Int, verilator: Boolean = false) extends Module with Config {
   val io = IO(new Bundle {
     val we    = Input(Bool())
     val addr  = Input(UInt(log2Ceil(DEPTH).W))
@@ -16,7 +16,7 @@ class ICacheMeta(DEPTH: Int, DATA_WIDTH: Int) extends Module with Config {
     val dout_next = Output(UInt(DATA_WIDTH.W))
   })
 
-  val blk = Module(new BRAMSyncReadMem(DEPTH, DATA_WIDTH))
+  val blk = if (verilator) Module(new SPSyncReadMem(DEPTH, DATA_WIDTH)) else Module(new BRAMSyncReadMem(DEPTH, DATA_WIDTH))
   blk.io.we    := io.we
   blk.io.addr  := io.addr
   blk.io.din   := io.din
@@ -25,15 +25,15 @@ class ICacheMeta(DEPTH: Int, DATA_WIDTH: Int) extends Module with Config {
 
 }
 
-class ICache extends Module with Config with MemAccessType {
+class ICache(verilator: Boolean = false) extends Module with Config with MemAccessType {
   val io = IO(new Bundle {
     val cpu = new MemIO()
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
   val nline = 1 << iIndexBits
 
-  val data = Module(new BRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = Module(new ICacheMeta(nline, iTagBits + 1))
+  val data = if (verilator) Module(new SPSyncReadMem(nline, 1 << (offsetBits + 3))) else Module(new BRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
+  val meta = Module(new ICacheMeta(nline, iTagBits + 1, verilator))
   val tag_req   = io.cpu.req.bits.addr(len - 1, len - iTagBits)
   val index_req = io.cpu.req.bits.addr(len - iTagBits - 1, len - iTagBits - iIndexBits)
 

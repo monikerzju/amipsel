@@ -61,12 +61,12 @@ class MetaIODSimple extends MetaIOISimple with Config {
   val dirty = Output(Bool())
 }
 
-class MetaDataBRAM(nline: Int) extends Module with Config {
+class MetaDataBRAM(nline: Int, verilator: Boolean = false) extends Module with Config {
   // to support simutanious write and read, implement dirty bit with regs
 
   // FIXME: io.write-> reg_write
   val io = IO(new MetaIODSimple)
-  val blk = Module(new DPBRAMSyncReadMem(nline, dTagBits + 2))
+  val blk = if (verilator) Module(new DPSyncReadMem(nline, dTagBits + 2)) else Module(new DPBRAMSyncReadMem(nline, dTagBits + 2))
 
   val dout = Mux(RegNext(blk.io.web && blk.io.addra === blk.io.addrb),RegNext(blk.io.dinb),blk.io.douta)
   val v = dout(dTagBits)
@@ -90,7 +90,7 @@ class MetaDataBRAM(nline: Int) extends Module with Config {
   // always return hit after writing meta
   io.tag := t
 }
-class DCacheSimple(diffTest: Boolean = true)
+class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
     extends Module
     with MemAccessType
     with Config {
@@ -110,8 +110,8 @@ class DCacheSimple(diffTest: Boolean = true)
   )
   val state = RegInit(s_normal)
   val nline = 1 << dIndexBits
-  val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = Module(new MetaDataBRAM(nline));
+  val data = if (verilator) Module(new DPSyncReadMem(nline, 1 << (offsetBits + 3))) else Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
+  val meta = Module(new MetaDataBRAM(nline, verilator));
   val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
   // 0x80000000-0xa000000
   // translate virtual addr from start
