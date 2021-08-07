@@ -25,6 +25,10 @@ trait Config {
   var dIndexBits: Int = 9   // 16KB now
   var offsetBits: Int = 5
   var dataBits: Int = 256
+  // TLB
+  var VPNSize: Int = 19
+  var PFNSize: Int = 20
+  var TLBSize: Int = 32
   // BPU
   var traceBPU: Boolean = false
   var BPUEntryN: Int = 256

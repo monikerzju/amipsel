@@ -62,6 +62,11 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
 class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType with FrontToBack {
   val io = IO(new FrontendIO)
 
+  val tlb = Module(new TLB)
+  tlb.io.virt_addr := 0.U
+  tlb.io.din := 0.U.asTypeOf(new TLBEntryIO)
+  tlb.io.refType := 0.U(2.W)
+  tlb.io.op := 0.U(2.W)
   // IF
   val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN))
   val cache_stall    = Wire(Bool())

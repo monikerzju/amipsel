@@ -112,6 +112,33 @@ class CauseStruct extends Bundle {
   val res2 = Output(UInt(2.W))
 }
 
+class EntryHiStruct extends Bundle {
+  val vpn2 = Output(UInt((31 - 13 + 1).W))
+  val const0 = Output(UInt((12 - 8 + 1).W))
+  val asid = Output(UInt(8.W))
+}
+
+class EntryLoStruct extends Bundle {
+  val const0 = Output(UInt((31 - 26 + 1).W))
+  val pfn = Output(UInt((25 - 6 + 1).W))
+  val c = Output(UInt((5 - 3 + 1).W))
+  val d = Output(UInt(1.W))
+  val v = Output(UInt(1.W))
+  val g = Output(UInt(1.W))
+}
+
+class PageMaskStruct extends Bundle {
+  val const0_0 = Output(UInt((31 - 25 + 1).W))
+  val mask = Output(UInt((24 - 13 + 1).W))
+  val const0_1 = Output(UInt(13.W))
+}
+
+class IndexStruct extends Bundle with Config {
+  val p = Output(UInt(1.W))
+  val const0 = Output(UInt((30 - log2Ceil(TLBSize + 1) + 1).W))
+  val index = Output(UInt(log2Ceil(TLBSize + 1).W))
+}
+
 // Put CP0 in WB stage anyway
 class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config {
   val io = IO(new CP0IO)
