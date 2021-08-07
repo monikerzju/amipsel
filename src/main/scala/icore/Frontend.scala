@@ -63,9 +63,11 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
   val io = IO(new FrontendIO)
 
   val tlb = Module(new TLB)
-  tlb.io.virt_addr := 0.U
+  tlb.io.addrTransl(0).virt_addr := 0.U
+  tlb.io.addrTransl(1).virt_addr := 0.U
   tlb.io.din := 0.U.asTypeOf(new TLBEntryIO)
-  tlb.io.refType := 0.U(2.W)
+  tlb.io.addrTransl(0).refType := 0.U(2.W)
+  tlb.io.addrTransl(1).refType := 0.U(2.W)
   tlb.io.op := 0.U(2.W)
   // IF
   val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN))

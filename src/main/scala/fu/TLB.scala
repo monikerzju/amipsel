@@ -43,16 +43,21 @@ class TLBExceptIO extends Bundle with Config {
   // TODO: asid
 }
 
-class TLBIO extends Bundle with Config with RefType with TLBOpType {
+class TLBAddrTransl extends Bundle with Config with RefType {
   val refType = Input(UInt(REFTYPE_SIZE.W))
   val virt_addr = Input(UInt(len.W))
   val phys_addr = Output(UInt(len.W))
+  val isFind = Output(Bool())
+}
+
+class TLBIO extends Bundle with Config with RefType with TLBOpType {
+  val addrTransl = Vec(2, new TLBAddrTransl)
   val op = Input(UInt(TLBOPTYPE_SIZE.W))
   val din = Flipped(new TLBEntryIO)
   val dout = new TLBEntryIO
-  val isFind = Output(Bool())
   val exp = new TLBExceptIO
 }
+
 
 class TLBEntry extends Bundle {
   class TLBEntryHi extends Bundle {
@@ -82,66 +87,7 @@ class TLB extends Module with Config with RefType with TLBOpType {
   // TODO: check TLB initialize
   val entries = Reg(Vec(TLBSize ,new TLBEntry))
 
-  io.isFind := false.B
-  var entryIdx: Int = -1
-
-  // TODO: complete mask
-  for(i <- 0 until TLBSize) {
-    when ((entries(i).entryHi.vpn2 === io.virt_addr(31, 13))
-      && (entries(i).g.asBool() || entries(i).entryHi.asid === io.din.entryHi.asid)) {
-      io.isFind := true.B
-      entryIdx = i
-    }
-  }
-
-  val pfn = Wire(UInt(PFNSize.W))
-  val c = Wire(UInt(3.W))
-  val d = Wire(UInt(1.W))
-  val v = Wire(UInt(1.W))
-
-  // TODO: use MUX to simplify io.exp
-  io.exp.expType := 0.U
-  io.exp.expVec := false.B
-  io.exp.badVaddr := 0.U
-  io.exp.vpn := 0.U
-  when (io.isFind) {
-    when(io.virt_addr(12).asBool()) { // odd
-      pfn := entries(entryIdx).entryLo(1).pfn
-      c := entries(entryIdx).entryLo(1).c
-      d := entries(entryIdx).entryLo(1).d
-      v := entries(entryIdx).entryLo(1).v
-    } .otherwise {
-      pfn := entries(entryIdx).entryLo(0).pfn
-      c := entries(entryIdx).entryLo(0).c
-      d := entries(entryIdx).entryLo(0).d
-      v := entries(entryIdx).entryLo(0).v
-    }
-    when(!v.asBool()) {
-      // SignalException(TLBInvalid, reftype)
-      io.exp.expType := Mux(io.refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
-      io.exp.badVaddr := io.virt_addr
-      io.exp.vpn := io.virt_addr(31, 12)
-    } .elsewhen (!d.asBool() && io.refType === store.U(REFTYPE_SIZE.W)) {
-      // TODO: SignalException(TLBModified)
-      io.exp.expType := TLBExceptType.mod
-      io.exp.badVaddr := io.virt_addr
-      io.exp.vpn := io.virt_addr(31, 12)
-    }
-  } .otherwise {
-    pfn := 0.U(PFNSize.W)
-    c := 0.U(3.W)
-    d := 0.U
-    v := 0.U
-    // SignalException(TLBMiss, reftype)
-    io.exp.expType := Mux(io.refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
-    io.exp.badVaddr := io.virt_addr
-    io.exp.vpn := io.virt_addr(31, 12)
-    io.exp.expVec := true.B // use expvec = 0xbfc00200
-  }
-
-  val page_offset = io.virt_addr(11, 0)
-  io.phys_addr := Cat(pfn, page_offset)
-
+  // tlb operation
   io.dout := 0.U((new TLBEntryIO).getWidth.W).asTypeOf(new TLBEntryIO)
   switch (io.op) {
     is (tlbp.U) {
@@ -181,4 +127,68 @@ class TLB extends Module with Config with RefType with TLBOpType {
       }
     }
   }
+
+  // address translate
+  for (j <- 0 until 2) {
+    io.addrTransl(j).isFind := false.B
+    var entryIdx: Int = -1
+
+    // TODO: complete mask
+    for(i <- 0 until TLBSize) {
+      when ((entries(i).entryHi.vpn2 === io.addrTransl(j).virt_addr(31, 13))
+        && (entries(i).g.asBool() || entries(i).entryHi.asid === io.din.entryHi.asid)) {
+        io.addrTransl(j).isFind := true.B
+        entryIdx = i
+      }
+    }
+
+    val pfn = Wire(UInt(PFNSize.W))
+    val c = Wire(UInt(3.W))
+    val d = Wire(UInt(1.W))
+    val v = Wire(UInt(1.W))
+
+    // TODO: use MUX to simplify io.exp
+    io.exp.expType := 0.U
+    io.exp.expVec := false.B
+    io.exp.badVaddr := 0.U
+    io.exp.vpn := 0.U
+    when (io.addrTransl(j).isFind) {
+      when(io.addrTransl(j).virt_addr(12).asBool()) { // odd
+        pfn := entries(entryIdx).entryLo(1).pfn
+        c := entries(entryIdx).entryLo(1).c
+        d := entries(entryIdx).entryLo(1).d
+        v := entries(entryIdx).entryLo(1).v
+      } .otherwise {
+        pfn := entries(entryIdx).entryLo(0).pfn
+        c := entries(entryIdx).entryLo(0).c
+        d := entries(entryIdx).entryLo(0).d
+        v := entries(entryIdx).entryLo(0).v
+      }
+      when(!v.asBool()) {
+        // SignalException(TLBInvalid, reftype)
+        io.exp.expType := Mux(io.addrTransl(j).refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
+        io.exp.badVaddr := io.addrTransl(j).virt_addr
+        io.exp.vpn := io.addrTransl(j).virt_addr(31, 12)
+      } .elsewhen (!d.asBool() && io.addrTransl(j).refType === store.U(REFTYPE_SIZE.W)) {
+        // TODO: SignalException(TLBModified)
+        io.exp.expType := TLBExceptType.mod
+        io.exp.badVaddr := io.addrTransl(j).virt_addr
+        io.exp.vpn := io.addrTransl(j).virt_addr(31, 12)
+      }
+    } .otherwise {
+      pfn := 0.U(PFNSize.W)
+      c := 0.U(3.W)
+      d := 0.U
+      v := 0.U
+      // SignalException(TLBMiss, reftype)
+      io.exp.expType := Mux(io.addrTransl(j).refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
+      io.exp.badVaddr := io.addrTransl(j).virt_addr
+      io.exp.vpn := io.addrTransl(j).virt_addr(31, 12)
+      io.exp.expVec := true.B // use expvec = 0xbfc00200
+    }
+
+    val page_offset = io.addrTransl(j).virt_addr(11, 0)
+    io.addrTransl(j).phys_addr := Cat(pfn, page_offset)
+  }
+
 }
