@@ -65,10 +65,10 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
   val tlb = Module(new TLB)
   tlb.io.addrTransl(0).virt_addr := 0.U
   tlb.io.addrTransl(1).virt_addr := 0.U
-  tlb.io.din := 0.U.asTypeOf(new TLBEntryIO)
+  tlb.io.execOp.din := 0.U.asTypeOf(new TLBEntryIO)
   tlb.io.addrTransl(0).refType := 0.U(2.W)
   tlb.io.addrTransl(1).refType := 0.U(2.W)
-  tlb.io.op := 0.U(2.W)
+  tlb.io.execOp.op := 0.U(2.W)
   // IF
   val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN, verilator))
   val cache_stall    = Wire(Bool())
