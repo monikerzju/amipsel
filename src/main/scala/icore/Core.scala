@@ -4,8 +4,7 @@ import chisel3._
 import chisel3.util._
 import conf.Config
 import isa.MicroOpCtrl._
-import fu.CauseExcCode
-import fu.BHTExeUpdate
+import fu.{BHTExeUpdate, CauseExcCode, TLB, TLBAddrTranslIO, TLBOpIO}
 
 // for a 2-insts slot (cache/frontbackend), if only 1 is filled, it will go to the lower (least significant) Config.${len} bits
 
@@ -41,12 +40,15 @@ class FrontBackIO extends Bundle with Config {
 class FrontendIO extends Bundle with Config {
   val fb = new FrontBackIO
   val icache = Flipped(new MemIO())
+  val tlb = Flipped(new TLBAddrTranslIO)
 }
 
 class BackendIO extends Bundle with Config with CauseExcCode {
   val fb = Flipped(new FrontBackIO)
   val dcache = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
+  val tlbAddrTransl = Flipped(new TLBAddrTranslIO)
+  val tlbExc = Flipped(new TLBOpIO)
 }
 
 trait MemAccessType {
@@ -93,10 +95,14 @@ class Core(diffTestV: Boolean) extends Module with Config {
 
   val fe = Module(new Frontend(diffTestV))
   val be = Module(new Backend(diffTestV))
+  val tlb = Module(new TLB)
 
   fe.io.fb <> be.io.fb
   be.io.interrupt := io.interrupt.map((i: Bool) => RegNext(i))
 
+  fe.io.tlb <> tlb.io.addrTransl(0) // icache
+  be.io.tlbAddrTransl <> tlb.io.addrTransl(1) // dcache
+  be.io.tlbExc <> tlb.io.execOp // cp0
   io.icache <> fe.io.icache
   io.dcache <> be.io.dcache
 }
