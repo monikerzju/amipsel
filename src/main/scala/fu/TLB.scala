@@ -19,11 +19,28 @@ trait TLBOpType {
   val TLBOPTYPE_SIZE = 2
 }
 
+object TLBExceptType {
+  val TLBEXPTYPE_SIZE = 2
+  val noExp = 0.U(TLBEXPTYPE_SIZE.W)
+  val mod = 1.U(TLBEXPTYPE_SIZE.W)
+  val tlbl = 2.U(TLBEXPTYPE_SIZE.W)
+  val tlbs = 3.U(TLBEXPTYPE_SIZE.W)
+
+}
+
 class TLBEntryIO extends Bundle with Config {
   val entryHi = Output(new EntryHiStruct)
   val entryLo = Output(Vec(2, new EntryLoStruct))
   val pageMask = Output(new PageMaskStruct)
   val index = Output(new IndexStruct)
+}
+
+class TLBExceptIO extends Bundle with Config {
+  val expType = Output(UInt(TLBExceptType.TLBEXPTYPE_SIZE.W))
+  val expVec = Output(Bool())
+  val badVaddr = Output(UInt(len.W))
+  val vpn = Output(UInt(VPNSize.W))
+  // TODO: asid
 }
 
 class TLBIO extends Bundle with Config with RefType with TLBOpType {
@@ -34,6 +51,7 @@ class TLBIO extends Bundle with Config with RefType with TLBOpType {
   val din = Flipped(new TLBEntryIO)
   val dout = new TLBEntryIO
   val isFind = Output(Bool())
+  val exp = new TLBExceptIO
 }
 
 class TLBEntry extends Bundle {
@@ -81,6 +99,11 @@ class TLB extends Module with Config with RefType with TLBOpType {
   val d = Wire(UInt(1.W))
   val v = Wire(UInt(1.W))
 
+  // TODO: use MUX to simplify io.exp
+  io.exp.expType := 0.U
+  io.exp.expVec := false.B
+  io.exp.badVaddr := 0.U
+  io.exp.vpn := 0.U
   when (io.isFind) {
     when(io.virt_addr(12).asBool()) { // odd
       pfn := entries(entryIdx).entryLo(1).pfn
@@ -94,17 +117,26 @@ class TLB extends Module with Config with RefType with TLBOpType {
       v := entries(entryIdx).entryLo(0).v
     }
     when(!v.asBool()) {
-      // TODO: SignalException(TLBInvalid, reftype)
+      // SignalException(TLBInvalid, reftype)
+      io.exp.expType := Mux(io.refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
+      io.exp.badVaddr := io.virt_addr
+      io.exp.vpn := io.virt_addr(31, 12)
     } .elsewhen (!d.asBool() && io.refType === store.U(REFTYPE_SIZE.W)) {
       // TODO: SignalException(TLBModified)
+      io.exp.expType := TLBExceptType.mod
+      io.exp.badVaddr := io.virt_addr
+      io.exp.vpn := io.virt_addr(31, 12)
     }
   } .otherwise {
     pfn := 0.U(PFNSize.W)
     c := 0.U(3.W)
     d := 0.U
     v := 0.U
-    // TODO: SignalException(TLBMiss, reftype)
-
+    // SignalException(TLBMiss, reftype)
+    io.exp.expType := Mux(io.refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
+    io.exp.badVaddr := io.virt_addr
+    io.exp.vpn := io.virt_addr(31, 12)
+    io.exp.expVec := true.B // use expvec = 0xbfc00200
   }
 
   val page_offset = io.virt_addr(11, 0)
