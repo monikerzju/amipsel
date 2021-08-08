@@ -13,9 +13,10 @@ trait RefType {
 }
 
 trait TLBOpType {
-  val tlbp = 0
-  val tlbr = 1
-  val tlbwi = 2
+  val notlb = 0
+  val tlbp = 1
+  val tlbr = 2
+  val tlbwi = 3
   val TLBOPTYPE_SIZE = 2
 }
 
@@ -36,10 +37,10 @@ class TLBEntryIO extends Bundle with Config {
 }
 
 class TLBExceptIO extends Bundle with Config {
-  val expType = Output(UInt(TLBExceptType.TLBEXPTYPE_SIZE.W))
-  val expVec = Output(Bool())
-  val badVaddr = Output(UInt(len.W))
-  val vpn = Output(UInt(VPNSize.W))
+  val expType = UInt(TLBExceptType.TLBEXPTYPE_SIZE.W)
+  val expVec = Bool()
+  val badVaddr = UInt(len.W)
+  val vpn = UInt(VPNSize.W)
   // TODO: asid
 }
 
@@ -48,7 +49,7 @@ class TLBAddrTranslIO extends Bundle with Config with RefType {
   val virt_addr = Input(UInt(len.W))
   val phys_addr = Output(UInt(len.W))
   val isFind = Output(Bool())
-  val exp = new TLBExceptIO
+  val exp = Output(new TLBExceptIO)
 }
 
 class TLBOpIO extends Bundle with Config with TLBOpType {
@@ -57,9 +58,10 @@ class TLBOpIO extends Bundle with Config with TLBOpType {
   val dout = new TLBEntryIO
 }
 
-class TLBIO extends Bundle with Config {
-  val addrTransl = Vec(2, new TLBAddrTranslIO)
+class TLBIO(port: Int = 3) extends Bundle with Config {
+  val addrTransl = Vec(port, new TLBAddrTranslIO)
   val execOp = new TLBOpIO
+  override def cloneType = new TLBIO(port).asInstanceOf[this.type]
 }
 
 
@@ -86,8 +88,8 @@ class TLBEntry extends Bundle {
   val entryLo = Vec(2, new TLBEntryLo)
 }
 
-class TLB extends Module with Config with RefType with TLBOpType {
-  val io = IO(new TLBIO)
+class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType {
+  val io = IO(new TLBIO(port))
   // TODO: check TLB initialize
   val entries = Reg(Vec(TLBSize ,new TLBEntry))
 
@@ -133,7 +135,7 @@ class TLB extends Module with Config with RefType with TLBOpType {
   }
 
   // address translate
-  for (j <- 0 until 2) {
+  for (j <- 0 until port) {
     io.addrTransl(j).isFind := false.B
     var entryIdx: Int = -1
 
