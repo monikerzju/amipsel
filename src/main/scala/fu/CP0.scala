@@ -1,8 +1,9 @@
 package fu
 
 import chisel3._
-import chisel3.util._ 
-import conf.Config 
+import chisel3.util._
+import chisel3.util.experimental.BoringUtils
+import conf.Config
 
 trait CP0Code {
   val Index    = 0
@@ -50,10 +51,14 @@ trait CauseExcCode {
   val SZ_EXC_CODE  = Trap + 1
   val SZ_HARD_INT  = 6
   val SZ_SOFT_INT  = 2
-  
+
+  // TODO: tlb_exp diff between data access and inst fetch
   val ExceptPriority = Seq(
     Interrupt,
     AddrErrLoad,
+    TLBLoad,
+    TLBStore,
+    TLBModify,
     ReservedInst,
     Overflow,
     Trap,
@@ -85,10 +90,16 @@ class ExceptIO extends Bundle with Config with CauseExcCode {
   val except_redirect = Output(UInt(len.W))
 }
 
+class FromToTlb extends Bundle with Config {
+  val exc = new TLBOpIO
+  val vpn = Input(UInt(VPNSize.W))
+  val expVec = Input(Bool())
+}
 // There might be other IO, but we will use BoringUtils.
 class CP0IO extends Bundle with Config {
   val ftc = new FromToCIO
   val except = new ExceptIO
+  val ftTlb = new FromToTlb
 }
 
 class StatusStruct extends Bundle {
@@ -140,7 +151,7 @@ class IndexStruct extends Bundle with Config {
 }
 
 // Put CP0 in WB stage anyway
-class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config {
+class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config with TLBOpType {
   val io = IO(new CP0IO)
 
   val badvaddrr = Reg(UInt(len.W))
@@ -149,6 +160,38 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val statusr   = RegInit(statusVal.U(len.W))
   val causer    = RegInit(0.U(len.W))
   val epcr      = Reg(UInt(len.W))
+  val entryHir   = RegInit(0.U(len.W))
+  val entryLor   = RegInit(VecInit(Seq.fill(2)(0.U(len.W))))
+  val pageMaskr  = RegInit(0.U(len.W))
+  val indexr     = RegInit(0.U(len.W))
+
+//  val tlb_vpn = Wire(UInt(VPNSize.W))
+//  BoringUtils.addSink(tlb_vpn, "tlb_vpn")
+//  val tlb_exp_vec = Wire(Bool())
+//  BoringUtils.addSink(tlb_exp_vec, "tlb_exp_vec")
+
+  io.ftTlb.exc.dout := {
+    val entry = Wire(new TLBEntryIO)
+    entry.entryHi  := entryHir.asTypeOf(new EntryHiStruct)
+    entry.pageMask := pageMaskr.asTypeOf(new PageMaskStruct)
+    entry.index    := indexr.asTypeOf(new IndexStruct)
+    for (i <- 0 until 2) {
+      entry.entryLo(i) := entryLor(i).asTypeOf(new EntryLoStruct)
+    }
+    entry
+  }
+
+  switch (io.ftTlb.exc.op) {
+    is (tlbr.U) {
+      entryHir     := io.ftTlb.exc.din.entryHi.asUInt()
+      entryLor(0)  := io.ftTlb.exc.din.entryLo(0).asUInt()
+      entryLor(1)  := io.ftTlb.exc.din.entryLo(1).asUInt()
+      pageMaskr    := io.ftTlb.exc.din.pageMask.asUInt()
+    }
+    is (tlbp.U) {
+      indexr := io.ftTlb.exc.din.index.asUInt()
+    }
+  }
 
   val tim_int = RegInit(false.B)
   when (io.ftc.wen && io.ftc.code === Compare.U && io.except.valid_inst) {
@@ -161,7 +204,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     !statusr.asTypeOf(new StatusStruct).exl &&
     statusr.asTypeOf(new StatusStruct).ie.asBool &&
     (Cat(real_hard_int_vec,
-    causer.asTypeOf(new CauseStruct).ips) & 
+    causer.asTypeOf(new CauseStruct).ips) &
     statusr.asTypeOf(new StatusStruct).im.asUInt).orR
   )
   val real_except_vec = Wire(Vec(SZ_EXC_CODE, Bool()))
@@ -188,10 +231,14 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     is (Cause.U)    { io.ftc.dout := read_causer    }
     is (EPC.U)      { io.ftc.dout := epcr           }
     is (Compare.U)  { io.ftc.dout := comparer       }
+    is (EntryHi.U)  { io.ftc.dout := entryHir        }
+    is (EntryLo0.U) { io.ftc.dout := entryLor(0)     }
+    is (EntryLo1.U) { io.ftc.dout := entryLor(1)     }
+    is (PageMask.U) { io.ftc.dout := pageMaskr       }
   }
 
   io.except.except_kill     := has_except || ret
-  io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
+  io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))
   io.except.call_for_int    := int_en
   countr := countr + 1.U
   when (has_except || error_ret) {
@@ -205,7 +252,10 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       causer := new_cause.asUInt
       epcr := Mux(error_ret, epcr, Mux(io.except.in_delay_slot, io.except.epc - 4.U, io.except.epc))
     }
-    badvaddrr := Mux(error_ret, epcr, Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U, io.except.bad_addr, badvaddrr))
+    badvaddrr := Mux(error_ret, epcr,
+      Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U || except_code === TLBLoad.U || except_code === TLBStore.U,
+        io.except.bad_addr, badvaddrr))
+    entryHir := Mux(except_code === TLBLoad.U || except_code === TLBStore.U, Cat(io.ftTlb.vpn, entryHir(12, 0)), entryHir)
   }.elsewhen (ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 0.U
@@ -220,6 +270,10 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (Cause.U)    { causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
       is (EPC.U)      { epcr := io.ftc.din                                                 }
       is (Compare.U)  { comparer := io.ftc.din                                             }
+      is (EntryHi.U)  { entryHir := io.ftc.din                                              }
+      is (EntryLo0.U) { entryLor(0) := io.ftc.din                                           }
+      is (EntryLo1.U) { entryLor(1) := io.ftc.din                                           }
+      is (PageMask.U) { pageMaskr := io.ftc.din                                             }
     }
   }
 }

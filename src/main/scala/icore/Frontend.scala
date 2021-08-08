@@ -59,16 +59,17 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   }
 }
 
-class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType with FrontToBack {
+class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType with FrontToBack with RefType {
   val io = IO(new FrontendIO)
 
-  val tlb = Module(new TLB)
-  tlb.io.addrTransl(0).virt_addr := 0.U
-  tlb.io.addrTransl(1).virt_addr := 0.U
-  tlb.io.execOp.din := 0.U.asTypeOf(new TLBEntryIO)
-  tlb.io.addrTransl(0).refType := 0.U(2.W)
-  tlb.io.addrTransl(1).refType := 0.U(2.W)
-  tlb.io.execOp.op := 0.U(2.W)
+//  val tlb = Module(new TLB)
+//  tlb.io.addrTransl(0).virt_addr := 0.U
+//  tlb.io.addrTransl(1).virt_addr := 0.U
+//  tlb.io.execOp.din := 0.U.asTypeOf(new TLBEntryIO)
+//  tlb.io.addrTransl(0).refType := 0.U(2.W)
+//  tlb.io.addrTransl(1).refType := 0.U(2.W)
+//  tlb.io.execOp.op := 0.U(2.W)
+
   // IF
   val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN))
   val cache_stall    = Wire(Bool())
@@ -134,9 +135,17 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
     renarrow := Mux(stall_f, renarrow, pc_gen.io.narrow_o)
   }
 
+  // 2 insts
+  // TODO: if exp happens, do not access icache
+  io.tlb(0).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+  io.tlb(0).refType   := fetch.U
+  io.tlb(1).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U)) + 4.U
+  io.tlb(1).refType   := fetch.U
+
   io.icache.req.valid      := true.B
   io.icache.resp.ready     := true.B 
-  io.icache.req.bits.addr  := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+//  io.icache.req.bits.addr  := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+  io.icache.req.bits.addr  := io.tlb(0).phys_addr
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen   := false.B
   if (frontendIssueN == 1) {
@@ -174,6 +183,7 @@ class Frontend(diffTestV: Boolean) extends Module with Config with MemAccessType
       decs(i).bht_predict_taken := false.B
       decs(i).target_pc := Cat(Fill(30, 0.U), decode_pc_second_state)
     }
+    decs(i).tlb_exp := io.tlb(i).exp
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
   predict_taken_but_not_br := decs(0).bht_predict_taken && decs(0).mops.next_pc =/= Branch && decs(0).mops.next_pc =/= Jump && decs(0).mops.next_pc =/= PCReg // TODO !quickCheckBranch(io.icache.resp.bits.rdata(0))

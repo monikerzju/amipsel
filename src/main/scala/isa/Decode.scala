@@ -1,13 +1,14 @@
 package isa
 
-import chisel3._ 
-import chisel3.util._ 
+import chisel3._
+import chisel3.util._
 import conf.Config
 import ISA._
 import MicroOpCtrl._
+import fu.{TLBExceptIO, TLBExceptType, TLBOpType}
 import icore.InstType
 
-class Mops extends Bundle with Config with InstType {
+class Mops extends Bundle with Config with InstType with TLBOpType {
   val illegal       = Bool()
   val next_pc       = UInt(SZ_NEXT_PC.W)
   val alu_mdu_lsu   = UInt(typeLen.W)
@@ -25,6 +26,8 @@ class Mops extends Bundle with Config with InstType {
   val pc            = UInt(len.W)
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
+  val tlb_exp       = new TLBExceptIO
+  val tlb_op        = UInt(TLBOPTYPE_SIZE.W)
 }
 
 class DecIO extends Bundle with Config {
@@ -32,10 +35,11 @@ class DecIO extends Bundle with Config {
   val inst              = Input(UInt(len.W))
   val bht_predict_taken = Input(Bool())
   val target_pc         = Input(UInt(len.W))
+  val tlb_exp           = Input(new TLBExceptIO)
   val mops              = Output(new Mops)
 }
 
-class Dec extends Module with InstType {
+class Dec extends Module with InstType with TLBOpType {
   val io = IO(new DecIO)
 
   val SHAMT = io.inst(10,  6)
@@ -51,6 +55,8 @@ class Dec extends Module with InstType {
 
   def T = true.B
   def F = false.B
+
+  val isTlbExp = io.tlb_exp.expType =/= TLBExceptType.noExp
 
   // First stage decode, illegal and which fu
   val control_signal = ListLookup(io.inst,
@@ -113,7 +119,10 @@ class Dec extends Module with InstType {
       SW         -> List(F ,  toLSU.U),     
       ERET       -> List(F ,  toBJU.U),
       MFC0       -> List(F ,  toBJU.U),
-      MTC0       -> List(F ,  toBJU.U)
+      MTC0       -> List(F ,  toBJU.U),
+      TLBP       -> List(F ,  toBJU.U),
+      TLBR       -> List(F ,  toBJU.U),
+      TLBWI      -> List(F ,  toBJU.U),
   )) 
 
   val alu_signal = ListLookup(io.inst, 
@@ -195,7 +204,7 @@ class Dec extends Module with InstType {
       SYS   -> List(Trap    ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
       ERET  -> List(Ret     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
       MFC0  -> List(PC4     ,  ACP0   ,  DReg  ,  WBReg     , IRD , IXX , IRT),
-      MTC0  -> List(PC4     ,  AReg   ,  DCP0  ,  WBReg     , IRT , IXX , IRD)
+      MTC0  -> List(PC4     ,  AReg   ,  DCP0  ,  WBReg     , IRT , IXX , IRD),
     )    
   )
 
@@ -215,10 +224,10 @@ class Dec extends Module with InstType {
   // MDU   0     | pc4  | ?    | xxx | areg   | breg   |  ?     |   ?     |    xxx    |  mdu   |  rs?  |   ?   | xxx  |  simm    4 fields
   // BJU   ?     |  ?   | bj   | ?   |   ?    | bxxx   |   ?    |  alusubu|    xxx    |  ?     |  rs?  | rt?   |  ?   |   ?      10 fields
   // LSU   0     | pc4  | ?    | xxx | areg   | bimm   |   ?    |  add    |   ?       |  xxx   |  rs?  | ?     |  ?   |  simm    6 fields
- 
-  io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
+
+  io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR || isTlbExp
   io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
-  io.mops.alu_mdu_lsu   := control_signal(1)
+  io.mops.alu_mdu_lsu   := Mux(isTlbExp, toBJU.U, control_signal(1))
   io.mops.branch_type   := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
   io.mops.src_a         := MuxLookup(control_signal(1), AReg,
                              Seq(
@@ -282,4 +291,13 @@ class Dec extends Module with InstType {
   io.mops.pc            := io.pc
   io.mops.predict_taken := io.bht_predict_taken
   io.mops.target_pc     := io.target_pc
+  io.mops.tlb_exp       := io.tlb_exp
+  io.mops.tlb_op        := ListLookup(io.inst, List(notlb.U),
+                            Array (
+                              TLBP  -> List(tlbp.U),
+                              TLBR  -> List(tlbr.U),
+                              TLBWI -> List(tlbwi.U),
+                            )
+                          )(0)
+
 }
