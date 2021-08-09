@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._ 
 import conf.Config 
 
-trait CP0Code {
+trait CP0Code extends Config {
   val Index    = 0
   val Random   = 1
   val EntryLo0 = 2
@@ -27,8 +27,8 @@ trait CP0Code {
   val SZ_CP0_CODE = log2Ceil(TagLo)
   val SZ_CP0_SEL  = 1
 
-  val StatusWMask  = "b00000000000000001111111100000011"
-  val nStatusWMask = "b11111111111111110000000011111100"
+  val StatusWMask  = if (withBigCore) "b00010000000000001111111100000011" else "b00000000000000001111111100000011"
+  val nStatusWMask = if (withBigCore) "b11101111111111110000000011111100" else "b11111111111111110000000011111100"
 }
 
 trait CauseExcCode {
@@ -91,12 +91,14 @@ class CP0IO extends Bundle with Config {
   val except = new ExceptIO
 }
 
-class StatusStruct extends Bundle {
-  val res0 = Output(UInt((31-23+1).W))
+class StatusStruct extends Bundle with Config {
+  val res0 = if (withBigCore) Output(UInt((31-27+1).W)) else Output(UInt((31-28+1).W))
+  val cu0  = if (withBigCore) Output(UInt(1.W)) else null
+  val res1 = Output(UInt((27-23+1).W))
   val bev  = Output(UInt(1.W))
-  val res1 = Output(UInt((21-16+1).W))
+  val res2 = Output(UInt((21-16+1).W))
   val im   = Output(UInt((15-8+1).W))
-  val res2 = Output(UInt((7-2+1).W))
+  val res3 = Output(UInt((7-2+1).W))
   val exl  = Output(UInt(1.W))
   val ie   = Output(UInt(1.W))
 }
