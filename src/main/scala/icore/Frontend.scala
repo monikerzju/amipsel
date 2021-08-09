@@ -62,14 +62,6 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
 class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with MemAccessType with FrontToBack with RefType {
   val io = IO(new FrontendIO)
 
-//  val tlb = Module(new TLB)
-//  tlb.io.addrTransl(0).virt_addr := 0.U
-//  tlb.io.addrTransl(1).virt_addr := 0.U
-//  tlb.io.execOp.din := 0.U.asTypeOf(new TLBEntryIO)
-//  tlb.io.addrTransl(0).refType := 0.U(2.W)
-//  tlb.io.addrTransl(1).refType := 0.U(2.W)
-//  tlb.io.execOp.op := 0.U(2.W)
-
   // IF
   val pc_gen         = Module(new PCGen(len, startAddr, 4 * frontendIssueN, verilator))
   val cache_stall    = Wire(Bool())
@@ -189,7 +181,7 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
       decs(i).bht_predict_taken := false.B
       decs(i).target_pc := Cat(Fill(30, 0.U), decode_pc_second_state)
     }
-    decs(i).tlb_exp := io.tlb(i).exp
+    decs(i).tlb_exp := RegEnable(io.tlb(i).exp, 0.U.asTypeOf(new TLBExceptIO), !kill_d && !stall_d && !cache_stall)
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
   predict_taken_but_not_br := decs(0).bht_predict_taken && decs(0).mops.next_pc =/= Branch && decs(0).mops.next_pc =/= Jump && decs(0).mops.next_pc =/= PCReg // TODO !quickCheckBranch(io.icache.resp.bits.rdata(0))

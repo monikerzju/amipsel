@@ -91,7 +91,7 @@ class ExceptIO extends Bundle with Config with CauseExcCode {
 }
 
 class FromToTlb extends Bundle with Config {
-  val exc = new TLBOpIO
+  val exec = new TLBOpIO
   val vpn = Input(UInt(VPNSize.W))
   val expVec = Input(Bool())
 }
@@ -170,7 +170,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
 //  val tlb_exp_vec = Wire(Bool())
 //  BoringUtils.addSink(tlb_exp_vec, "tlb_exp_vec")
 
-  io.ftTlb.exc.dout := {
+  io.ftTlb.exec.dout := {
     val entry = Wire(new TLBEntryIO)
     entry.entryHi  := entryHir.asTypeOf(new EntryHiStruct)
     entry.pageMask := pageMaskr.asTypeOf(new PageMaskStruct)
@@ -181,15 +181,15 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     entry
   }
 
-  switch (io.ftTlb.exc.op) {
+  switch (io.ftTlb.exec.op) {
     is (tlbr.U) {
-      entryHir     := io.ftTlb.exc.din.entryHi.asUInt()
-      entryLor(0)  := io.ftTlb.exc.din.entryLo(0).asUInt()
-      entryLor(1)  := io.ftTlb.exc.din.entryLo(1).asUInt()
-      pageMaskr    := io.ftTlb.exc.din.pageMask.asUInt()
+      entryHir     := io.ftTlb.exec.din.entryHi.asUInt()
+      entryLor(0)  := io.ftTlb.exec.din.entryLo(0).asUInt()
+      entryLor(1)  := io.ftTlb.exec.din.entryLo(1).asUInt()
+      pageMaskr    := io.ftTlb.exec.din.pageMask.asUInt()
     }
     is (tlbp.U) {
-      indexr := io.ftTlb.exc.din.index.asUInt()
+      indexr := io.ftTlb.exec.din.index.asUInt()
     }
   }
 

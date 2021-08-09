@@ -363,8 +363,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   )
 
   // tlb exec
-  io.tlbExc.op := exInsts(0).tlb_op
-  io.tlbExc.din := cp0.io.ftTlb.exc.dout
+  io.tlbExec.op := exInsts(0).tlb_op
+  io.tlbExec.din := cp0.io.ftTlb.exec.dout
 
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
@@ -703,9 +703,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbMDUOvf := mdu.io.resp.except
     wbLdMa := ldMisaligned
     wbStMa := stMisaligned
-    // tlb exception
-    wbInsts(2).tlb_exp := io.tlbAddrTransl.exp
-    wbTlbOut := io.tlbExc.dout
+
+    wbInsts(2).tlb_exp := io.tlbAddrTransl.exp // tlb exception
+    wbTlbOut := io.tlbExec.dout // tlb exec
 
     when (!wfds) {
       reBranchPC := exReBranchPC
@@ -788,10 +788,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
-  cp0.io.ftTlb.exc.op         := wbInsts(0).tlb_op
-  cp0.io.ftTlb.exc.din        := wbTlbOut
-  cp0.io.ftTlb.vpn            := wbInsts(0).tlb_exp.vpn
-  cp0.io.ftTlb.expVec         := wbInsts(0).tlb_exp.expVec
+  cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
+  cp0.io.ftTlb.exec.din       := wbTlbOut
+  cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
+  cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
 
 
   /**

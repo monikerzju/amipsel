@@ -49,7 +49,7 @@ class BackendIO extends Bundle with Config with CauseExcCode {
   val dcache = Flipped(new MemIO(1))
   val interrupt = Input(Vec(SZ_HARD_INT, Bool()))
   val tlbAddrTransl = Flipped(new TLBAddrTranslIO)
-  val tlbExc = Flipped(new TLBOpIO)
+  val tlbExec = Flipped(new TLBOpIO)
 }
 
 trait MemAccessType {
@@ -104,7 +104,7 @@ class Core(diffTestV: Boolean = false, verilator: Boolean = false) extends Modul
   fe.io.tlb(0) <> tlb.io.addrTransl(0) // icache
   fe.io.tlb(1) <> tlb.io.addrTransl(1) // icache
   be.io.tlbAddrTransl <> tlb.io.addrTransl(2) // dcache
-  be.io.tlbExc <> tlb.io.execOp // cp0
+  be.io.tlbExec <> tlb.io.execOp // cp0
 
   io.icache <> fe.io.icache
   io.dcache <> be.io.dcache
