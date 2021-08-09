@@ -11,7 +11,7 @@ trait Config {
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000000000000000000000000000" // TODO configurable "b00000000010000000000000000000000"
-  var withBigCore: Boolean = false   // big core for final
+  var withBigCore: Boolean = true   // big core for final
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
@@ -20,10 +20,10 @@ trait Config {
   // Cache
   val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
-  var iTagBits: Int = 18
-  var iIndexBits: Int = 9   // 16KB now
-  var dTagBits: Int = 18
-  var dIndexBits: Int = 9   // 16KB now
+  var iTagBits: Int = 21
+  var iIndexBits: Int = 6   // 16KB now
+  var dTagBits: Int = 21
+  var dIndexBits: Int = 6   // 16KB now
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU

@@ -89,6 +89,7 @@ class ExceptIO extends Bundle with Config with CauseExcCode {
 class CP0IO extends Bundle with Config {
   val ftc = new FromToCIO
   val except = new ExceptIO
+  val step = if(withBigCore) Input(UInt(2.W)) else null
 }
 
 class StatusStruct extends Bundle {
@@ -166,7 +167,12 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   io.except.except_kill     := has_except || ret
   io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   io.except.call_for_int    := int_en
-  countr := countr + 1.U
+  if(withBigCore){
+    countr := countr +io.step
+  }
+  else {
+    countr := countr + 1.U
+  }
   when (has_except || error_ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 1.U
