@@ -135,66 +135,75 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
   }
 
   // address translate
-  for (j <- 0 until port) {
-    io.addrTransl(j).isFind := false.B
-    var entryIdx: Int = -1
+  if (enableTLBAddrTransl) {
+    for (j <- 0 until port) {
+      io.addrTransl(j).isFind := false.B
+      var entryIdx: Int = -1
 
-    // TODO: complete mask
-    for(i <- 0 until TLBSize) {
-      when ((entries(i).entryHi.vpn2 === io.addrTransl(j).virt_addr(31, 13))
-        && (entries(i).g.asBool() || entries(i).entryHi.asid === io.execOp.din.entryHi.asid)) {
-        io.addrTransl(j).isFind := true.B
-        entryIdx = i
+      // TODO: complete mask
+      for(i <- 0 until TLBSize) {
+        when ((entries(i).entryHi.vpn2 === io.addrTransl(j).virt_addr(31, 13))
+          && (entries(i).g.asBool() || entries(i).entryHi.asid === io.execOp.din.entryHi.asid)) {
+          io.addrTransl(j).isFind := true.B
+          entryIdx = i
+        }
       }
-    }
 
-    val pfn = Wire(UInt(PFNSize.W))
-    val c = Wire(UInt(3.W))
-    val d = Wire(UInt(1.W))
-    val v = Wire(UInt(1.W))
+      val pfn = Wire(UInt(PFNSize.W))
+      val c = Wire(UInt(3.W))
+      val d = Wire(UInt(1.W))
+      val v = Wire(UInt(1.W))
 
-    // TODO: use MUX to simplify io.addrTransl(j).exp
-    io.addrTransl(j).exp.expType := 0.U
-    io.addrTransl(j).exp.expVec := false.B
-    io.addrTransl(j).exp.badVaddr := 0.U
-    io.addrTransl(j).exp.vpn := 0.U
-    when (io.addrTransl(j).isFind) {
-      when(io.addrTransl(j).virt_addr(12).asBool()) { // odd
-        pfn := entries(entryIdx).entryLo(1).pfn
-        c := entries(entryIdx).entryLo(1).c
-        d := entries(entryIdx).entryLo(1).d
-        v := entries(entryIdx).entryLo(1).v
+      // TODO: use MUX to simplify io.addrTransl(j).exp
+      io.addrTransl(j).exp.expType := 0.U
+      io.addrTransl(j).exp.expVec := false.B
+      io.addrTransl(j).exp.badVaddr := 0.U
+      io.addrTransl(j).exp.vpn := 0.U
+      when (io.addrTransl(j).isFind) {
+        when(io.addrTransl(j).virt_addr(12).asBool()) { // odd
+          pfn := entries(entryIdx).entryLo(1).pfn
+          c := entries(entryIdx).entryLo(1).c
+          d := entries(entryIdx).entryLo(1).d
+          v := entries(entryIdx).entryLo(1).v
+        } .otherwise {
+          pfn := entries(entryIdx).entryLo(0).pfn
+          c := entries(entryIdx).entryLo(0).c
+          d := entries(entryIdx).entryLo(0).d
+          v := entries(entryIdx).entryLo(0).v
+        }
+        when(!v.asBool()) {
+          // SignalException(TLBInvalid, reftype)
+          io.addrTransl(j).exp.expType := Mux(io.addrTransl(j).refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
+          io.addrTransl(j).exp.badVaddr := io.addrTransl(j).virt_addr
+          io.addrTransl(j).exp.vpn := io.addrTransl(j).virt_addr(31, 12)
+        } .elsewhen (!d.asBool() && io.addrTransl(j).refType === store.U(REFTYPE_SIZE.W)) {
+          // TODO: SignalException(TLBModified)
+          io.addrTransl(j).exp.expType := TLBExceptType.mod
+          io.addrTransl(j).exp.badVaddr := io.addrTransl(j).virt_addr
+          io.addrTransl(j).exp.vpn := io.addrTransl(j).virt_addr(31, 12)
+        }
       } .otherwise {
-        pfn := entries(entryIdx).entryLo(0).pfn
-        c := entries(entryIdx).entryLo(0).c
-        d := entries(entryIdx).entryLo(0).d
-        v := entries(entryIdx).entryLo(0).v
-      }
-      when(!v.asBool()) {
-        // SignalException(TLBInvalid, reftype)
+        pfn := 0.U(PFNSize.W)
+        c := 0.U(3.W)
+        d := 0.U
+        v := 0.U
+        // SignalException(TLBMiss, reftype)
         io.addrTransl(j).exp.expType := Mux(io.addrTransl(j).refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
         io.addrTransl(j).exp.badVaddr := io.addrTransl(j).virt_addr
         io.addrTransl(j).exp.vpn := io.addrTransl(j).virt_addr(31, 12)
-      } .elsewhen (!d.asBool() && io.addrTransl(j).refType === store.U(REFTYPE_SIZE.W)) {
-        // TODO: SignalException(TLBModified)
-        io.addrTransl(j).exp.expType := TLBExceptType.mod
-        io.addrTransl(j).exp.badVaddr := io.addrTransl(j).virt_addr
-        io.addrTransl(j).exp.vpn := io.addrTransl(j).virt_addr(31, 12)
+        io.addrTransl(j).exp.expVec := true.B // use expvec = 0xbfc00200
       }
-    } .otherwise {
-      pfn := 0.U(PFNSize.W)
-      c := 0.U(3.W)
-      d := 0.U
-      v := 0.U
-      // SignalException(TLBMiss, reftype)
-      io.addrTransl(j).exp.expType := Mux(io.addrTransl(j).refType === store.U, TLBExceptType.tlbs, TLBExceptType.tlbl)
-      io.addrTransl(j).exp.badVaddr := io.addrTransl(j).virt_addr
-      io.addrTransl(j).exp.vpn := io.addrTransl(j).virt_addr(31, 12)
-      io.addrTransl(j).exp.expVec := true.B // use expvec = 0xbfc00200
-    }
 
-    val page_offset = io.addrTransl(j).virt_addr(11, 0)
-    io.addrTransl(j).phys_addr := Cat(pfn, page_offset)
+      val page_offset = io.addrTransl(j).virt_addr(11, 0)
+      io.addrTransl(j).phys_addr := Cat(pfn, page_offset)
+    }
+  } else {
+    for (j <- 0 until port) {
+      io.addrTransl(j).phys_addr := io.addrTransl(j).virt_addr
+      io.addrTransl(j).isFind := true.B
+      io.addrTransl(j).exp := 0.U.asTypeOf(new TLBExceptIO)
+    }
   }
+
 
 }

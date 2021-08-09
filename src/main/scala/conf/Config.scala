@@ -30,6 +30,7 @@ trait Config {
   var VPNSize: Int = 19
   var PFNSize: Int = 20
   var TLBSize: Int = 32
+  var enableTLBAddrTransl = false
   // BPU
   var traceCallRet: Boolean = false
   var traceBPU: Boolean = false
