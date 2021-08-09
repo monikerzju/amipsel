@@ -146,8 +146,8 @@ class PageMaskStruct extends Bundle {
 
 class IndexStruct extends Bundle with Config {
   val p = Output(UInt(1.W))
-  val const0 = Output(UInt((30 - log2Ceil(TLBSize + 1) + 1).W))
-  val index = Output(UInt(log2Ceil(TLBSize + 1).W))
+  val const0 = Output(UInt((30 - log2Up(TLBSize) + 1).W))
+  val index = Output(UInt(log2Up(TLBSize).W))
 }
 
 // Put CP0 in WB stage anyway
@@ -231,10 +231,11 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     is (Cause.U)    { io.ftc.dout := read_causer    }
     is (EPC.U)      { io.ftc.dout := epcr           }
     is (Compare.U)  { io.ftc.dout := comparer       }
-    is (EntryHi.U)  { io.ftc.dout := entryHir        }
-    is (EntryLo0.U) { io.ftc.dout := entryLor(0)     }
-    is (EntryLo1.U) { io.ftc.dout := entryLor(1)     }
-    is (PageMask.U) { io.ftc.dout := pageMaskr       }
+    is (EntryHi.U)  { io.ftc.dout := entryHir       }
+    is (EntryLo0.U) { io.ftc.dout := entryLor(0)    }
+    is (EntryLo1.U) { io.ftc.dout := entryLor(1)    }
+    is (PageMask.U) { io.ftc.dout := pageMaskr      }
+    is (Index.U)    { io.ftc.dout := indexr         }
   }
 
   io.except.except_kill     := has_except || ret
@@ -263,6 +264,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   }.elsewhen (io.ftc.wen && io.except.valid_inst) {
     val status_imut = statusr & nStatusWMask.U
     val status_mut  = io.ftc.din & StatusWMask.U
+    val n = log2Up(TLBSize)
     switch (io.ftc.code) {
       // BadVAddr is unwritable
       is (Count.U)    { countr := Cat(io.ftc.din, 0.U(1.W))                                }
@@ -270,10 +272,11 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (Cause.U)    { causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
       is (EPC.U)      { epcr := io.ftc.din                                                 }
       is (Compare.U)  { comparer := io.ftc.din                                             }
-      is (EntryHi.U)  { entryHir := io.ftc.din                                              }
-      is (EntryLo0.U) { entryLor(0) := io.ftc.din                                           }
-      is (EntryLo1.U) { entryLor(1) := io.ftc.din                                           }
-      is (PageMask.U) { pageMaskr := io.ftc.din                                             }
+      is (EntryHi.U)  { entryHir := Cat(io.ftc.din(31, 13), 0.U(5.W), io.ftc.din(7, 0))    }
+      is (EntryLo0.U) { entryLor(0) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
+      is (EntryLo1.U) { entryLor(1) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
+      is (PageMask.U) { pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
+      is (Index.U)    { indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }
     }
   }
 }

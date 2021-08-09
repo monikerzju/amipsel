@@ -92,24 +92,35 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
   val io = IO(new TLBIO(port))
   // TODO: check TLB initialize
   val entries = Reg(Vec(TLBSize ,new TLBEntry))
+  val n = log2Up(TLBSize)
 
   // tlb operation
   io.execOp.dout := 0.U((new TLBEntryIO).getWidth.W).asTypeOf(new TLBEntryIO)
   switch (io.execOp.op) {
     is (tlbp.U) {
-      var idx: Int = -1
+
+      val findIndex = Wire(Bool())
+      val idx = Wire(UInt(n.W))
+      findIndex := false.B
+      idx := 0.U
       for(i <- 0 until TLBSize) {
         when ((entries(i).entryHi.vpn2 === io.execOp.din.entryHi.vpn2)
           && (entries(i).g.asBool() || entries(i).entryHi.asid === io.execOp.din.entryHi.asid)) {
-          idx = i
+          idx := i.U
+          findIndex := true.B
         }
       }
-      val n = log2Ceil(TLBSize + 1)
-      if (idx == -1) { // not find entry
+      when (findIndex) {
+        io.execOp.dout.index := Cat(0.U((len - n).W), idx).asTypeOf(new IndexStruct)
+      } .otherwise { // not find entry
         io.execOp.dout.index := Cat(1.U(1.W), 0.U((len - 1).W)).asTypeOf(new IndexStruct)
-      } else {
-        io.execOp.dout.index := Cat(0.U((len - n).W), idx.U(n.W)).asTypeOf(new IndexStruct)
       }
+
+//      if (idx == -1) { // not find entry
+//        io.execOp.dout.index := Cat(1.U(1.W), 0.U((len - 1).W)).asTypeOf(new IndexStruct)
+//      } else {
+//        io.execOp.dout.index := Cat(0.U((len - n).W), idx.U(n.W)).asTypeOf(new IndexStruct)
+//      }
     }
     is (tlbr.U) {
       when (io.execOp.din.index.index < TLBSize.U) {
@@ -138,14 +149,14 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
   if (enableTLBAddrTransl) {
     for (j <- 0 until port) {
       io.addrTransl(j).isFind := false.B
-      var entryIdx: Int = -1
-
+      val entryIdx = Wire(UInt(n.W))
+      entryIdx := 0.U
       // TODO: complete mask
       for(i <- 0 until TLBSize) {
         when ((entries(i).entryHi.vpn2 === io.addrTransl(j).virt_addr(31, 13))
           && (entries(i).g.asBool() || entries(i).entryHi.asid === io.execOp.din.entryHi.asid)) {
           io.addrTransl(j).isFind := true.B
-          entryIdx = i
+          entryIdx := i.U
         }
       }
 

@@ -23,7 +23,7 @@ class StoreInfo extends Bundle with Config {
 }
 
 // TODO ALU_LSU ALU_MDU LSU_BJU
-class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode with RefType {
+class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode with RefType with TLBOpType {
   val io = IO(new BackendIO)
 
   // Global
@@ -203,7 +203,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     )
   }
   issueArbiter.io.ld_dest_ex  := Fill(32, exInstsValid(2)) & exInsts(2).rd
-  issueArbiter.io.mtc0_ex     := exInstsValid(0) & exInsts(0).write_dest === MicroOpCtrl.DCP0
+  issueArbiter.io.mtc0_ex     := exInstsValid(0) &
+    (exInsts(0).write_dest === MicroOpCtrl.DCP0 | exInsts(0).tlb_op === tlbr.U | exInsts(0).tlb_op === tlbp.U)
   issueArbiter.io.insts_in    := issueInsts
   issueArbiter.io.rss_in      := rsFwdData
   issueArbiter.io.rts_in      := rtFwdData
@@ -436,7 +437,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     when (isExPCBr) {
       reBranchBrTaken := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
-          MicroOpCtrl.BrNE -> (alu.io.zero === 0 .U),
+          MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
           MicroOpCtrl.BrGT -> (alu.io.a.asSInt > 0.S),
           MicroOpCtrl.BrLE -> (alu.io.a.asSInt <= 0.S),
