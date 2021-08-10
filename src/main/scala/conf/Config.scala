@@ -20,10 +20,10 @@ trait Config {
   // Cache
   val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
-  var iTagBits: Int = 21
-  var iIndexBits: Int = 6   // 2KB now
-  var dTagBits: Int = 21
-  var dIndexBits: Int = 6   // 2KB now
+  var iTagBits: Int = if (withBigCore) 22 else 18
+  var iIndexBits: Int = if (withBigCore) 5 else 9   // 1KB with big core, 16KB for competition
+  var dTagBits: Int = if (withBigCore) 22 else 18
+  var dIndexBits: Int = if (withBigCore) 5 else 9
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
