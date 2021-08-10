@@ -70,7 +70,6 @@ class MemReq extends Bundle with Config with MemAccessType {
   val flush = Output(Bool())    // for cache instructions
   val invalidate = Output(Bool())   // for cache instructions
   val mtype = Output(UInt(SZ_MEM_TYPE.W))
-  val swlr = if(withBigCore) Output(UInt(2.W)) else null
 }
 
 class MemResp(val issueN:Int = 2) extends Bundle with Config with MemAccessType {

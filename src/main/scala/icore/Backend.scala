@@ -402,11 +402,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
-    if(withBigCore){
-      memReq.swlr := 0.U
-    }
     memReq
-  })
+  }
+  )
   if (withBigCore) {
     io.tlbAddrTransl.virt_addr := ldstAddr
     io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
@@ -419,12 +417,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.mtype := exInsts(2).mem_width
     memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     memReq.wdata := exFwdRtData(2)
-    memReq.addr := ldstAddr
-    if(withBigCore){
-      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
-      memReq.addr := io.tlbAddrTransl.phys_addr
-    }
-    else { memReq.addr := ldstAddr }
+    if (withBigCore) { memReq.addr := io.tlbAddrTransl.phys_addr } else { memReq.addr := ldstAddr }
     memReq
   }
 
@@ -521,8 +514,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
 
   // handle load-inst separately
-  val delayed_req_bits = RegNext(io.dcache.req.bits.addr(1, 0) << 3.U)
-  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> delayed_req_bits
+  val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
+  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
   val wbLdData = Wire(UInt(len.W))
 
   // to cope with the situation where load after mult happens,
@@ -539,24 +532,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemByteU) { wbLdData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
     is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
-  }
-  if(withBigCore){
-    val lwl_mask = Wire(UInt(32.W))
-    val lwr_mask = Wire(UInt(32.W))
-    lwl_mask := "h00ffffff".U >> delayed_req_bits
-    lwr_mask := ~("hffffffff".U >> delayed_req_bits)
-    val last = Reg(UInt(len.W))
-    val ori = Mux(dcacheStall, last, exFwdRtData(2))
-    last := ori
-    val shamt = delayed_req_bits
-    switch(wbInsts(2).mem_width) {
-      is(MicroOpCtrl.MemWordL) { 
-        wbLdData := ((io.dcache.resp.bits.rdata(0)<<(24.U-shamt)) & ~lwl_mask)|(last & lwl_mask)
-      }
-      is(MicroOpCtrl.MemWordR) { 
-        wbLdData := ((io.dcache.resp.bits.rdata(0)>>shamt) & ~lwr_mask)|(last & lwr_mask)
-      }
-    }
   }
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
@@ -713,7 +688,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
-    cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
     cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
