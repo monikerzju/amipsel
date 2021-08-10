@@ -121,6 +121,8 @@ class Dec extends Module with InstType with Config {
     SYNC       -> List(F ,  toALU.U),
     WAIT       -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
+    MADD       -> List(F ,  toMDU.U),
+    MADDU      -> List(F ,  toMDU.U),
     TNE        -> List(F ,  toBJU.U),
     LWL        -> List(F ,  toLSU.U),
     LWR        -> List(F ,  toLSU.U),
@@ -168,17 +170,23 @@ class Dec extends Module with InstType with Config {
     alu_signal_final
   )
 
+  val mdu_signal_base = Array (
+    DIVU  -> List(DHiLo   , MDU_DIVU.U , IRT ),
+    MULT  -> List(DHiLo   , MDU_MUL.U  , IRT ),
+    MULTU -> List(DHiLo   , MDU_MULU.U , IRT ),
+    MTHI  -> List(DHi     , aluAddu.U  , IXX ),
+    MTLO  -> List(DLo     , aluAddu.U  , IXX ),
+    MUL   -> List(DReg    , MDU_MUL.U  , IRT )
+  )
+  val mdu_signal_ext = Array (
+    MADD  -> List(DHiLoAdd, MDU_MUL.U  , IRT ),
+    MADDU -> List(DHiLoAdd, MDU_MULU.U , IRT )
+  )
+  val mdu_signal_final = if (withBigCore) Array.concat(mdu_signal_base, mdu_signal_ext) else mdu_signal_base
   val mdu_signal = ListLookup(io.inst, 
     //              dest   | mduop      | rs2 
-    /*DIV*/    List(DHiLo  , MDU_DIV.U  , IRT ),
-    Array (
-      DIVU  -> List(DHiLo  , MDU_DIVU.U , IRT ),
-      MULT  -> List(DHiLo  , MDU_MUL.U  , IRT ),
-      MULTU -> List(DHiLo  , MDU_MULU.U , IRT ),
-      MTHI  -> List(DHi    , aluAddu.U  , IXX ),
-      MTLO  -> List(DLo    , aluAddu.U  , IXX ),
-      MUL   -> List(DReg   , MDU_MUL.U  , IRT )
-    )
+    /*DIV*/  List(DHiLo   , MDU_DIV.U  , IRT ),
+    mdu_signal_final
   )
 
   val lsu_signal_base = Array (

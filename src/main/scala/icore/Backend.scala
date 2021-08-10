@@ -325,16 +325,29 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     )
   )
   mdu.io.req.op := exInsts(1).alu_op
+  val newHiSeqBase = Seq(
+    MicroOpCtrl.DHi -> mdu.io.resp.lo,
+    MicroOpCtrl.DHiLo -> mdu.io.resp.hi
+  )
+  val newHiSeqExt = Seq(
+    MicroOpCtrl.DHiLoAdd -> hi + ndu.io.resp.hi
+  )
+  val newHiSeqFinal = if (withBigCore) (newHiSeqBase ++ newHiSeqExt) else newHiSeqBase
   hi := Mux(!bubble_w && exInstsTrueValid(1), 
-    MuxLookup(exInsts(1).write_dest, hi, Seq(
-      MicroOpCtrl.DHi -> mdu.io.resp.lo,
-      MicroOpCtrl.DHiLo -> mdu.io.resp.hi
-    )),
+    MuxLookup(exInsts(1).write_dest, hi, newHiSeqFinal),
     hi
   )
-  lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo) &&
-    exInstsTrueValid(1), 
-    mdu.io.resp.lo, lo
+  val newLoSeqBase = Seq(
+    MicroOpCtrl.DLo -> mdu.io.resp.lo,
+    MicroOpCtrl.DHiLo -> mdu.io.resp.lo
+  )
+  val newLoSeqExt = Seq(
+    MicroOpCtrl.DHiLoAdd -> lo + ndu.io.resp.lo
+  )
+  val newLoSeqFinal = if (withBigCore) (newLoSeqBase ++ newLoSeqExt) else newLoSeqBase  
+  lo := Mux(!bubble_w && exInstsTrueValid(1), 
+    MuxLookup(exInsts(1).write_dest, lo, newLoSeqFinal),
+    lo
   )
 
   // initialize lsu

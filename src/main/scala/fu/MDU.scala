@@ -7,10 +7,10 @@ import conf.Config
 
 trait MDUOperation extends AluOpType {
   val SZ_MDU_OP = aluOpWidth
-  val MDU_MUL  = 16
-  val MDU_DIV  = 17
-  val MDU_MULU = 18
-  val MDU_DIVU = 19
+  val MDU_MUL   = 16
+  val MDU_DIV   = 17
+  val MDU_MULU  = 18
+  val MDU_DIVU  = 19
 }
 
 class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
@@ -96,7 +96,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation with Config {
     io.req.op(aluOpWidth - 1).andR,
     MuxLookup(
       io.req.op(aluOpWidth - 2, 0),
-      divider.io.div_res,
+      divider.io.div_res, // DIVU
       Seq(
         MDU_DIV.U(aluOpWidth - 2, 0)  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res).asUInt + 1.U)),
         MDU_MUL.U(aluOpWidth - 2, 0)  -> mul_res(31, 0).asUInt,
@@ -112,7 +112,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation with Config {
 
   val hi = MuxLookup(
     io.req.op,
-    divider.io.rem_res,
+    divider.io.rem_res, // DIVU
     Seq(
       MDU_DIV.U  -> Mux(sign1 === 0.U, divider.io.rem_res, ((~divider.io.rem_res).asUInt + 1.U)),
       MDU_MULU.U -> mulu_res(2 * width - 1, width),
