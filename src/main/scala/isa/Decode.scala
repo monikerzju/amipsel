@@ -360,6 +360,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
                               TLBP  -> List(tlbp.U),
                               TLBR  -> List(tlbr.U),
                               TLBWI -> List(tlbwi.U),
+                              TLBWR -> List(tlbwr.U)
                             )
                           )(0)
   }

@@ -153,6 +153,11 @@ class IndexStruct extends Bundle with Config {
   val index = Output(UInt(log2Up(TLBSize).W))
 }
 
+class RandomStruct extends Bundle with Config {
+  val const0 = Output(UInt((len - log2Up(TLBSize) + 1).W))
+  val random = Output(UInt(log2Up(TLBSize).W))
+}
+
 // Put CP0 in WB stage anyway
 class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config with TLBOpType {
   val io = IO(new CP0IO)
@@ -168,13 +173,35 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val entryLor  = if (withBigCore) RegInit(VecInit(Seq.fill(2)(0.U(len.W)))) else null
   val pageMaskr = if (withBigCore) RegInit(0.U(len.W)) else null
   val indexr    = if (withBigCore) RegInit(0.U(len.W)) else null
+  val randomr   = if (withBigCore) RegInit((TLBSize - 1).U(len.W)) else null // do not implement Wired cp0
 
   if (withBigCore) {
+    if (useQEMURandomStrategy) {
+      val prev_randomr = RegInit(0.U(len.W))
+      val seed = RegInit(1.U(len.W))
+      def getNextSeed(s: UInt): UInt = {
+        1103515245.U * s + 12345.U
+      }
+      def getRandom(s: UInt): UInt = {
+        // qemu 4.2 implementation
+        (getNextSeed(s) >> 16).asUInt() % TLBSize.U
+      }
+      // TODO: avoid stall influence the seed
+      when(io.ftTlb.exec.op === tlbwr.U || io.ftc.code === Random.U) {
+        // omit third or more getRandom return the same value as before
+        seed := Mux(getRandom(seed) === prev_randomr, getNextSeed(getNextSeed(seed)), getNextSeed(seed))
+        randomr := Mux(getRandom(seed) === prev_randomr, getRandom(getNextSeed(seed)), getRandom(seed))
+        prev_randomr := randomr
+      }
+    } else {
+      randomr := randomr - 1.U // simple random strategy
+    }
+
     io.ftTlb.exec.dout := {
       val entry = Wire(new TLBEntryIO)
       entry.entryHi  := entryHir.asTypeOf(new EntryHiStruct)
       entry.pageMask := pageMaskr.asTypeOf(new PageMaskStruct)
-      entry.index    := indexr.asTypeOf(new IndexStruct)
+      entry.index    := Mux(io.ftTlb.exec.op === tlbwi.U, indexr.asTypeOf(new IndexStruct), randomr.asTypeOf(new IndexStruct))
       for (i <- 0 until 2) {
         entry.entryLo(i) := entryLor(i).asTypeOf(new EntryLoStruct)
       }
@@ -238,6 +265,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (EntryLo1.U) {   io.ftc.dout := entryLor(1)    }
       is (PageMask.U) {   io.ftc.dout := pageMaskr      }
       is (Index.U)    {   io.ftc.dout := indexr         }
+      is (Random.U)   {   io.ftc.dout := randomr        }
     }
   } else {
     switch (io.ftc.code) {

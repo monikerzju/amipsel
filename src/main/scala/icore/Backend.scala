@@ -363,8 +363,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     lo
   )
 
-  // tlb exec
   if (withBigCore) {
+    // tlb addr translate
+    io.tlbAddrTransl.virt_addr := ldstAddr
+    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
+
+    // tlb exec
     io.tlbExec.op := exInsts(0).tlb_op
     io.tlbExec.din := cp0.io.ftTlb.exec.dout
   }
@@ -405,10 +409,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq
   }
   )
-  if (withBigCore) {
-    io.tlbAddrTransl.virt_addr := ldstAddr
-    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
-  }
 
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
