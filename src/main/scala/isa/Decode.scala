@@ -124,6 +124,8 @@ class Dec extends Module with InstType with Config {
     MADD       -> List(F ,  toMDU.U),
     MADDU      -> List(F ,  toMDU.U),
     TNE        -> List(F ,  toBJU.U),
+    MOVZ       -> List(F ,  toBJU.U),
+    MOVN       -> List(F ,  toBJU.U),
     LWL        -> List(F ,  toLSU.U),
     LWR        -> List(F ,  toLSU.U),
     SWL        -> List(F ,  toLSU.U),
@@ -212,26 +214,28 @@ class Dec extends Module with InstType with Config {
   )
 
   val bju_signal_base = Array (
-    BEQ   -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX),
-    BNE   -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX),
-    BGEZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
-    BGTZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
-    BLEZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
-    BLTZ  -> List(Branch  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
-    BGEZAL-> List(Branch  ,  AReg   ,  DReg  ,  WBALU     , IRS , IXX , IRA),
-    BLTZAL-> List(Branch  ,  AReg   ,  DReg  ,  WBALU     , IRS , IXX , IRA),
-    J     -> List(Jump    ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
-    JAL   -> List(Jump    ,  AXXX   ,  DReg  ,  WBPC      , IXX , IXX , IRA),
-    JR    -> List(PCReg   ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IXX , IXX),
-    JALR  -> List(PCReg   ,  AReg   ,  DReg  ,  WBPC      , IRS , IXX , IRD),
-    BREAK -> List(Break   ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
-    SYS   -> List(Trap    ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
-    ERET  -> List(Ret     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
-    MFC0  -> List(PC4     ,  ACP0   ,  DReg  ,  WBReg     , IRD , IXX , IRT),
-    MTC0  -> List(PC4     ,  AReg   ,  DCP0  ,  WBReg     , IRT , IXX , IRD)
+    BEQ   -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
+    BNE   -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
+    BGEZ  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IXX , IXX),
+    BGTZ  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IXX , IXX),
+    BLEZ  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IXX , IXX),
+    BLTZ  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IXX , IXX),
+    BGEZAL-> List(Branch  ,  AReg   ,  DReg      ,  WBALU     , IRS , IXX , IRA),
+    BLTZAL-> List(Branch  ,  AReg   ,  DReg      ,  WBALU     , IRS , IXX , IRA),
+    J     -> List(Jump    ,  AXXX   ,  DXXX      ,  WBXXX     , IXX , IXX , IXX),
+    JAL   -> List(Jump    ,  AXXX   ,  DReg      ,  WBPC      , IXX , IXX , IRA),
+    JR    -> List(PCReg   ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IXX , IXX),
+    JALR  -> List(PCReg   ,  AReg   ,  DReg      ,  WBPC      , IRS , IXX , IRD),
+    BREAK -> List(Break   ,  AXXX   ,  DXXX      ,  WBXXX     , IXX , IXX , IXX),
+    SYS   -> List(Trap    ,  AXXX   ,  DXXX      ,  WBXXX     , IXX , IXX , IXX),
+    ERET  -> List(Ret     ,  AXXX   ,  DXXX      ,  WBXXX     , IXX , IXX , IXX),
+    MFC0  -> List(PC4     ,  ACP0   ,  DReg      ,  WBReg     , IRD , IXX , IRT),
+    MTC0  -> List(PC4     ,  AReg   ,  DCP0      ,  WBReg     , IRT , IXX , IRD)
   )
   val bju_signal_ext = Array(
-    TNE   -> List(NETrap  ,  AReg   ,  DXXX  ,  WBXXX     , IRS , IRT , IXX)
+    TNE   -> List(NETrap  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
+    MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IXX , IRD),
+    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IXX , IRD)
   )
   val bju_signal_final = if (withBigCore) Array.concat(bju_signal_base, bju_signal_ext) else bju_signal_base
   val bju_signal = ListLookup(io.inst,
@@ -249,6 +253,11 @@ class Dec extends Module with InstType with Config {
       BLTZAL-> List(BrLT)
     )
   )
+  val mov_cond_signal = ListLookup(io.inst, List(BrEQ), // MOVZ
+    Array(
+      MOVN  -> List(BrNE)
+    )
+  )
 
   //     illegal | npc  | fu   | br  |  srca  |  scrb  |  dest  |  aluop  |  memtype  |  src   |   rs  |  rt   | rd   |  imm
   // ALU   0     | pc4  | ?    | xxx |   ?    |  ?     |  dreg  |   ?     |    xxx    |  alu   |    ?  |   ?   |  ?   |   ?      8 fields
@@ -259,7 +268,12 @@ class Dec extends Module with InstType with Config {
   io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
   io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
   io.mops.alu_mdu_lsu   := control_signal(1)
-  io.mops.branch_type   := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
+  if (withBigCore) {
+    io.mops.branch_type := Mux(control_signal(1) === toBJU.U, Mux(bju_signal(0) === Branch, 
+      branch_signal(0), Mux(bju_signal(2) === DRegCond, mov_cond_signal(0), BrXXX)), BrXXX)
+  } else {
+    io.mops.branch_type := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
+  }
   io.mops.src_a         := MuxLookup(control_signal(1), AReg,
                              Seq(
                                toALU.U -> alu_signal(0),
