@@ -243,7 +243,10 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (EntryLo1.U) {   io.ftc.dout := entryLor(1)    }
       is (PageMask.U) {   io.ftc.dout := pageMaskr      }
       is (Index.U)    {   io.ftc.dout := indexr         }
+      is (PRId.U)     {   io.ftc.dout := pridr          }
+      is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
     }
+    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))
   } else {
     switch (io.ftc.code) {
       is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
@@ -253,14 +256,6 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (EPC.U)      {   io.ftc.dout := epcr           }
       is (Compare.U)  {   io.ftc.dout := comparer       }
     }    
-  }
-  if(withBigCore){
-    switch(io.ftc.code){
-      is (PRId.U)   { io.ftc.dout := pridr          }
-      is (Config.U) { io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
-    }
-    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))
-  } else {
     io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   }
   io.except.except_kill     := has_except || ret

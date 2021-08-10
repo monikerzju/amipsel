@@ -29,6 +29,7 @@ class Mops extends Bundle with Config with InstType with TLBOpType {
   val atomic        = if (withBigCore) Bool() else null
   val tlb_exp       = if (withBigCore) new TLBExceptIO else null
   val tlb_op        = if (withBigCore) UInt(TLBOPTYPE_SIZE.W) else null
+  val sel           = if (withBigCore) UInt(3.W) else null
 }
 
 class DecIO extends Bundle with Config {
@@ -362,5 +363,6 @@ class Dec extends Module with InstType with TLBOpType with Config {
                               TLBWI -> List(tlbwi.U),
                             )
                           )(0)
+    io.mops.sel         := io.inst(2,0)
   }
 }

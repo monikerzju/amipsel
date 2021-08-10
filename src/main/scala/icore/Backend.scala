@@ -50,6 +50,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       tmp.atomic := false.B
       tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
       tmp.tlb_op := 0.U
+      tmp.sel := 0.U
     }
     tmp
   }
@@ -589,7 +590,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbResult(1) := mdu.io.resp.lo
 
     if (withBigCore) {
-      wbInsts(0).next_pc := Mux(alu.io.zero === 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
+      wbInsts(0).next_pc := Mux(alu.io.zero =/= 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
       wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond, 
         Mux(exMoveCondNo, 
           MicroOpCtrl.DXXX, MicroOpCtrl.DReg
@@ -700,7 +701,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
-  cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
     cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
@@ -708,6 +708,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
     cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
+    cp0.io.ftc.sel              := exInsts(0).sel
+  }
+  else {
+    cp0.io.ftc.sel              := 0.U
   }
 
   /**
