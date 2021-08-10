@@ -23,7 +23,7 @@ class StoreInfo extends Bundle with Config {
 }
 
 // TODO ALU_LSU ALU_MDU LSU_BJU
-class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
+class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode with RefType with TLBOpType {
   val io = IO(new BackendIO)
 
   // Global
@@ -48,6 +48,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     tmp.target_pc := 0.U
     if (withBigCore) {
       tmp.atomic := false.B
+      tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
+      tmp.tlb_op := 0.U
     }
     tmp
   }
@@ -103,13 +105,14 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
+  val exIsTlbAddrFind = if (withBigCore) io.tlbAddrTransl.exp.expType === TLBExceptType.noExp else true.B
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
-                          exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(0))
+                          exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(0))
   val mduExptMask      = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(1) ||
-                          exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
+                          exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
-  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned
+  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned && exIsTlbAddrFind
   val bpuV      = (isExPCBr || isExPCJump) && exInstsValid(0)
   val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || isExPCJump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
   val bpuPCBr   = exInsts(0).pc
@@ -149,6 +152,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbBpuTarget      = RegNext(bpuTarget)
   val wbBpuTaken       = RegNext(bpuTaken)
   val wbStCondSuccess  = if (withBigCore) RegInit(false.B) else null
+  val wbTlbOut         = if (withBigCore) Reg(new TLBEntryIO) else null
 
   /**
    *  [---------- IS stage -----------]
@@ -174,11 +178,17 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
   val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
   val blockSecondItem = if (withBigCore) (trapBlockSecondItem || issueInsts(0).atomic) else trapBlockSecondItem
-  issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0,
-    issueQueue.io.items
-  )
-  issueArbiter.io.ld_dest_ex  := Fill(32, exInstsValid(2)) & exInsts(2).rd
-  issueArbiter.io.mtc0_ex     := exInstsValid(0) & exInsts(0).write_dest === MicroOpCtrl.DCP0
+  if (verilator) {  // TODO check if it is valid, 1 bubble after mfc0 to stop bad count value from spreading
+    issueArbiter.io.queue_items := Mux(!bubble_w && exInsts(0).src_a === MicroOpCtrl.ACP0 && exInstsTrueValid(0), 0.U, Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items))
+  } else {
+    issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
+  }
+  if (withBigCore) {
+    issueArbiter.io.mtc0_ex   := exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DCP0 || exInsts(0).tlb_op === tlbr.U || exInsts(0).tlb_op === tlbp.U)
+  } else {
+    issueArbiter.io.mtc0_ex   := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
+  }
+  issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd
   issueArbiter.io.insts_in    := issueInsts
   issueArbiter.io.rss_in      := rsFwdData
   issueArbiter.io.rts_in      := rtFwdData
@@ -351,6 +361,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     lo
   )
 
+  // tlb exec
+  if (withBigCore) {
+    io.tlbExec.op := exInsts(0).tlb_op
+    io.tlbExec.din := cp0.io.ftTlb.exec.dout
+  }
+
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
   dcacheStall := exLastMemReqValid && !io.dcache.resp.valid
@@ -358,13 +374,13 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
   val mmioMask = io.dcache.req.bits.wen && io.dcache.req.bits.addr(28, 0) === "h1faffff0".U
-  val storeCondMask = !storeCondSuccess && exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic
+  val storeCondMask = if (withBigCore) !storeCondSuccess && exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic else null
   val dcacheMask = if (withBigCore) storeCondMask else if (simpleNBDCache) mmioMask else false.B
   io.dcache.req.valid := exMemRealValid && !dcacheMask || dcacheStall
   io.dcache.resp.ready := true.B
 
   if (withBigCore) {
-    // TODO load linked - store conditional
+    // load linked - store conditional
     val dcacheNewReqBeforeStoreCondMask = exMemRealValid && !dcacheStall
     when (dcacheNewReqBeforeStoreCondMask && !io.dcache.req.bits.wen && exInsts(2).atomic) {
       // load linked
@@ -389,7 +405,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     }
     memReq
   })
-
+  if (withBigCore) {
+    io.tlbAddrTransl.virt_addr := ldstAddr
+    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
+  }
 
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
@@ -401,7 +420,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.addr := ldstAddr
     if(withBigCore){
       memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
+      memReq.addr := io.tlbAddrTransl.phys_addr
     }
+    else { memReq.addr := ldstAddr }
     memReq
   }
 
@@ -430,7 +451,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     when (isExPCBr) {
       reBranchBrTaken := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
-          MicroOpCtrl.BrNE -> (alu.io.zero === 0 .U),
+          MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
           MicroOpCtrl.BrGT -> (alu.io.a.asSInt > 0.S),
           MicroOpCtrl.BrLE -> (alu.io.a.asSInt <= 0.S),
@@ -580,6 +601,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbMDUOvf := mdu.io.resp.except
     wbLdMa := ldMisaligned
     wbStMa := stMisaligned
+
+    if (withBigCore) {
+      wbInsts(2).tlb_exp := io.tlbAddrTransl.exp // tlb exception
+      wbTlbOut := io.tlbExec.dout // tlb exec
+    }
+
     when (!wfds) {
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
@@ -631,6 +658,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
   val wbFetchMaReal = wbInsts(0).pc(1, 0).orR && wbInstsValid(0)  // will be in mops.illegal = 1
+  val wbTlblReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl && wbInstsValid(0) ||
+    wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl && wbInstsValid(2) else false.B
+  val wbTlbsReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(0) ||
+    wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(2) else false.B
+  val wbModReal     = if (withBigCore) wbInsts(2).tlb_exp.expType === TLBExceptType.mod && wbInstsValid(2) else false.B
+  val wbTlbBadAddr  = if (withBigCore) Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr) else "hdeadbeef".U
   val respInt       = wbInterruptd && wbInstsValid(0)
   wbExcepts(0) := wbALUOvfReal
   wbExcepts(1) := wbMDUOvfReal
@@ -638,9 +671,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
   wb_ev(Interrupt   ) := false.B
-  wb_ev(TLBModify   ) := false.B
-  wb_ev(TLBLoad     ) := false.B
-  wb_ev(TLBStore    ) := false.B
+  wb_ev(TLBModify   ) := wbModReal
+  wb_ev(TLBLoad     ) := wbTlblReal
+  wb_ev(TLBStore    ) := wbTlbsReal
   wb_ev(AddrErrLoad ) := wbLdMaReal || wbFetchMaReal
   wb_ev(AddrErrStore) := wbStMaReal
   wb_ev(Syscall     ) := wbALUSysReal
@@ -663,15 +696,20 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
                                   Mux(wbMDUOvfReal, wbInsts(1).pc, wbInsts(2).pc)
                                  )
   cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
-  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, wbInsts(0).pc,  wbMisalignedAddr)
+  cp0.io.except.bad_addr      := Mux(wbTlblReal || wbTlbsReal || wbModReal, wbTlbBadAddr, Mux(wbFetchMaReal, wbInsts(0).pc, wbMisalignedAddr))
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
-  if(withBigCore){
+  if (withBigCore) {
     cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
+    cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
+    cp0.io.ftTlb.exec.din       := wbTlbOut
+    cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
+    cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
   }
+
   /**
    *  [---------- DiffTest stage -----------]
    */
@@ -683,145 +721,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   }
 
   if (diffTestV) {
-    def isLwCounterInst(Inst: Mops): Bool = {
-      // lw	v0,-8192(t9)
-      Inst.rd === 2.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.rs1 === 25.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.imm === 0xFFFFE000L.U(len.W) &&
-        Inst.alu_mdu_lsu === toLSU.U && Inst.write_dest =/= MicroOpCtrl.DMem
-    }
-    def isMfc0CounterInst(Inst: Mops): Bool = {
-      // mfc0	v0,$9
-      Inst.rd === 2.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.rs1 === 9.U(MicroOpCtrl.SZ_REG_ADDR.W) && Inst.src_a === MicroOpCtrl.ACP0
-    }
-    val test_files = Array (
-      "bitcount",
-      "bubble_sort",
-      "coremark",
-      "crc32",
-      "dhrystone",
-      "quick_sort",
-      "select_sort",
-      "sha",
-      "stream_copy",
-      "string_search",
-      "qsorta",
-      "allbench_coremark",
-    )
-    val test_file = "allbench_coremark"
-    val lwCounterStart = Map (
-      "stream_copy" -> 0x0000375fL,
-      "crc32" -> 0x000030e1L,
-      "select_sort" -> 0x0000374aL,
-      "sha" -> 0x0000269dL,
-      "string_search" -> 0x00003b90L,
-      "quick_sort" -> 0x00003531L,
-      "qsorta" -> 0x00003532L,
-      "bubble_sort" -> 0x0000374aL,
-    )
-    val lwCounterEnd = Map (
-      "stream_copy" -> 0x0005b167L,
-      "crc32" -> 0x006db2daL,
-      "select_sort" -> 0x00466b30L,
-      "sha" -> 0x004c2f7eL,
-      "string_search" -> 0x003779b3L,
-      "bubble_sort" -> 0x00529750L,
-      "quick_sort" -> 0x004a4bfcL,
-      "qsorta" -> 0x004a4bfcL,
-    )
-    val mfc0CounterStart = Map (
-      "stream_copy" -> 0x0000194dL,
-      "crc32" -> 0x0000166aL,
-      "dhrystone" -> 0x00001766L,
-      "select_sort" -> 0x00001959L,
-      "sha" -> 0x000011b0L,
-      "string_search" -> 0x00001b35L,
-      "coremark" -> 0x00001673L,
-      "bubble_sort" -> 0x00001959L,
-      "quick_sort" -> 0x00001865L,
-      "qsorta" -> 0x00001865L,
-      "bitcount" -> 0x00001673L,
-      "allbench_coremark" -> 0x00001673L,
-    )
-    val mfc0CounterEnd = Map (
-      "stream_copy" -> 0x00029617L,
-      "crc32" -> 0x0031dca1L,
-      "dhrystone" -> 0x0009a792L,
-      "select_sort" -> 0x002001e5L,
-      "sha" -> 0x0022a0dcL,
-      "string_search" -> 0x001936f4L,
-      "coremark" -> 0x004f4000L,
-      "bubble_sort" -> 0x00258a51L,
-      "quick_sort" -> 0x0021c52bL,
-      "qsorta" -> 0x0021c52bL,
-      "bitcount" -> 0x0005e2d4L,
-      "allbench_coremark" -> 0x004f4000L,
-    )
-    val isLwFirst = RegInit(true.B)
-    val isMfc0First = RegInit(true.B)
-    val cntLw = RegInit(0.U(3.W))
-    when (wbInstsValid(2) && isLwCounterInst(wbInsts(2)) && !bubble_w) {
-      if (test_file == "dhrystone") {
-        when (cntLw === 0.U) {
-          wbData(2) := 0x0000332fL.U(len.W)
-        } .elsewhen (cntLw === 1.U) {
-          wbData(2) := 0x0001f756L.U(len.W)
-        } .elsewhen (cntLw === 2.U) {
-          wbData(2) := 0x00041f1fL.U(len.W)
-        } .elsewhen (cntLw === 3.U) {
-          wbData(2) := 0x00153e42L.U(len.W)
-        }
-        cntLw := cntLw + 1.U
-      } else if (test_file == "coremark"){
-        when (cntLw === 0.U) {
-          wbData(2) := 0x00003117L.U(len.W)
-        } .elsewhen (cntLw === 1.U) {
-          wbData(2) := 0x00075335L.U(len.W)
-        } .elsewhen (cntLw === 2.U) {
-          wbData(2) := 0x00a66e9aL.U(len.W)
-        } .elsewhen (cntLw === 3.U) {
-          wbData(2) := 0x00ae5a66L.U(len.W)
-        }
-        cntLw := cntLw + 1.U
-      } else if (test_file == "bitcount") {
-        when (cntLw === 0.U) {
-          wbData(2) := 0x00003117L.U(len.W)
-        } .elsewhen (cntLw === 1.U) {
-          wbData(2) := 0x0000800bL.U(len.W)
-        } .elsewhen (cntLw === 2.U) {
-          wbData(2) := 0x000cf034L.U(len.W)
-        } .elsewhen (cntLw === 3.U) {
-          wbData(2) := 0x000cf3d2L.U(len.W)
-        }
-        cntLw := cntLw + 1.U
-      } else if (test_file == "allbench_coremark") {
-        when (cntLw === 0.U) {
-          wbData(2) := 0x00003117L.U(len.W)
-        } .elsewhen (cntLw === 1.U) {
-          wbData(2) := 0x00075335L.U(len.W)
-        } .elsewhen (cntLw === 2.U) {
-          wbData(2) := 0x00a66e9aL.U(len.W)
-        } .elsewhen (cntLw === 3.U) {
-          wbData(2) := 0x00ae5a66L.U(len.W)
-        }
-        cntLw := cntLw + 1.U
-      } else {
-        when (isLwFirst) {
-          wbData(2) := lwCounterStart(test_file).U(len.W)
-          isLwFirst := false.B
-        } .otherwise {
-          wbData(2) := lwCounterEnd(test_file).U(len.W)
-        }
-      }
-
-    }
-    when (wbInstsValid(0) && isMfc0CounterInst(wbInsts(0)) && !bubble_w) {
-      when (isMfc0First) {
-        wbData(0) := mfc0CounterStart(test_file).U(len.W)
-        isMfc0First := false.B
-      } .otherwise {
-        wbData(0) := mfc0CounterEnd(test_file).U(len.W)
-      }
-    }
-
     val instret    = RegInit(0.U(64.W))
     val counter    = RegInit(0.U(64.W))
     val dstall     = RegInit(0.U(64.W))

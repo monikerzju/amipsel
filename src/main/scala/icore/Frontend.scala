@@ -59,7 +59,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   }
 }
 
-class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with MemAccessType with FrontToBack {
+class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with MemAccessType with FrontToBack with RefType {
   val io = IO(new FrontendIO)
 
   // IF
@@ -133,9 +133,21 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     }
   }
 
+  if (withBigCore) {
+    // 2 insts
+    // TODO: if exp happens, do not access icache
+    io.tlb(0).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+    io.tlb(0).refType   := fetch.U
+    io.tlb(1).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U)) + 4.U
+    io.tlb(1).refType   := fetch.U
+  }
   io.icache.req.valid      := true.B
   io.icache.resp.ready     := true.B 
-  io.icache.req.bits.addr  := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+  if (withBigCore) {
+    io.icache.req.bits.addr:= io.tlb(0).phys_addr
+  } else {
+    io.icache.req.bits.addr:= Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+  }
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen   := false.B
   if(withBigCore){
@@ -175,6 +187,9 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     } else {
       decs(i).bht_predict_taken := false.B
       decs(i).target_pc := Cat(Fill(30, 0.U), decode_pc_second_state)
+    }
+    if (withBigCore) {
+      decs(i).tlb_exp := RegEnable(io.tlb(i).exp, 0.U.asTypeOf(new TLBExceptIO), !kill_d && !stall_f)
     }
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
