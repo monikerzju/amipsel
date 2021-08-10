@@ -156,20 +156,24 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     issueQueue.io.din(i) := io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
   }
 
-  val trap_ret_items1 = Mux(issueInsts(1).next_pc(2).andR || issueInsts(1).illegal,  // break syscall eret
+  def isNextPCMayTrap(npc_op: UInt): Bool = {
+    npc_op(2)
+  }
+
+  val trap_ret_items1 = Mux(isNextPCMayTrap(issueInsts(1).next_pc) || issueInsts(1).illegal,  // break syscall eret tne
     Mux(issueQueue.io.items >= 2.U, 2.U, issueQueue.io.items),
     issueQueue.io.items
   )
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, issueQueue.io.items)
   if (backendIssueN == 3) {
-    issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
+    issueArbiter.io.queue_items := Mux(isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal, trap_ret_items0,
       Mux(issueInsts(0).next_pc =/= MicroOpCtrl.PC4, 
         Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items), 
         trap_ret_items1
       )  
     )
   } else {
-    issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
+    issueArbiter.io.queue_items := Mux(isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal, trap_ret_items0,
       issueQueue.io.items
     )
   }
@@ -321,16 +325,29 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     )
   )
   mdu.io.req.op := exInsts(1).alu_op
+  val newHiSeqBase = Seq(
+    MicroOpCtrl.DHi -> mdu.io.resp.lo,
+    MicroOpCtrl.DHiLo -> mdu.io.resp.hi
+  )
+  val newHiSeqExt = Seq(
+    MicroOpCtrl.DHiLoAdd -> (hi + mdu.io.resp.hi)
+  )
+  val newHiSeqFinal = if (withBigCore) (newHiSeqBase ++ newHiSeqExt) else newHiSeqBase
   hi := Mux(!bubble_w && exInstsTrueValid(1), 
-    MuxLookup(exInsts(1).write_dest, hi, Seq(
-      MicroOpCtrl.DHi -> mdu.io.resp.lo,
-      MicroOpCtrl.DHiLo -> mdu.io.resp.hi
-    )),
+    MuxLookup(exInsts(1).write_dest, hi, newHiSeqFinal),
     hi
   )
-  lo := Mux(!bubble_w && (exInsts(1).write_dest === MicroOpCtrl.DLo || exInsts(1).write_dest === MicroOpCtrl.DHiLo) &&
-    exInstsTrueValid(1), 
-    mdu.io.resp.lo, lo
+  val newLoSeqBase = Seq(
+    MicroOpCtrl.DLo -> mdu.io.resp.lo,
+    MicroOpCtrl.DHiLo -> mdu.io.resp.lo
+  )
+  val newLoSeqExt = Seq(
+    MicroOpCtrl.DHiLoAdd -> (lo + mdu.io.resp.lo)
+  )
+  val newLoSeqFinal = if (withBigCore) (newLoSeqBase ++ newLoSeqExt) else newLoSeqBase  
+  lo := Mux(!bubble_w && exInstsTrueValid(1), 
+    MuxLookup(exInsts(1).write_dest, lo, newLoSeqFinal),
+    lo
   )
 
   // initialize lsu
@@ -455,7 +472,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   /**
    *  [---------- WB stage -----------]
    */
-//  wbInsts := exInsts
   aluWbData := Mux(exInsts(0).write_src === MicroOpCtrl.WBPC || exInsts(0).next_pc =/= MicroOpCtrl.PC4,
     exInsts(0).pc + 8.U,
     MuxLookup(
@@ -492,6 +508,139 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
   wbData(2) := Mux(wbLdDataValid, wbLdData, wbLdDataForStall)
+
+  // delay slot and then just jump
+  when (!bubble_w) {
+    when (exInstsTrueValid(0) && exIsBrFinal && reBranch) {
+      wfds := true.B
+    }.elsewhen(exInstsValid.asUInt.orR) {
+      wfds := false.B
+    }
+  }
+
+  when (kill_w) {
+    for(i <- 0 until backendFuN) {
+      wbInstsValid(i) := false.B
+    }
+    wbReBranch := false.B
+    wbBpuV := false.B
+  }.elsewhen (!bubble_w) {
+    wbBpuV := bpuV
+    latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump),
+      exInsts(0).pc, latestBJPC
+    )
+    for (i <- 0 until backendFuN) {
+      wbInstsValid(i) := exInstsTrueValid(i)
+    }
+    wbInsts := exInsts
+    wbInstsOrder := exInstsOrder
+    wbResult(0) := aluWbData
+    wbResult(1) := mdu.io.resp.lo
+
+    if (withBigCore) {
+      wbInsts(0).next_pc := Mux(alu.io.zero === 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
+      wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond, 
+        Mux(((exInsts(0).branch_type === MicroOpCtrl.BrEQ).asUInt ^ (exFwdRtData(0) === 0.U).asUInt).andR, 
+          MicroOpCtrl.DXXX, MicroOpCtrl.DReg
+        ), exInsts(0).write_dest
+      )   // MOVN and MOVZ instructions
+    }
+    wbALUOvf := alu.io.ovf
+    wbMDUOvf := mdu.io.resp.except
+    wbLdMa := ldMisaligned
+    wbStMa := stMisaligned
+    when (!wfds) {
+      reBranchPC := exReBranchPC
+      wbReBranch := reBranch
+    }
+  }.otherwise {
+    // TODO: do not write regFile until Stall ends
+    wbBpuV := false.B
+  }
+
+  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
+  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
+  io.fb.bmfs.bpu.v         := wbBpuV
+  io.fb.bmfs.bpu.errpr     := wbBpuErrpr
+  io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
+  io.fb.bmfs.bpu.target    := wbBpuTarget
+  io.fb.bmfs.bpu.taken     := wbBpuTaken
+
+  // regfile
+  regFile.io.wen_vec(0) := Mux(
+    wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0),
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
+  regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
+  regFile.io.wen_vec(1) := Mux(
+    wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2),
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
+  regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
+
+  // cp0
+  // TODO: cache stall should also influence the exception
+  val wbALUOvfReal  = wbInstsValid(0) && wbALUOvf
+  val wbMDUOvfReal  = wbInstsValid(1) && wbMDUOvf
+  val wbLdMaReal    = wbInstsValid(2) && wbLdMa
+  val wbStMaReal    = wbInstsValid(2) && wbStMa
+  val wbALUTrapReal = if (withBigCore) wbInsts(0).next_pc === MicroOpCtrl.NETrap && wbInstsValid(0) else null
+  val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
+  val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
+  val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
+  val wbFetchMaReal = wbInsts(0).pc(1, 0).orR && wbInstsValid(0)  // will be in mops.illegal = 1
+  val respInt       = wbInterruptd && wbInstsValid(0)
+  wbExcepts(0) := wbALUOvfReal
+  wbExcepts(1) := wbMDUOvfReal
+  wbExcepts(2) := wbLdMaReal || wbStMaReal
+  val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
+
+  wb_ev(Interrupt   ) := false.B
+  wb_ev(TLBModify   ) := false.B
+  wb_ev(TLBLoad     ) := false.B
+  wb_ev(TLBStore    ) := false.B
+  wb_ev(AddrErrLoad ) := wbLdMaReal || wbFetchMaReal
+  wb_ev(AddrErrStore) := wbStMaReal
+  wb_ev(Syscall     ) := wbALUSysReal
+  wb_ev(Breakpoint  ) := wbALUBpReal
+  wb_ev(ReservedInst) := illegal
+  wb_ev(Overflow    ) := wbALUOvfReal || wbMDUOvfReal
+  if (withBigCore) {
+    wb_ev(Trap        ) := wbALUTrapReal
+  } else {
+    wb_ev(Trap        ) := false.B
+  }
+  wb_ev(Res0        ) := false.B
+  wb_ev(Res1        ) := false.B
+  wb_ev(Res2        ) := false.B
+  cp0.io.except.except_vec    := wb_ev
+  cp0.io.except.valid_inst    := wbInstsValid.asUInt.orR
+  cp0.io.except.hard_int_vec  := io.interrupt
+  cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret && wbInstsValid(0)
+  cp0.io.except.epc           := Mux(wbALUSysReal || wbALUBpReal || wbALUOvfReal || illegal || respInt, wbInsts(0).pc, 
+                                  Mux(wbMDUOvfReal, wbInsts(1).pc, wbInsts(2).pc)
+                                 )
+  cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
+  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, wbInsts(0).pc,  wbMisalignedAddr)
+  cp0.io.except.resp_for_int  := respInt
+  cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
+  cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
+  cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
+  cp0.io.ftc.din              := wbData(0)
+  if(withBigCore){
+    cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
+  }
+  /**
+   *  [---------- DiffTest stage -----------]
+   */
+   
+  if (verilator) {
+    // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
+    BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
+    BoringUtils.addSource(VecInit((0 to 2).map(i => Mux(wbInstsValid(i), wbInsts(i).pc, 0.U))), "difftestPCs")
+  }
 
   if (diffTestV) {
     def isLwCounterInst(Inst: Mops): Bool = {
@@ -633,131 +782,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       }
     }
 
-  }
-
-  // delay slot and then just jump
-  when (!bubble_w) {
-    when (exInstsTrueValid(0) && exIsBrFinal && reBranch) {
-      wfds := true.B
-    }.elsewhen(exInstsValid.asUInt.orR) {
-      wfds := false.B
-    }
-  }
-
-  when (kill_w) {
-    for(i <- 0 until backendFuN) {
-      wbInstsValid(i) := false.B
-    }
-    wbReBranch := false.B
-    wbBpuV := false.B
-  }.elsewhen (!bubble_w) {
-    wbBpuV := bpuV
-    latestBJPC := Mux(exInstsTrueValid(0) && (isExPCBr || isExPCJump),
-      exInsts(0).pc, latestBJPC
-    )
-    for (i <- 0 until backendFuN) {
-      wbInstsValid(i) := exInstsTrueValid(i)
-    }
-    wbInsts := exInsts
-    wbInstsOrder := exInstsOrder
-    wbResult(0) := aluWbData
-    wbResult(1) := mdu.io.resp.lo
-
-
-    wbALUOvf := alu.io.ovf
-    wbMDUOvf := mdu.io.resp.except
-    wbLdMa := ldMisaligned
-    wbStMa := stMisaligned
-    when (!wfds) {
-      reBranchPC := exReBranchPC
-      wbReBranch := reBranch
-    }
-  }.otherwise {
-    // TODO: do not write regFile until Stall ends
-    wbBpuV := false.B
-  }
-
-  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
-  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
-  io.fb.bmfs.bpu.v         := wbBpuV
-  io.fb.bmfs.bpu.errpr     := wbBpuErrpr
-  io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
-  io.fb.bmfs.bpu.target    := wbBpuTarget
-  io.fb.bmfs.bpu.taken     := wbBpuTaken
-
-  // regfile
-  regFile.io.wen_vec(0) := Mux(
-    wbInstsValid(0), wbInsts(0).write_dest === MicroOpCtrl.DReg && !wbExcepts(0),
-    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-  )
-  regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
-  regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
-  regFile.io.wen_vec(1) := Mux(
-    wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2),
-    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-  )
-  regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
-  regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
-
-  // cp0
-  // TODO: cache stall should also influence the exception
-  val wbALUOvfReal  = wbInstsValid(0) && wbALUOvf
-  val wbMDUOvfReal  = wbInstsValid(1) && wbMDUOvf
-  val wbLdMaReal    = wbInstsValid(2) && wbLdMa
-  val wbStMaReal    = wbInstsValid(2) && wbStMa
-  val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
-  val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
-  val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
-  val wbFetchMaReal = wbInsts(0).pc(1, 0).orR && wbInstsValid(0)  // will be in mops.illegal = 1
-  val respInt       = wbInterruptd && wbInstsValid(0)
-  wbExcepts(0) := wbALUOvfReal
-  wbExcepts(1) := wbMDUOvfReal
-  wbExcepts(2) := wbLdMaReal || wbStMaReal
-  val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
-
-  wb_ev(Interrupt   ) := false.B
-  wb_ev(TLBModify   ) := false.B
-  wb_ev(TLBLoad     ) := false.B
-  wb_ev(TLBStore    ) := false.B
-  wb_ev(AddrErrLoad ) := wbLdMaReal || wbFetchMaReal
-  wb_ev(AddrErrStore) := wbStMaReal
-  wb_ev(Syscall     ) := wbALUSysReal
-  wb_ev(Breakpoint  ) := wbALUBpReal
-  wb_ev(ReservedInst) := illegal
-  wb_ev(Overflow    ) := wbALUOvfReal || wbMDUOvfReal
-  wb_ev(Trap        ) := false.B
-  wb_ev(Res0        ) := false.B
-  wb_ev(Res1        ) := false.B
-  wb_ev(Res2        ) := false.B
-  cp0.io.except.except_vec    := wb_ev
-  cp0.io.except.valid_inst    := wbInstsValid.asUInt.orR
-  cp0.io.except.hard_int_vec  := io.interrupt
-  cp0.io.except.ret           := wbInsts(0).next_pc === MicroOpCtrl.Ret && wbInstsValid(0)
-  cp0.io.except.epc           := Mux(wbALUSysReal || wbALUBpReal || wbALUOvfReal || illegal || respInt, wbInsts(0).pc, 
-                                  Mux(wbMDUOvfReal, wbInsts(1).pc, wbInsts(2).pc)
-                                 )
-  cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
-  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, wbInsts(0).pc,  wbMisalignedAddr)
-  cp0.io.except.resp_for_int  := respInt
-  cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
-  cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
-  cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
-  cp0.io.ftc.din              := wbData(0)
-  if(withBigCore){
-    cp0.io.step                 := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
-  }
-
-  /**
-   *  [---------- DiffTest stage -----------]
-   */
-  if (verilator) {
-    // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
-    BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
-    BoringUtils.addSource(VecInit((0 to 2).map(i => Mux(wbInstsValid(i), wbInsts(i).pc, 0.U))), "difftestPCs")
-  }
-
-
-  if (diffTestV) {
     val instret    = RegInit(0.U(64.W))
     val counter    = RegInit(0.U(64.W))
     val dstall     = RegInit(0.U(64.W))

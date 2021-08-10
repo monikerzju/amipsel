@@ -7,10 +7,10 @@ import conf.Config
 
 trait MDUOperation extends AluOpType {
   val SZ_MDU_OP = aluOpWidth
-  val MDU_MUL  = 16
-  val MDU_DIV  = 17
-  val MDU_MULU = 18
-  val MDU_DIVU = 19
+  val MDU_MUL   = 16
+  val MDU_DIV   = 17
+  val MDU_MULU  = 18
+  val MDU_DIVU  = 19
 }
 
 class MDUReq(width: Int = 32) extends Bundle with MDUOperation {
@@ -34,7 +34,7 @@ class MDUIO(width: Int = 32) extends Bundle {
   override def cloneType = (new MDUIO(width)).asInstanceOf[this.type]
 }
 
-class MDU(width: Int = 32) extends Module with MDUOperation {
+class MDU(width: Int = 32) extends Module with MDUOperation with Config {
   val io = IO(new MDUIO(width))
 
   val mul_res = RegNext(io.req.in1.asSInt * io.req.in2.asSInt)
@@ -74,11 +74,29 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
   val subrResult = io.req.reg1 - io.req.in2
   val addResult  = io.req.in1 + io.req.in2
   val subResult  = io.req.in1 - io.req.in2
+  val alu_seq_base = Seq(
+    aluSub.U  -> subResult,
+    aluSubu.U -> subResult,
+    aluSlt.U  -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
+    aluSltu.U -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
+    aluXor.U  -> (io.req.in1 ^ io.req.in2),
+    aluAnd.U  -> (io.req.in1 & io.req.in2),
+    aluOr.U   -> (io.req.in1 | io.req.in2),
+    aluNor.U  -> ~(io.req.in1 | io.req.in2),
+    aluSll.U  -> (io.req.in2 << shamt),
+    aluSrl.U  -> (io.req.in2 >> shamt),
+    aluSra.U  -> (io.req.in2.asSInt() >> shamt).asUInt(),
+    aluLui.U  -> Cat(io.req.in2(15, 0), Fill(16, 0.U))
+  )
+  val alu_seq_ext = Seq(
+    aluClz.U  -> getLeadingZeroRecur(io.req.in1, 31, 0)
+  )
+  val alu_seq_final = if (withBigCore) (alu_seq_base ++ alu_seq_ext) else alu_seq_base
   val lo = Mux(
     io.req.op(aluOpWidth - 1).andR,
     MuxLookup(
       io.req.op(aluOpWidth - 2, 0),
-      divider.io.div_res,
+      divider.io.div_res, // DIVU
       Seq(
         MDU_DIV.U(aluOpWidth - 2, 0)  -> Mux(sign1 === sign2, divider.io.div_res, ((~divider.io.div_res).asUInt + 1.U)),
         MDU_MUL.U(aluOpWidth - 2, 0)  -> mul_res(31, 0).asUInt,
@@ -88,26 +106,13 @@ class MDU(width: Int = 32) extends Module with MDUOperation {
     MuxLookup(
       io.req.op(aluOpWidth - 2, 0),
       addResult,
-      Seq(
-        aluSub.U(aluOpWidth - 2, 0)   -> subResult,
-        aluSubu.U(aluOpWidth - 2, 0)  -> subResult,
-        aluSlt.U(aluOpWidth - 2, 0)   -> Mux(io.req.in1.asSInt() < io.req.in2.asSInt(), 1.U, 0.U),
-        aluSltu.U(aluOpWidth - 2, 0)  -> Mux(io.req.in1 < io.req.in2, 1.U, 0.U),
-        aluXor.U(aluOpWidth - 2, 0)   -> (io.req.in1 ^ io.req.in2),
-        aluAnd.U(aluOpWidth - 2, 0)   -> (io.req.in1 & io.req.in2),
-        aluOr.U(aluOpWidth - 2, 0)    -> (io.req.in1 | io.req.in2),
-        aluNor.U(aluOpWidth - 2, 0)   -> ~(io.req.in1 | io.req.in2),
-        aluSll.U(aluOpWidth - 2, 0)   -> (io.req.in2 << shamt),
-        aluSrl.U(aluOpWidth - 2, 0)   -> (io.req.in2 >> shamt),
-        aluSra.U(aluOpWidth - 2, 0)   -> (io.req.in2.asSInt() >> shamt).asUInt(),
-        aluLui.U(aluOpWidth - 2, 0)   -> Cat(io.req.in2(15, 0), Fill(16, 0.U))
-      )
+      alu_seq_final
     )
   )
 
   val hi = MuxLookup(
     io.req.op,
-    divider.io.rem_res,
+    divider.io.rem_res, // DIVU
     Seq(
       MDU_DIV.U  -> Mux(sign1 === 0.U, divider.io.rem_res, ((~divider.io.rem_res).asUInt + 1.U)),
       MDU_MULU.U -> mulu_res(2 * width - 1, width),
