@@ -78,6 +78,7 @@ object MicroOpCtrl extends MDUOperation {
   val Trap          = 4.U(3.W)
   val Ret           = 5.U(3.W)
   val Break         = 6.U(3.W)
+  val NETrap        = 7.U(3.W)
   val SZ_NEXT_PC    = PC4.getWidth
 
   val SZ_ISSUE_FU   = 0

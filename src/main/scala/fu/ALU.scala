@@ -21,6 +21,16 @@ trait AluOpType{
   val aluSrl  = 11
   val aluSra  = 12
   val aluLui  = 13
+  val aluClz  = 14
+
+  def getLeadingZeroRecur(num: UInt, upper: Int, lower: Int): UInt = {
+    if (upper == lower) {
+      (num(upper) === 0.U).asUInt
+    } else {
+      val highz = !(num(upper, (upper + lower + 1) / 2).orR)
+      Mux(highz, (upper - lower + 1).U + getLeadingZeroRecur(num, (upper + lower) / 2, lower), getLeadingZeroRecur(num, upper, (upper + lower + 1) / 2))
+    }
+  }
 }
 
 class ALU extends Module with Config with AluOpType {
@@ -39,43 +49,36 @@ class ALU extends Module with Config with AluOpType {
   val subResult  = io.a - io.b
   val shamt = io.a(4, 0)
 
+  val alu_seq_base = Seq(
+    aluSub.U  -> subResult,
+    aluSubu.U -> subResult,
+    aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
+    aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
+    aluXor.U  -> (io.a ^ io.b),
+    aluAnd.U  -> (io.a & io.b),
+    aluOr.U   -> (io.a | io.b),
+    aluNor.U  -> ~(io.a | io.b),
+    aluSll.U  -> (io.b << shamt),
+    aluSrl.U  -> (io.b >> shamt),
+    aluSra.U  -> (io.b.asSInt() >> shamt).asUInt(),
+    aluLui.U  -> Cat(io.b(15, 0), Fill(16, 0.U))
+  )
+  val alu_seq_ext = Seq(
+    aluClz.U  -> getLeadingZeroRecur(io.a, 31, 0)
+  )
+  val alu_seq_final = if (withBigCore) (alu_seq_base ++ alu_seq_ext) else alu_seq_base
+
   if (useLookupBi) {
     io.r := MuxLookupBi(
       io.aluOp,
       addResult,
-      Seq(
-        aluSub.U  -> subResult,
-        aluSubu.U -> subResult,
-        aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
-        aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
-        aluXor.U  -> (io.a ^ io.b),
-        aluAnd.U  -> (io.a & io.b),
-        aluOr.U   -> (io.a | io.b),
-        aluNor.U  -> ~(io.a | io.b),
-        aluSll.U  -> (io.b << shamt),
-        aluSrl.U  -> (io.b >> shamt),
-        aluSra.U  -> (io.b.asSInt() >> shamt).asUInt(),
-        aluLui.U  -> Cat(io.b(15, 0), Fill(16, 0.U))
-      )
+      alu_seq_final
     )
   } else {
     io.r := MuxLookup(
       io.aluOp,
       addResult,
-      Seq(
-        aluSub.U  -> subResult,
-        aluSubu.U -> subResult,
-        aluSlt.U  -> Mux(io.a.asSInt() < io.b.asSInt(), 1.U, 0.U),
-        aluSltu.U -> Mux(io.a < io.b, 1.U, 0.U),
-        aluXor.U  -> (io.a ^ io.b),
-        aluAnd.U  -> (io.a & io.b),
-        aluOr.U   -> (io.a | io.b),
-        aluNor.U  -> ~(io.a | io.b),
-        aluSll.U  -> (io.b << shamt),
-        aluSrl.U  -> (io.b >> shamt),
-        aluSra.U  -> (io.b.asSInt() >> shamt).asUInt(),
-        aluLui.U  -> Cat(io.b(15, 0), Fill(16, 0.U))
-      )
+      alu_seq_final
     )    
   }
 

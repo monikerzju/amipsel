@@ -156,20 +156,24 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     issueQueue.io.din(i) := io.fb.fmbs.inst_ops(i).asTypeOf(new Mops)
   }
 
-  val trap_ret_items1 = Mux(issueInsts(1).next_pc(2).andR || issueInsts(1).illegal,  // break syscall eret
+  def isNextPCMayTrap(npc_op: UInt): Bool = {
+    npc_op(2)
+  }
+
+  val trap_ret_items1 = Mux(isNextPCMayTrap(issueInsts(1).next_pc) || issueInsts(1).illegal,  // break syscall eret tne
     Mux(issueQueue.io.items >= 2.U, 2.U, issueQueue.io.items),
     issueQueue.io.items
   )
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, issueQueue.io.items)
   if (backendIssueN == 3) {
-    issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
+    issueArbiter.io.queue_items := Mux(isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal, trap_ret_items0,
       Mux(issueInsts(0).next_pc =/= MicroOpCtrl.PC4, 
         Mux(issueQueue.io.items >= 3.U, 2.U, issueQueue.io.items), 
         trap_ret_items1
       )  
     )
   } else {
-    issueArbiter.io.queue_items := Mux(issueInsts(0).next_pc(2).andR || issueInsts(0).illegal, trap_ret_items0,
+    issueArbiter.io.queue_items := Mux(isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal, trap_ret_items0,
       issueQueue.io.items
     )
   }
@@ -663,7 +667,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbResult(0) := aluWbData
     wbResult(1) := mdu.io.resp.lo
 
-
+    if (withBigCore) {
+      wbInsts(0).next_pc := Mux(alu.io.zero === 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
+    }
     wbALUOvf := alu.io.ovf
     wbMDUOvf := mdu.io.resp.except
     wbLdMa := ldMisaligned
@@ -705,6 +711,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbMDUOvfReal  = wbInstsValid(1) && wbMDUOvf
   val wbLdMaReal    = wbInstsValid(2) && wbLdMa
   val wbStMaReal    = wbInstsValid(2) && wbStMa
+  val wbALUTrapReal = if (withBigCore) wbInsts(0).next_pc === MicroOpCtrl.NETrap && wbInstsValid(0) else null
   val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
@@ -725,7 +732,11 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   wb_ev(Breakpoint  ) := wbALUBpReal
   wb_ev(ReservedInst) := illegal
   wb_ev(Overflow    ) := wbALUOvfReal || wbMDUOvfReal
-  wb_ev(Trap        ) := false.B
+  if (withBigCore) {
+    wb_ev(Trap        ) := wbALUTrapReal
+  } else {
+    wb_ev(Trap        ) := false.B
+  }
   wb_ev(Res0        ) := false.B
   wb_ev(Res1        ) := false.B
   wb_ev(Res2        ) := false.B

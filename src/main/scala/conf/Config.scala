@@ -5,13 +5,13 @@ import chisel3._
 trait Config {
   // Compile
   var useLookupBi: Boolean = false
+  var withBigCore: Boolean = true   // big core for final
   // Basic Option
   var len: Int = 32
-  var startAddr: String = "h80000000" // TODO configurable "hbfc00000"
+  var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
-  var statusVal: String = "b00000000000000000000000000000000" // TODO configurable "b00000000010000000000000000000000"
-  var withBigCore: Boolean = true   // big core for final
+  var statusVal: String = if (withBigCore)  "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
