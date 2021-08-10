@@ -59,6 +59,9 @@ class DifftestIO extends Bundle {
   val regs     = Output(Vec(32, UInt(32.W)))
   val valids   = Output(Vec(3, UInt(1.W)))
   val pcs      = Output(Vec(3, UInt(32.W)))
+  val sync     = Input(Bool())
+  val saddr    = Input(UInt(5.W))
+  val sval     = Input(UInt(32.W))
 }
 
 class TileForVerilator extends Module with Config {
@@ -82,7 +85,10 @@ class TileForVerilator extends Module with Config {
   BoringUtils.addSink(difftest.regs,    "difftestRegs")
   BoringUtils.addSink(difftest.valids,  "difftestValids")
   BoringUtils.addSink(difftest.pcs,     "difftestPCs")
-  io.difftest := difftest
+  BoringUtils.addSource(difftest.sync,  "difftestSync")
+  BoringUtils.addSource(difftest.saddr, "difftestSaddr")
+  BoringUtils.addSource(difftest.sval,  "difftestSval")
+  io.difftest <> difftest
 }
 
 // Verilator Shell, only for Loooooongson CUP, not configurable for simple

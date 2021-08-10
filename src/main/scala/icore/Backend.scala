@@ -174,10 +174,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
   val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
   val blockSecondItem = if (withBigCore) (trapBlockSecondItem || issueInsts(0).atomic) else trapBlockSecondItem
-  issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0,
-    issueQueue.io.items
-  )
-  issueArbiter.io.ld_dest_ex  := Fill(32, exInstsValid(2)) & exInsts(2).rd
+  if (verilator) {  // TODO check if it is valid, 1 bubble after mfc0 to stop bad count value from spreading
+    issueArbiter.io.queue_items := Mux(!bubble_w && exInsts(0).src_a === MicroOpCtrl.ACP0 && exInstsTrueValid(0), 0.U, Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items))
+  } else {
+    issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
+  }
+  issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd
   issueArbiter.io.mtc0_ex     := exInstsValid(0) & exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.insts_in    := issueInsts
   issueArbiter.io.rss_in      := rsFwdData
@@ -364,7 +366,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   io.dcache.resp.ready := true.B
 
   if (withBigCore) {
-    // TODO load linked - store conditional
+    // load linked - store conditional
     val dcacheNewReqBeforeStoreCondMask = exMemRealValid && !dcacheStall
     when (dcacheNewReqBeforeStoreCondMask && !io.dcache.req.bits.wen && exInsts(2).atomic) {
       // load linked
