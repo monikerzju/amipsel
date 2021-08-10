@@ -115,6 +115,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val bpuPCBr   = exInsts(0).pc
   val bpuTarget = Mux(isExPCBr, brPC, jumpPc)
   val bpuTaken  = reBranchBrTaken || isExPCJump
+  val exMoveCondNo = ((exInsts(0).branch_type === MicroOpCtrl.BrEQ).asUInt ^ (exFwdRtData(0) === 0.U).asUInt).andR
   val linkBaseAddrHi = if (withBigCore) Reg(UInt((len - 2).W)) else null
   val linkValid = if (withBigCore) RegInit(false.B) else null
   val storeCondSuccess = if (withBigCore) (linkValid && linkBaseAddrHi === ldstAddr(len - 1, 2))  else null  // this is only a wire of data, need other control signals
@@ -205,7 +206,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     }    
   }
   // ex to is
-  when(exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DReg && exInsts(0).rd =/= 0.U) {
+  val exCondFwdEnable = if (withBigCore) (exInsts(0).write_dest === MicroOpCtrl.DRegCond && !exMoveCondNo) else false.B
+  when(exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DReg || exCondFwdEnable) && exInsts(0).rd =/= 0.U) {
     for(i <- 0 until backendIssueN) {
       when(exInsts(0).rd === issueInsts(i).rs1) {
         rsFwdData(i) := aluWbData
@@ -544,7 +546,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     if (withBigCore) {
       wbInsts(0).next_pc := Mux(alu.io.zero === 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
       wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond, 
-        Mux(((exInsts(0).branch_type === MicroOpCtrl.BrEQ).asUInt ^ (exFwdRtData(0) === 0.U).asUInt).andR, 
+        Mux(exMoveCondNo, 
           MicroOpCtrl.DXXX, MicroOpCtrl.DReg
         ), exInsts(0).write_dest
       )   // MOVN and MOVZ instructions
