@@ -178,8 +178,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
   val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
   val blockSecondItem = if (withBigCore) (trapBlockSecondItem || issueInsts(0).atomic) else trapBlockSecondItem
-  if (verilator) {  // TODO check if it is valid, 1 bubble after mfc0 to stop bad count value from spreading
-    issueArbiter.io.queue_items := Mux(!bubble_w && exInsts(0).src_a === MicroOpCtrl.ACP0 && exInstsTrueValid(0), 0.U, Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items))
+  if (withBigCore) {  // redirect mtc0 // TODO more redirect, such as cache, sync...
+    val redirectFlushBlockSecondItem = issueInsts(0).write_dest === MicroOpCtrl.DCP0
+    val redirectFlushBlockSecondItemFinal = if (verilator) (issueInsts(0).src_a === MicroOpCtrl.ACP0 || redirectFlushBlockSecondItem) else redirectFlushBlockSecondItem
+    issueArbiter.io.queue_items := Mux(blockSecondItem || redirectFlushBlockSecondItemFinal, trap_ret_items0, issueQueue.io.items)
   } else {
     issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
   }
@@ -591,13 +593,21 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbBpuV := false.B
   }
 
-  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
-  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
-  io.fb.bmfs.bpu.v         := wbBpuV
-  io.fb.bmfs.bpu.errpr     := wbBpuErrpr
-  io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
-  io.fb.bmfs.bpu.target    := wbBpuTarget
-  io.fb.bmfs.bpu.taken     := wbBpuTaken
+  if (withBigCore) {
+    val flushPipeLineRedirect = wbInstsValid(0) && (wbInsts(0).write_dest === MicroOpCtrl.DCP0 || false.B) // TODO add more, such as cache, priority exchange
+     // to sync count for qemu
+    val flushPipeLineRedirectFinal = if (verilator) flushPipeLineRedirect || (!dcacheStall && wbInstsValid(0) && wbInsts(0).src_a === MicroOpCtrl.ACP0) else flushPipeLineRedirect
+    io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill || flushPipeLineRedirectFinal
+    io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, Mux(wbReBranch && !wfds, reBranchPC, wbInsts(0).pc + 4.U))
+  } else {
+    io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
+    io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
+  }
+  io.fb.bmfs.bpu.v           := wbBpuV
+  io.fb.bmfs.bpu.errpr       := wbBpuErrpr
+  io.fb.bmfs.bpu.pc_br       := wbBpuPCBr
+  io.fb.bmfs.bpu.target      := wbBpuTarget
+  io.fb.bmfs.bpu.taken       := wbBpuTaken
 
   // regfile
   regFile.io.wen_vec(0) := Mux(
@@ -692,6 +702,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
     BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
     BoringUtils.addSource(VecInit((0 to 2).map(i => Mux(wbInstsValid(i), wbInsts(i).pc, 0.U))), "difftestPCs")
+    // printf("valids %x, %x, %x; pcs %x, %x, %x\n", wbInstsValid(0) && !bubble_w, wbInstsValid(1) && !bubble_w, wbInstsValid(2) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
   }
 
   if (diffTestV) {

@@ -23,13 +23,13 @@ class SimMem extends Module with Config with MemAccessType {
   when(io.dcache_io.req.valid) {
     when(io.dcache_io.req.addr(29, 0) >= "h4000000".U) {
       write_ram := false.B
-      printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
+      // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
     }
   }
 
   when(io.icache_io.req.valid) {
     when(io.icache_io.req.addr >= "h84000000".U) {
-      printf("icache is accessing %x, ram overflow\n", io.icache_io.req.addr)
+      // printf("icache is accessing %x, ram overflow\n", io.icache_io.req.addr)
     }
     // printf("icache reading %x, inst is %x\n", io.icache_io.req.addr, icandidates(0))
   }
