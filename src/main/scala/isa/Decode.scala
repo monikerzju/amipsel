@@ -25,6 +25,7 @@ class Mops extends Bundle with Config with InstType {
   val pc            = UInt(len.W)
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
+  val atomic        = if (withBigCore) Bool() else null
 }
 
 class DecIO extends Bundle with Config {
@@ -129,7 +130,9 @@ class Dec extends Module with InstType with Config {
     LWL        -> List(F ,  toLSU.U),
     LWR        -> List(F ,  toLSU.U),
     SWL        -> List(F ,  toLSU.U),
-    SWR        -> List(F ,  toLSU.U)
+    SWR        -> List(F ,  toLSU.U),
+    LL         -> List(F ,  toLSU.U),       
+    SC         -> List(F ,  toLSU.U)
   )
   val control_signal_final = if (withBigCore) Array.concat(control_signal_base, control_signal_ext) else control_signal_base
   val control_signal = ListLookup(io.inst, List(T ,  toBJU.U), control_signal_final)
@@ -201,10 +204,12 @@ class Dec extends Module with InstType with Config {
     SW    -> List(DMem   , MemWord , IRT , IXX )
   )
   val lsu_signal_ext = Array(
-    LWL   -> List(DReg   , MemWordL , IXX , IRT ),
-    LWR   -> List(DReg   , MemWordR , IXX , IRT ),
-    SWL   -> List(DReg   , MemWordL , IRT , IXX ),// TODO
-    SWR   -> List(DReg   , MemWordR , IRT , IXX ) // TODO
+    LWL   -> List(DReg   , MemByteU, IXX , IRT ),
+    LWR   -> List(DReg   , MemByteU, IXX , IRT ),
+    SWL   -> List(DReg   , MemByteU, IXX , IRT ),
+    SWR   -> List(DReg   , MemByteU, IXX , IRT ),
+    LL    -> List(DReg   , MemWord , IXX , IRT ),       
+    SC    -> List(DMem   , MemWord , IRT , IRT )
   )
   val lsu_signal_final = if (withBigCore) Array.concat(lsu_signal_base, lsu_signal_ext) else lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 
@@ -336,4 +341,7 @@ class Dec extends Module with InstType with Config {
   io.mops.pc            := io.pc
   io.mops.predict_taken := io.bht_predict_taken
   io.mops.target_pc     := io.target_pc
+  if(withBigCore){
+    io.mops.atomic      := io.inst === SC || io.inst === LL
+  }
 }
