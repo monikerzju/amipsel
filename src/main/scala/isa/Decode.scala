@@ -57,6 +57,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
   def T = true.B
   def F = false.B
 
+  val isTlbExp = if (withBigCore) io.tlb_exp.expType =/= TLBExceptType.noExp else false.B
+
   /**
     * Control signals of all instructions
     */

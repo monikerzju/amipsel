@@ -374,7 +374,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
   val mmioMask = io.dcache.req.bits.wen && io.dcache.req.bits.addr(28, 0) === "h1faffff0".U
-  val storeCondMask = !storeCondSuccess && exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic
+  val storeCondMask = if (withBigCore) !storeCondSuccess && exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic else null
   val dcacheMask = if (withBigCore) storeCondMask else if (simpleNBDCache) mmioMask else false.B
   io.dcache.req.valid := exMemRealValid && !dcacheMask || dcacheStall
   io.dcache.resp.ready := true.B
@@ -638,7 +638,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbTlbsReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(0) ||
     wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(2) else false.B
   val wbModReal     = if (withBigCore) wbInsts(2).tlb_exp.expType === TLBExceptType.mod && wbInstsValid(2) else false.B
-  val wbTlbBadAddr  = Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr)
+  val wbTlbBadAddr  = if (withBigCore) Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr) else "hdeadbeef".U
   val respInt       = wbInterruptd && wbInstsValid(0)
   wbExcepts(0) := wbALUOvfReal
   wbExcepts(1) := wbMDUOvfReal

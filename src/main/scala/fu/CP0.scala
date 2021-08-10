@@ -225,21 +225,31 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   io.ftc.dout := badvaddrr
   val read_causer = Cat(causer(len - 1), tim_int, causer(29, 16), real_hard_int_vec, causer(9, 0))
   val countw = if (diffTestV) 0.U else countr(len, 1)
-  switch (io.ftc.code) {
-    is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
-    is (Count.U)    {   io.ftc.dout := countw         }
-    is (Status.U)   {   io.ftc.dout := statusr        }
-    is (Cause.U)    {   io.ftc.dout := read_causer    }
-    is (EPC.U)      {   io.ftc.dout := epcr           }
-    is (Compare.U)  {   io.ftc.dout := comparer       }
-    if (withBigCore) {
-      is (EntryHi.U)  { io.ftc.dout := entryHir       }
-      is (EntryLo0.U) { io.ftc.dout := entryLor(0)    }
-      is (EntryLo1.U) { io.ftc.dout := entryLor(1)    }
-      is (PageMask.U) { io.ftc.dout := pageMaskr      }
-      is (Index.U)    { io.ftc.dout := indexr         }
+  if (withBigCore) {
+    switch (io.ftc.code) {
+      is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
+      is (Count.U)    {   io.ftc.dout := countw         }
+      is (Status.U)   {   io.ftc.dout := statusr        }
+      is (Cause.U)    {   io.ftc.dout := read_causer    }
+      is (EPC.U)      {   io.ftc.dout := epcr           }
+      is (Compare.U)  {   io.ftc.dout := comparer       }
+      is (EntryHi.U)  {   io.ftc.dout := entryHir       }
+      is (EntryLo0.U) {   io.ftc.dout := entryLor(0)    }
+      is (EntryLo1.U) {   io.ftc.dout := entryLor(1)    }
+      is (PageMask.U) {   io.ftc.dout := pageMaskr      }
+      is (Index.U)    {   io.ftc.dout := indexr         }
     }
+  } else {
+    switch (io.ftc.code) {
+      is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
+      is (Count.U)    {   io.ftc.dout := countw         }
+      is (Status.U)   {   io.ftc.dout := statusr        }
+      is (Cause.U)    {   io.ftc.dout := read_causer    }
+      is (EPC.U)      {   io.ftc.dout := epcr           }
+      is (Compare.U)  {   io.ftc.dout := comparer       }
+    }    
   }
+
 
   if (withBigCore) {
     io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))
@@ -275,21 +285,30 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   }.elsewhen (io.ftc.wen && io.except.valid_inst) {
     val status_imut = statusr & nStatusWMask.U
     val status_mut  = io.ftc.din & StatusWMask.U
-    val n = log2Up(TLBSize)
-    switch (io.ftc.code) {
-      // BadVAddr is unwritable
-      is (Count.U)    {   countr := Cat(io.ftc.din, 0.U(1.W))                                }
-      is (Status.U)   {   statusr := status_imut | status_mut                                }
-      is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
-      is (EPC.U)      {   epcr := io.ftc.din                                                 }
-      is (Compare.U)  {   comparer := io.ftc.din                                             }
-      if (withBigCore) {
-        is (EntryHi.U)  { entryHir := Cat(io.ftc.din(31, 13), 0.U(5.W), io.ftc.din(7, 0))    }
-        is (EntryLo0.U) { entryLor(0) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
-        is (EntryLo1.U) { entryLor(1) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
-        is (PageMask.U) { pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
-        is (Index.U)    { indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }
-      }  
+    if (withBigCore) {
+      val n = log2Up(TLBSize)
+      switch (io.ftc.code) {
+        // BadVAddr is unwritable
+        is (Count.U)    {   countr := Cat(io.ftc.din, 0.U(1.W))                                }
+        is (Status.U)   {   statusr := status_imut | status_mut                                }
+        is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
+        is (EPC.U)      {   epcr := io.ftc.din                                                 }
+        is (Compare.U)  {   comparer := io.ftc.din                                             }
+        is (EntryHi.U)  {   entryHir := Cat(io.ftc.din(31, 13), 0.U(5.W), io.ftc.din(7, 0))    }
+        is (EntryLo0.U) {   entryLor(0) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
+        is (EntryLo1.U) {   entryLor(1) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
+        is (PageMask.U) {   pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
+        is (Index.U)    {   indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }  
+      }
+    } else {
+      switch (io.ftc.code) {
+        // BadVAddr is unwritable
+        is (Count.U)    {   countr := Cat(io.ftc.din, 0.U(1.W))                                }
+        is (Status.U)   {   statusr := status_imut | status_mut                                }
+        is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
+        is (EPC.U)      {   epcr := io.ftc.din                                                 }
+        is (Compare.U)  {   comparer := io.ftc.din                                             } 
+      }      
     }
   }
 }
