@@ -372,6 +372,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
+    if(withBigCore){
+      memReq.swlr := 0.U
+    }
     memReq
   }
   )
@@ -384,6 +387,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     memReq.wdata := exFwdRtData(2)
     memReq.addr := ldstAddr
+    if(withBigCore){
+      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
+    }
     memReq
   }
 
