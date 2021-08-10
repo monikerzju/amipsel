@@ -125,7 +125,10 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val statusr   = RegInit(statusVal.U(len.W))
   val causer    = RegInit(0.U(len.W))
   val epcr      = Reg(UInt(len.W))
-
+  
+  val pridr     = if(withBigCore) RegInit("h19300".U(len.W)) else null
+  val configr   = if(withBigCore) RegInit("h80000482".U(len.W)) else null
+  val config1r  = if(withBigCore) RegInit("h9e190c8f".U(len.W)) else null
   val tim_int = RegInit(false.B)
   when (io.ftc.wen && io.ftc.code === Compare.U && io.except.valid_inst) {
     tim_int := false.B
@@ -165,7 +168,12 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     is (EPC.U)      { io.ftc.dout := epcr           }
     is (Compare.U)  { io.ftc.dout := comparer       }
   }
-
+  if(withBigCore){
+    switch(io.ftc.code){
+      is (PRId.U)   { io.ftc.dout := pridr          }
+      is (Config.U) { io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
+    }
+  }
   io.except.except_kill     := has_except || ret
   io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   io.except.call_for_int    := int_en
