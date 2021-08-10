@@ -201,10 +201,10 @@ class Dec extends Module with InstType with Config {
     SW    -> List(DMem   , MemWord , IRT , IXX )
   )
   val lsu_signal_ext = Array(
-    LWL   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    LWR   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    SWL   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    SWR   -> List(DReg   , MemByteU, IXX , IRT ) // TODO
+    LWL   -> List(DReg   , MemWordL , IXX , IRT ),
+    LWR   -> List(DReg   , MemWordR , IXX , IRT ),
+    SWL   -> List(DReg   , MemWordL , IRT , IXX ),// TODO
+    SWR   -> List(DReg   , MemWordR , IRT , IXX ) // TODO
   )
   val lsu_signal_final = if (withBigCore) Array.concat(lsu_signal_base, lsu_signal_ext) else lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 

@@ -486,8 +486,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
 
   // handle load-inst separately
-  val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
-  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
+  val delayed_req_bits = RegNext(io.dcache.req.bits.addr(1, 0) << 3.U)
+  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> delayed_req_bits
   val wbLdData = Wire(UInt(len.W))
 
   // to cope with the situation where load after mult happens,
@@ -504,6 +504,15 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemByteU) { wbLdData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
     is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
+  }
+  if(withBigCore){
+    val lwl_mask = "hffffffff".U >> (delayed_req_bits+8.U)
+    val lwr_mask = ~("hffffffff".U >> delayed_req_bits)
+    val ori_reg = RegNext(exFwdRtData(2))
+    switch(wbInsts(2).mem_width) {
+      is(MicroOpCtrl.MemWordL) { wbLdData := (io.dcache.resp.bits.rdata(0) & ~lwl_mask)|(ori_reg & lwl_mask)}
+      is(MicroOpCtrl.MemWordR) { wbLdData := (io.dcache.resp.bits.rdata(0) & ~lwr_mask)|(ori_reg & lwr_mask)}
+    }
   }
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
