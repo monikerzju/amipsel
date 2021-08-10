@@ -376,8 +376,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       memReq.swlr := 0.U
     }
     memReq
-  }
-  )
+  })
+
 
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
@@ -512,12 +512,13 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
   }
   if(withBigCore){
-    val lwl_mask = "hffffffff".U >> (delayed_req_bits+8.U)
+    val lwl_mask = "h00ffffff".U >> delayed_req_bits
     val lwr_mask = ~("hffffffff".U >> delayed_req_bits)
     val ori_reg = RegNext(exFwdRtData(2))
+    val shamt = delayed_req_bits
     switch(wbInsts(2).mem_width) {
-      is(MicroOpCtrl.MemWordL) { wbLdData := (io.dcache.resp.bits.rdata(0) & ~lwl_mask)|(ori_reg & lwl_mask)}
-      is(MicroOpCtrl.MemWordR) { wbLdData := (io.dcache.resp.bits.rdata(0) & ~lwr_mask)|(ori_reg & lwr_mask)}
+      is(MicroOpCtrl.MemWordL) { wbLdData := ((io.dcache.resp.bits.rdata(0)<<(24.U-shamt)) & ~lwl_mask)|(ori_reg & lwl_mask)}
+      is(MicroOpCtrl.MemWordR) { wbLdData := ((io.dcache.resp.bits.rdata(0)>>shamt) & ~lwr_mask)|(ori_reg & lwr_mask)}
     }
   }
   wbData(0) := wbResult(0)

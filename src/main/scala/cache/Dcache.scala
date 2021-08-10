@@ -187,12 +187,13 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
       mask_raw := "h000000ff".U
     }
   }
+  val reg_wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
   val wd = WireDefault(
     ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
   )
   if(withBigCore){
-    val swl_mask = ~("hffffff00" << reg_shift)
-    val swr_mask = "hffffffff" << reg_shift
+    val swl_mask = ~("hffffff00".U << reg_shift)
+    val swr_mask = "hffffffff".U << reg_shift
     when(io.cpu.req.bits.swlr(0)){  // swl
       wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (line(reg_word1) & ~swl_mask) 
     }.elsewhen(io.cpu.req.bits.swlr(1)){  // swr
