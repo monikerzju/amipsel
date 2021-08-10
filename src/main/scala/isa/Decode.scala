@@ -1,13 +1,14 @@
 package isa
 
-import chisel3._ 
-import chisel3.util._ 
+import chisel3._
+import chisel3.util._
 import conf.Config
 import ISA._
 import MicroOpCtrl._
+import fu.{TLBExceptIO, TLBExceptType, TLBOpType}
 import icore.InstType
 
-class Mops extends Bundle with Config with InstType {
+class Mops extends Bundle with Config with InstType with TLBOpType {
   val illegal       = Bool()
   val next_pc       = UInt(SZ_NEXT_PC.W)
   val alu_mdu_lsu   = UInt(typeLen.W)
@@ -26,6 +27,8 @@ class Mops extends Bundle with Config with InstType {
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
   val atomic        = if (withBigCore) Bool() else null
+  val tlb_exp       = if (withBigCore) new TLBExceptIO else null
+  val tlb_op        = if (withBigCore) UInt(TLBOPTYPE_SIZE.W) else null
 }
 
 class DecIO extends Bundle with Config {
@@ -33,10 +36,11 @@ class DecIO extends Bundle with Config {
   val inst              = Input(UInt(len.W))
   val bht_predict_taken = Input(Bool())
   val target_pc         = Input(UInt(len.W))
+  val tlb_exp           = if (withBigCore) Input(new TLBExceptIO) else null
   val mops              = Output(new Mops)
 }
 
-class Dec extends Module with InstType with Config {
+class Dec extends Module with InstType with TLBOpType with Config {
   val io = IO(new DecIO)
 
   val SHAMT = io.inst(10,  6)
@@ -118,6 +122,9 @@ class Dec extends Module with InstType with Config {
     MTC0       -> List(F ,  toBJU.U)
   )
   val control_signal_ext = Array(
+    TLBP       -> List(F ,  toBJU.U),
+    TLBR       -> List(F ,  toBJU.U),
+    TLBWI      -> List(F ,  toBJU.U),
     CLZ        -> List(F ,  toALU.U),
     SYNC       -> List(F ,  toALU.U),
     WAIT       -> List(F ,  toALU.U),
@@ -269,16 +276,18 @@ class Dec extends Module with InstType with Config {
   // MDU   0     | pc4  | ?    | xxx | areg   | breg   |  ?     |   ?     |    xxx    |  mdu   |  rs?  |   ?   | xxx  |  simm    4 fields
   // BJU   ?     |  ?   | bj   | ?   |   ?    | bxxx   |   ?    |  alusubu|    xxx    |  ?     |  rs?  | rt?   |  ?   |   ?      10 fields
   // LSU   0     | pc4  | ?    | xxx | areg   | bimm   |   ?    |  add    |   ?       |  xxx   |  rs?  | ?     |  ?   |  simm    6 fields
- 
-  io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
-  io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
-  io.mops.alu_mdu_lsu   := control_signal(1)
+
   if (withBigCore) {
+    io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR || isTlbExp
+    io.mops.alu_mdu_lsu   := Mux(isTlbExp, toBJU.U, control_signal(1))
     io.mops.branch_type := Mux(control_signal(1) === toBJU.U, Mux(bju_signal(0) === Branch, 
       branch_signal(0), Mux(bju_signal(2) === DRegCond, mov_cond_signal(0), BrXXX)), BrXXX)
   } else {
+    io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
+    io.mops.alu_mdu_lsu   := control_signal(1)
     io.mops.branch_type := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
   }
+  io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
   io.mops.src_a         := MuxLookup(control_signal(1), AReg,
                              Seq(
                                toALU.U -> alu_signal(0),
@@ -343,5 +352,13 @@ class Dec extends Module with InstType with Config {
   io.mops.target_pc     := io.target_pc
   if(withBigCore){
     io.mops.atomic      := io.inst === SC || io.inst === LL
+    io.mops.tlb_exp     := io.tlb_exp
+    io.mops.tlb_op      := ListLookup(io.inst, List(notlb.U),
+                            Array (
+                              TLBP  -> List(tlbp.U),
+                              TLBR  -> List(tlbr.U),
+                              TLBWI -> List(tlbwi.U),
+                            )
+                          )(0)
   }
 }

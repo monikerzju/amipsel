@@ -21,7 +21,7 @@ class IAIO(private val iq_size: Int) extends Bundle with Config {
   val insts_order = Output(Vec(backendFuN, UInt(log2Ceil(backendIssueN + 1).W)))
 }
 
-class IssueArbiter(private val iq_size: Int) extends Module with InstType with Config {
+class IssueArbiter(private val iq_size: Int) extends Module with InstType with Config with TLBOpType {
 
   def isWAW(inst1: Mops, inst2: Mops): Bool = {
     inst1.rd =/= 0.U && inst1.rd === inst2.rd
@@ -39,7 +39,9 @@ class IssueArbiter(private val iq_size: Int) extends Module with InstType with C
     isRAW(inst1, inst2) || isWAW(inst1, inst2)
   }
 
-  def isSimpleCompatible(inst1: Mops, dest: UInt, mtc0: Bool): Bool = {
+  def isSimpleCompatible(inst1: Mops, dest: UInt, mtc0: Bool): Bool = if (withBigCore) {
+    (dest === 0.U || (inst1.rs1 =/= dest && inst1.rs2 =/= dest)) && (!mtc0 || (inst1.src_a =/= MicroOpCtrl.ACP0 && inst1.tlb_op === notlb.U))
+  } else {
     (dest === 0.U || (inst1.rs1 =/= dest && inst1.rs2 =/= dest)) && (!mtc0 || inst1.src_a =/= MicroOpCtrl.ACP0)
   }
 

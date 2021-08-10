@@ -23,7 +23,7 @@ class StoreInfo extends Bundle with Config {
 }
 
 // TODO ALU_LSU ALU_MDU LSU_BJU
-class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
+class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode with RefType with TLBOpType {
   val io = IO(new BackendIO)
 
   // Global
@@ -48,6 +48,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     tmp.target_pc := 0.U
     if (withBigCore) {
       tmp.atomic := false.B
+      tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
+      tmp.tlb_op := 0.U
     }
     tmp
   }
@@ -103,13 +105,14 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
+  val exIsTlbAddrFind = if (withBigCore) io.tlbAddrTransl.exp.expType === TLBExceptType.noExp else true.B
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
-                          exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(0))
+                          exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(0))
   val mduExptMask      = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(1) ||
-                          exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
+                          exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
-  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned
+  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned && exIsTlbAddrFind
   val bpuV      = (isExPCBr || isExPCJump) && exInstsValid(0)
   val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || isExPCJump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
   val bpuPCBr   = exInsts(0).pc
@@ -149,6 +152,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbBpuTarget      = RegNext(bpuTarget)
   val wbBpuTaken       = RegNext(bpuTaken)
   val wbStCondSuccess  = if (withBigCore) RegInit(false.B) else null
+  val wbTlbOut         = if (withBigCore) Reg(new TLBEntryIO) else null
 
   /**
    *  [---------- IS stage -----------]
@@ -179,8 +183,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   } else {
     issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
   }
+  if (withBigCore) {
+    issueArbiter.io.mtc0_ex   := exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DCP0 || exInsts(0).tlb_op === tlbr.U || exInsts(0).tlb_op === tlbp.U)
+  } else {
+    issueArbiter.io.mtc0_ex   := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
+  }
   issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd
-  issueArbiter.io.mtc0_ex     := exInstsValid(0) & exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.insts_in    := issueInsts
   issueArbiter.io.rss_in      := rsFwdData
   issueArbiter.io.rts_in      := rtFwdData
@@ -353,6 +361,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     lo
   )
 
+  // tlb exec
+  if (withBigCore) {
+    io.tlbExec.op := exInsts(0).tlb_op
+    io.tlbExec.din := cp0.io.ftTlb.exec.dout
+  }
+
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
   dcacheStall := exLastMemReqValid && !io.dcache.resp.valid
@@ -389,6 +403,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq
   }
   )
+  if (withBigCore) {
+    io.tlbAddrTransl.virt_addr := ldstAddr
+    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
+  }
 
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
@@ -397,7 +415,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.mtype := exInsts(2).mem_width
     memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     memReq.wdata := exFwdRtData(2)
-    memReq.addr := ldstAddr
+    if (withBigCore) { memReq.addr := io.tlbAddrTransl.phys_addr } else { memReq.addr := ldstAddr }
     memReq
   }
 
@@ -426,7 +444,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     when (isExPCBr) {
       reBranchBrTaken := MuxLookup(exInsts(0).branch_type, alu.io.zero === 1.U, // default beq
         Seq(
-          MicroOpCtrl.BrNE -> (alu.io.zero === 0 .U),
+          MicroOpCtrl.BrNE -> (alu.io.zero === 0.U),
           MicroOpCtrl.BrGE -> (alu.io.a.asSInt >= 0.S),
           MicroOpCtrl.BrGT -> (alu.io.a.asSInt > 0.S),
           MicroOpCtrl.BrLE -> (alu.io.a.asSInt <= 0.S),
@@ -558,6 +576,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbMDUOvf := mdu.io.resp.except
     wbLdMa := ldMisaligned
     wbStMa := stMisaligned
+
+    if (withBigCore) {
+      wbInsts(2).tlb_exp := io.tlbAddrTransl.exp // tlb exception
+      wbTlbOut := io.tlbExec.dout // tlb exec
+    }
+
     when (!wfds) {
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
@@ -609,6 +633,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
   val wbFetchMaReal = wbInsts(0).pc(1, 0).orR && wbInstsValid(0)  // will be in mops.illegal = 1
+  val wbTlblReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl && wbInstsValid(0) ||
+    wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl && wbInstsValid(2) else false.B
+  val wbTlbsReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(0) ||
+    wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(2) else false.B
+  val wbModReal     = if (withBigCore) wbInsts(2).tlb_exp.expType === TLBExceptType.mod && wbInstsValid(2) else false.B
+  val wbTlbBadAddr  = Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr)
   val respInt       = wbInterruptd && wbInstsValid(0)
   wbExcepts(0) := wbALUOvfReal
   wbExcepts(1) := wbMDUOvfReal
@@ -616,9 +646,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
   wb_ev(Interrupt   ) := false.B
-  wb_ev(TLBModify   ) := false.B
-  wb_ev(TLBLoad     ) := false.B
-  wb_ev(TLBStore    ) := false.B
+  wb_ev(TLBModify   ) := wbModReal
+  wb_ev(TLBLoad     ) := wbTlblReal
+  wb_ev(TLBStore    ) := wbTlbsReal
   wb_ev(AddrErrLoad ) := wbLdMaReal || wbFetchMaReal
   wb_ev(AddrErrStore) := wbStMaReal
   wb_ev(Syscall     ) := wbALUSysReal
@@ -641,13 +671,19 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
                                   Mux(wbMDUOvfReal, wbInsts(1).pc, wbInsts(2).pc)
                                  )
   cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
-  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, wbInsts(0).pc,  wbMisalignedAddr)
+  cp0.io.except.bad_addr      := Mux(wbTlblReal || wbTlbsReal || wbModReal, wbTlbBadAddr, Mux(wbFetchMaReal, wbInsts(0).pc, wbMisalignedAddr))
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
-  
+  if (withBigCore) {
+    cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
+    cp0.io.ftTlb.exec.din       := wbTlbOut
+    cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
+    cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
+  }
+
   /**
    *  [---------- DiffTest stage -----------]
    */
