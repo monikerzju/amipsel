@@ -280,7 +280,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
 
 
   if (withBigCore) {
-    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))
+    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, tlbTrapAddr.U, trapAddr.U))
   } else {
     io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   }

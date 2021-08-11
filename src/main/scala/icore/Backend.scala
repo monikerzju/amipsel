@@ -699,10 +699,17 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
    */
    
   if (verilator) {
-    // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
+    def exceptionFun(i: Int): Bool = {
+      if (i == 0) {
+        wbALUOvf || wbInsts(0).next_pc === MicroOpCtrl.Trap || wbInsts(0).next_pc === MicroOpCtrl.Break || wbInsts(0).illegal || wbInsts(0).pc(1, 0).orR || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs
+      } else if (i == 1) {
+        wbMDUOvf
+      } else {
+        wbLdMa || wbStMa || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs || wbInsts(2).tlb_exp.expType === TLBExceptType.mod
+      }
+    }
     BoringUtils.addSource(VecInit((0 to 2).map(i => RegNext(wbInstsValid(i) && !bubble_w))), "difftestValids")
     BoringUtils.addSource(VecInit((0 to 2).map(i => RegNext(Mux(wbInstsValid(i), wbInsts(i).pc, 0.U)))), "difftestPCs")
-    // printf("valids %x, %x, %x; pcs %x, %x, %x\n", wbInstsValid(0) && !bubble_w, wbInstsValid(1) && !bubble_w, wbInstsValid(2) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
   }
 
   if (diffTestV) {

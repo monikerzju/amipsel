@@ -11,6 +11,7 @@ trait Config {
   var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
+  var tlbTrapAddr: String = "h80024b40" // "hbfc00200"
   var statusVal: String = if (withBigCore)  "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
