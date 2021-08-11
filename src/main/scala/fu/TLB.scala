@@ -117,11 +117,6 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
         io.execOp.dout.index := Cat(1.U(1.W), 0.U((len - 1).W)).asTypeOf(new IndexStruct)
       }
 
-//      if (idx == -1) { // not find entry
-//        io.execOp.dout.index := Cat(1.U(1.W), 0.U((len - 1).W)).asTypeOf(new IndexStruct)
-//      } else {
-//        io.execOp.dout.index := Cat(0.U((len - n).W), idx.U(n.W)).asTypeOf(new IndexStruct)
-//      }
     }
     is (tlbr.U) {
       when (io.execOp.din.index.index < TLBSize.U) {
@@ -133,6 +128,18 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
       }
     }
     is (tlbwi.U) {
+      when (io.execOp.din.index.index < TLBSize.U) {
+        val entry = entries(io.execOp.din.index.index)
+        entry.pageMask := io.execOp.din.pageMask.mask
+        entry.entryHi := Cat(io.execOp.din.entryHi.vpn2, io.execOp.din.entryHi.asid).asTypeOf((new TLBEntry).getEntryHiClass())
+        for (i <- 0 until 2) {
+          entry.entryLo(i) := Cat(io.execOp.din.entryLo(i).pfn, io.execOp.din.entryLo(i).c, io.execOp.din.entryLo(i).d, io.execOp.din.entryLo(i).v)
+            .asTypeOf((new TLBEntry).getEntryLoClass())
+        }
+        entry.g := io.execOp.din.entryLo(0).g & io.execOp.din.entryLo(1).g
+      }
+    }
+    is (tlbwr.U) {
       when (io.execOp.din.index.index < TLBSize.U) {
         val entry = entries(io.execOp.din.index.index)
         entry.pageMask := io.execOp.din.pageMask.mask
