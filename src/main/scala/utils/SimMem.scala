@@ -25,6 +25,9 @@ class SimMem extends Module with Config with MemAccessType {
       write_ram := false.B
       // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
     }
+    when(io.dcache_io.req.addr(28, 0) === "h1fd003f8".U && io.dcache_io.req.wen) {
+      printf("%c", io.dcache_io.req.data(7, 0))
+    }
   }
 
   when(io.icache_io.req.valid) {

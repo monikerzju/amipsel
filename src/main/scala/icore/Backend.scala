@@ -650,9 +650,14 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbModReal     = if (withBigCore) wbInsts(2).tlb_exp.expType === TLBExceptType.mod && wbInstsValid(2) else false.B
   val wbTlbBadAddr  = if (withBigCore) Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr) else "hdeadbeef".U
   val respInt       = wbInterruptd && wbInstsValid(0)
-  wbExcepts(0) := wbALUOvfReal
+  if (withBigCore) {
+    wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl
+    wbExcepts(2) := wbLdMaReal || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl
+  } else {
+    wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR
+    wbExcepts(2) := wbLdMaReal  // store would not cause write to GPR
+  }
   wbExcepts(1) := wbMDUOvfReal
-  wbExcepts(2) := wbLdMaReal || wbStMaReal
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
   wb_ev(Interrupt   ) := false.B
