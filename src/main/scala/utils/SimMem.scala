@@ -20,13 +20,6 @@ class SimMem extends Module with Config with MemAccessType {
   val icandidates = Wire(Vec(32, UInt(8.W)))
   val dcandidates = Wire(Vec(32, UInt(8.W)))
 
-  when(io.dcache_io.req.valid) {
-    when(io.dcache_io.req.addr(29, 0) >= "h4000000".U) {
-      write_ram := false.B
-      // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
-    }
-  }
-
   when(io.icache_io.req.valid) {
     when(io.icache_io.req.addr >= "h84000000".U) {
       // printf("icache is accessing %x, ram overflow\n", io.icache_io.req.addr)
@@ -43,7 +36,15 @@ class SimMem extends Module with Config with MemAccessType {
     icandidates(i) := memory.read(ram_mask & (io.icache_io.req.addr + i.U))
     dcandidates(i) := memory.read(ram_mask & (io.dcache_io.req.addr + i.U))
   }
-
+  when(io.dcache_io.req.valid && io.dcache_io.req.addr(31, 0) >= "ha0000000".U) {
+    write_ram := false.B
+    dcandidates(0) := "hdeadbeef".U
+    switch(io.dcache_io.req.addr){  // linux only
+      is("hbfd003fd".U){  for(i <- 0 until 8)dcandidates(i) := "h60".U }
+    }
+    // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
+    printf("returning %x\n",dcandidates.asUInt)
+  }
 //   printf("mem 0x80000000 is %x\n", Cat(memory.read(3.U), memory.read(2.U), memory.read(1.U), memory.read(0.U)))
 
   // read is simple

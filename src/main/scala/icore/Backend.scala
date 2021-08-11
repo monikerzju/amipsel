@@ -397,6 +397,22 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       // cp0 redirect, store on the overlapped address, store conditional succeeds or not
       linkValid := false.B
     }
+    val dcache_info = false
+    if(dcache_info){
+      val reg_last = Reg(UInt(len.W))
+      val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
+      reg_last := pc
+      when(io.dcache.resp.valid){
+        
+        printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
+        when(RegNext(io.dcache.req.bits.wen)){
+          printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
+        }.otherwise{
+          printf("reading %x\n", io.dcache.resp.bits.rdata(0))
+        }
+      }
+
+    }
   }
 
   val exLastMemReq = RegInit({
