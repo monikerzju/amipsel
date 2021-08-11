@@ -249,8 +249,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
   )
   val bju_signal_ext = Array(
     TNE   -> List(NETrap  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
-    MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IXX , IRD),
-    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IXX , IRD)
+    MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD),
+    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD)
   )
   val bju_signal_final = if (withBigCore) Array.concat(bju_signal_base, bju_signal_ext) else bju_signal_base
   val bju_signal = ListLookup(io.inst,
