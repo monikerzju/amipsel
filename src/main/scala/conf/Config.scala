@@ -3,13 +3,6 @@ package conf
 import chisel3._
 
 trait Config {
-  // TODO
-  // TODO
-  // TODO
-  // TODO     Flush pipeline after write CP0 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO
-  // TODO
-  // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // Compile
   var useLookupBi: Boolean = false
   var withBigCore: Boolean = true   // big core for final
@@ -38,6 +31,7 @@ trait Config {
   var PFNSize: Int = 20
   var TLBSize: Int = 16
   var enableTLBAddrTransl = true
+  val enableItlbAddrTransl = true
   var useQEMURandomStrategy = true
   // BPU
   var traceCallRet: Boolean = false
