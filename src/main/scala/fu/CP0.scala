@@ -100,6 +100,7 @@ class FromToTlb extends Bundle with Config {
 class CP0IO extends Bundle with Config {
   val ftc = new FromToCIO
   val except = new ExceptIO
+  val step = if(withBigCore) Input(UInt(2.W)) else null
   val ftTlb = if (withBigCore) new FromToTlb else null
 }
 
@@ -287,7 +288,12 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   }
   io.except.except_kill     := has_except || ret
   io.except.call_for_int    := int_en
-  countr := countr + 1.U
+  if(withBigCore){
+    countr := countr +io.step
+  }
+  else {
+    countr := countr + 1.U
+  }
   when (has_except || error_ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 1.U

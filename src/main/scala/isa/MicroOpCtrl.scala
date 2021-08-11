@@ -58,12 +58,14 @@ object MicroOpCtrl extends MDUOperation {
   val SZ_W_DEST     = DXXX.getWidth
 
   // correspond with MemAccessType
-  val MemXXX        = 4.U(3.W)
-  val MemWord       = 2.U(3.W)  // Word 010
-  val MemByte       = 0.U(3.W)  // Byte 000
-  val MemByteU      = 6.U(3.W)  // Byte 110
-  val MemHalf       = 1.U(3.W)  // Half 001
-  val MemHalfU      = 5.U(3.W)  // Half 101
+  val MemXXX        = 4.U(4.W)
+  val MemWord       = 2.U(4.W)  // Word 010
+  val MemByte       = 0.U(4.W)  // Byte 000
+  val MemByteU      = 6.U(4.W)  // Byte 110
+  val MemHalf       = 1.U(4.W)  // Half 001
+  val MemHalfU      = 5.U(4.W)  // Half 101
+  val MemWordR      = 7.U(4.W)  // for swr, lwr
+  val MemWordL      = 8.U(4.W)  // lwl, lwr
   val SZ_MEM_TYPE   = MemXXX.getWidth
 
   val WBXXX         = 0.U(2.W)
