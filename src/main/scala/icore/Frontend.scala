@@ -150,9 +150,6 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
   }
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen   := false.B
-  if(withBigCore){
-    io.icache.req.bits.swlr:= 0.U
-  }
   if (frontendIssueN == 1) {
     io.icache.req.bits.mtype := MEM_WORD.U
   } else {

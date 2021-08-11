@@ -179,8 +179,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
   val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
   val blockSecondItem = if (withBigCore) (trapBlockSecondItem || issueInsts(0).atomic) else trapBlockSecondItem
-  if (verilator) {  // TODO check if it is valid, 1 bubble after mfc0 to stop bad count value from spreading
-    issueArbiter.io.queue_items := Mux(!bubble_w && exInsts(0).src_a === MicroOpCtrl.ACP0 && exInstsTrueValid(0), 0.U, Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items))
+  if (withBigCore) {  // redirect mtc0 // TODO more redirect, such as cache, sync...
+    val redirectFlushBlockSecondItem = issueInsts(0).write_dest === MicroOpCtrl.DCP0
+    val redirectFlushBlockSecondItemFinal = if (verilator) (issueInsts(0).src_a === MicroOpCtrl.ACP0 || redirectFlushBlockSecondItem) else redirectFlushBlockSecondItem
+    issueArbiter.io.queue_items := Mux(blockSecondItem || redirectFlushBlockSecondItemFinal, trap_ret_items0, issueQueue.io.items)
   } else {
     issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
   }
@@ -362,8 +364,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     lo
   )
 
-  // tlb exec
   if (withBigCore) {
+    // tlb addr translate
+    io.tlbAddrTransl.virt_addr := ldstAddr
+    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
+
+    // tlb exec
     io.tlbExec.op := exInsts(0).tlb_op
     io.tlbExec.din := cp0.io.ftTlb.exec.dout
   }
@@ -401,15 +407,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
-    if(withBigCore){
-      memReq.swlr := 0.U
-    }
     memReq
-  })
-  if (withBigCore) {
-    io.tlbAddrTransl.virt_addr := ldstAddr
-    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
   }
+  )
 
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
@@ -418,12 +418,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.mtype := exInsts(2).mem_width
     memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     memReq.wdata := exFwdRtData(2)
-    memReq.addr := ldstAddr
-    if(withBigCore){
-      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
-      memReq.addr := io.tlbAddrTransl.phys_addr
-    }
-    else { memReq.addr := ldstAddr }
+    if (withBigCore) { memReq.addr := io.tlbAddrTransl.phys_addr } else { memReq.addr := ldstAddr }
     memReq
   }
 
@@ -520,8 +515,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
 
   // handle load-inst separately
-  val delayed_req_bits = RegNext(io.dcache.req.bits.addr(1, 0) << 3.U)
-  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> delayed_req_bits
+  val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
+  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
   val wbLdData = Wire(UInt(len.W))
 
   // to cope with the situation where load after mult happens,
@@ -538,24 +533,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemByteU) { wbLdData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
     is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
-  }
-  if(withBigCore){
-    val lwl_mask = Wire(UInt(32.W))
-    val lwr_mask = Wire(UInt(32.W))
-    lwl_mask := "h00ffffff".U >> delayed_req_bits
-    lwr_mask := ~("hffffffff".U >> delayed_req_bits)
-    val last = Reg(UInt(len.W))
-    val ori = Mux(dcacheStall, last, exFwdRtData(2))
-    last := ori
-    val shamt = delayed_req_bits
-    switch(wbInsts(2).mem_width) {
-      is(MicroOpCtrl.MemWordL) { 
-        wbLdData := ((io.dcache.resp.bits.rdata(0)<<(24.U-shamt)) & ~lwl_mask)|(last & lwl_mask)
-      }
-      is(MicroOpCtrl.MemWordR) { 
-        wbLdData := ((io.dcache.resp.bits.rdata(0)>>shamt) & ~lwr_mask)|(last & lwr_mask)
-      }
-    }
   }
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
@@ -617,13 +594,21 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbBpuV := false.B
   }
 
-  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
-  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
-  io.fb.bmfs.bpu.v         := wbBpuV
-  io.fb.bmfs.bpu.errpr     := wbBpuErrpr
-  io.fb.bmfs.bpu.pc_br     := wbBpuPCBr
-  io.fb.bmfs.bpu.target    := wbBpuTarget
-  io.fb.bmfs.bpu.taken     := wbBpuTaken
+  if (withBigCore) {
+    val flushPipeLineRedirect = wbInstsValid(0) && (wbInsts(0).write_dest === MicroOpCtrl.DCP0 || false.B) // TODO add more, such as cache, priority exchange
+     // to sync count for qemu
+    val flushPipeLineRedirectFinal = if (verilator) flushPipeLineRedirect || (!dcacheStall && wbInstsValid(0) && wbInsts(0).src_a === MicroOpCtrl.ACP0) else flushPipeLineRedirect
+    io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill || flushPipeLineRedirectFinal
+    io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, Mux(wbReBranch && !wfds, reBranchPC, wbInsts(0).pc + 4.U))
+  } else {
+    io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
+    io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
+  }
+  io.fb.bmfs.bpu.v           := wbBpuV
+  io.fb.bmfs.bpu.errpr       := wbBpuErrpr
+  io.fb.bmfs.bpu.pc_br       := wbBpuPCBr
+  io.fb.bmfs.bpu.target      := wbBpuTarget
+  io.fb.bmfs.bpu.taken       := wbBpuTaken
 
   // regfile
   regFile.io.wen_vec(0) := Mux(
@@ -703,7 +688,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
-    cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
     cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
@@ -722,6 +706,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
     BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
     BoringUtils.addSource(VecInit((0 to 2).map(i => Mux(wbInstsValid(i), wbInsts(i).pc, 0.U))), "difftestPCs")
+    // printf("valids %x, %x, %x; pcs %x, %x, %x\n", wbInstsValid(0) && !bubble_w, wbInstsValid(1) && !bubble_w, wbInstsValid(2) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
   }
 
   if (diffTestV) {

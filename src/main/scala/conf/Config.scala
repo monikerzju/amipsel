@@ -36,8 +36,9 @@ trait Config {
   // TLB
   var VPNSize: Int = 19
   var PFNSize: Int = 20
-  var TLBSize: Int = 32
-  var enableTLBAddrTransl = false
+  var TLBSize: Int = 16
+  var enableTLBAddrTransl = true
+  var useQEMURandomStrategy = true
   // BPU
   var traceCallRet: Boolean = false
   var traceBPU: Boolean = false
