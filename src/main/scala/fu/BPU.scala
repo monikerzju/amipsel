@@ -139,8 +139,17 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
 
   val last_update = RegNext(update)
   val bht_first   = Mux(last_update, Mux(cache_or_update_hit, chosen_result, Fill(2, 0.U)), history.io.douta)
-  io.resp.taken_vec(0)  := bht_first(1)
-  io.resp.taken_vec(1)  := history.io.doutb(1)
+
+  var useBPU = false
+  if (useBPU) {
+    io.resp.taken_vec(0)  := bht_first(1)
+    io.resp.taken_vec(1)  := history.io.doutb(1)
+  }
+  else {
+    io.resp.taken_vec(0)  := false.B
+    io.resp.taken_vec(1)  := false.B
+  }
+
 
   // Notice that the update from ID will only change BHT
   buffer.io.we := io.update.exe.errpr && io.update.exe.v

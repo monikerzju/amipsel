@@ -15,7 +15,7 @@ trait Config {
   var withBigCore: Boolean = true   // big core for final
   // Basic Option
   var len: Int = 32
-  var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
+  var startAddr: String = "hbfc00000" // if (withBigCore) "h80000000" else "hbfc00000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = if (withBigCore)  "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
@@ -36,8 +36,9 @@ trait Config {
   // TLB
   var VPNSize: Int = 19
   var PFNSize: Int = 20
-  var TLBSize: Int = 16
+  var TLBSize: Int = 32
   var enableTLBAddrTransl = true
+  val enableItlbAddrTransl = true
   var useQEMURandomStrategy = true
   // BPU
   var traceCallRet: Boolean = false

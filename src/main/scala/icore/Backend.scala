@@ -688,7 +688,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
-    cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
+    cp0.io.ftTlb.exec.op        := Mux(wbInsts(0).tlb_op =/= notlb.U, wbInsts(0).tlb_op, exInsts(0).tlb_op) // assume no two tlb inst execute continously
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
     cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)

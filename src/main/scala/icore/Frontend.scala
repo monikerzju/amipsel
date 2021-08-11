@@ -141,12 +141,15 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     io.tlb(1).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U)) + 4.U
     io.tlb(1).refType   := fetch.U
   }
-  io.icache.req.valid      := true.B
-  io.icache.resp.ready     := true.B 
+
+  io.icache.resp.ready      := true.B
+  val tlbFetchExp = if(withBigCore) io.tlb(0).exp.expType =/= TLBExceptType.noExp || io.tlb(1).exp.expType =/= TLBExceptType.noExp else false.B
   if (withBigCore) {
-    io.icache.req.bits.addr:= io.tlb(0).phys_addr
+    io.icache.req.valid     := !tlbFetchExp
+    io.icache.req.bits.addr := io.tlb(0).phys_addr
   } else {
-    io.icache.req.bits.addr:= Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
+    io.icache.req.valid     := true.B
+    io.icache.req.bits.addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
   }
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen   := false.B
@@ -169,7 +172,7 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     decode_pc_predict_target := Mux(stall_f, reptar, pc_gen.io.predict_target_o)
     decode_pc_second_state   := Mux(stall_f, repstat, pc_gen.io.predict_sstat_o)
     decode_pc_predict_taken  := Mux(stall_f, repred, pc_gen.io.predict_taken_o)
-    decode_valid_reg  := io.icache.req.valid
+    decode_valid_reg  := io.icache.req.valid || tlbFetchExp
   }
 
   frontend_fire := !cache_stall && decode_valid_reg && !delayed_early_update

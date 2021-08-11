@@ -201,7 +201,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       val entry = Wire(new TLBEntryIO)
       entry.entryHi  := entryHir.asTypeOf(new EntryHiStruct)
       entry.pageMask := pageMaskr.asTypeOf(new PageMaskStruct)
-      entry.index    := Mux(io.ftTlb.exec.op === tlbwi.U, indexr.asTypeOf(new IndexStruct), randomr.asTypeOf(new IndexStruct))
+      entry.index    := Mux(io.ftTlb.exec.op === tlbwr.U, randomr.asTypeOf(new IndexStruct), indexr.asTypeOf(new IndexStruct))
       for (i <- 0 until 2) {
         entry.entryLo(i) := entryLor(i).asTypeOf(new EntryLoStruct)
       }
