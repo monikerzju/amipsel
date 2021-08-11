@@ -145,8 +145,8 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
   io.icache.resp.ready      := true.B
   val tlbFetchExp = if(withBigCore) io.tlb(0).exp.expType =/= TLBExceptType.noExp || io.tlb(1).exp.expType =/= TLBExceptType.noExp else false.B
   if (withBigCore) {
-    io.icache.req.valid     := !tlbFetchExp
-    io.icache.req.bits.addr := io.tlb(0).phys_addr
+    io.icache.req.valid     := true.B
+    io.icache.req.bits.addr := Mux(tlbFetchExp, startAddr.U, io.tlb(0).phys_addr)
   } else {
     io.icache.req.valid     := true.B
     io.icache.req.bits.addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
