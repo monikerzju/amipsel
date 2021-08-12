@@ -41,9 +41,10 @@ object MicroOpCtrl extends MDUOperation {
   val AShamt        = 4.U(3.W)
   val SZ_ALU_A      = AXXX.getWidth
 
-  val BXXX          = 0.U(1.W)
-  val BReg          = 0.U(1.W)
-  val BImm          = 1.U(1.W)
+  val BXXX          = 0.U(2.W)
+  val BReg          = 0.U(2.W)
+  val BImm          = 1.U(2.W)
+  val BZero         = 2.U(2.W)
   val SZ_ALU_B      = BXXX.getWidth
 
   val DXXX          = 0.U(3.W)

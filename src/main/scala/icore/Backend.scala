@@ -220,6 +220,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   }
   // ex to is
   val exCondFwdEnable = if (withBigCore) (exInsts(0).write_dest === MicroOpCtrl.DRegCond && !exMoveCondNo) else false.B
+  val movn_info = false
+  if(movn_info){
+    when(exInsts(0).write_dest === MicroOpCtrl.DRegCond){
+      printf("mov/movz, rs, rt = (%x,%x), %d, pc=%x, redirect kill = %d, wfds %d\n",exFwdRsData(0),exFwdRtData(0),exCondFwdEnable,exInsts(0).pc,io.fb.bmfs.redirect_kill,wfds)
+    }
+  }
   when(exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DReg || exCondFwdEnable) && exInsts(0).rd =/= 0.U) {
     for(i <- 0 until backendIssueN) {
       when(exInsts(0).rd === issueInsts(i).rs1) {
@@ -315,7 +321,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   )
   alu.io.b := MuxLookup(exInsts(0).src_b, exFwdRtData(0),
     Seq(
-      MicroOpCtrl.BImm -> exInsts(0).imm
+      MicroOpCtrl.BImm -> exInsts(0).imm,
+      MicroOpCtrl.BZero -> 0.U
     )
   )
   alu.io.rega  := exFwdRsData(0)
@@ -397,7 +404,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       // cp0 redirect, store on the overlapped address, store conditional succeeds or not
       linkValid := false.B
     }
-    val dcache_info = true
+    val dcache_info = false
     if(dcache_info){
       val reg_last = Reg(UInt(len.W))
       val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
@@ -645,6 +652,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     val flushPipeLineRedirectFinal = if (verilator) flushPipeLineRedirect || (!dcacheStall && wbInstsValid(0) && wbInsts(0).src_a === MicroOpCtrl.ACP0) else flushPipeLineRedirect
     io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill || flushPipeLineRedirectFinal
     io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, Mux(wbReBranch && !wfds, reBranchPC, wbInsts(0).pc + 4.U))
+    if(movn_info){
+      when(RegNext(exCondFwdEnable)){
+        printf("wb result: %x, redirect kill: %d, wfds %d\n",wbResult(0),io.fb.bmfs.redirect_kill,wfds)
+        printf("flush final: %d, except kill: %d, stall_x %d\n",flushPipeLineRedirectFinal,cp0.io.except.except_kill,stall_x)
+      }
+    }
   } else {
     io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
     io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)

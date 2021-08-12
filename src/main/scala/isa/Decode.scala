@@ -365,5 +365,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
                             )
                           )(0)
     io.mops.sel         := io.inst(2,0)
+    when(io.inst === MOVN || io.inst === MOVZ){
+      io.mops.src_b := BZero
+    }
   }
 }
