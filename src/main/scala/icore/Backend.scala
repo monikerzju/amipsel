@@ -50,6 +50,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       tmp.atomic := false.B
       tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
       tmp.tlb_op := 0.U
+      tmp.sel := 0.U
     }
     tmp
   }
@@ -406,9 +407,11 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
+    if(withBigCore){
+      memReq.swlr := 0.U
+    }
     memReq
-  }
-  )
+  })
   def mtype_trans(c:UInt):UInt = {
     MuxLookup(c, MEM_WORD.U,
       Seq(
@@ -426,7 +429,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.mtype := mtype_trans(exInsts(2).mem_width)
     memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     memReq.wdata := exFwdRtData(2)
-    if (withBigCore) { memReq.addr := io.tlbAddrTransl.phys_addr } else { memReq.addr := ldstAddr }
+    if (withBigCore) {
+      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
+      memReq.addr := io.tlbAddrTransl.phys_addr
+    } else { memReq.addr := ldstAddr }
     memReq
   }
 
@@ -523,8 +529,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
 
   // handle load-inst separately
-  val delayed_req_byte = RegNext(io.dcache.req.bits.addr(1, 0))
-  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> (delayed_req_byte << 3.U)
+  val delayed_req_bits = RegNext(io.dcache.req.bits.addr(1, 0) << 3.U)
+  val dataFromDcache = io.dcache.resp.bits.rdata(0) >> delayed_req_bits
   val wbLdData = Wire(UInt(len.W))
 
   // to cope with the situation where load after mult happens,
@@ -541,6 +547,24 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemByteU) { wbLdData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
     is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
+  }
+  if(withBigCore){
+    val lwl_mask = Wire(UInt(32.W))
+    val lwr_mask = Wire(UInt(32.W))
+    lwl_mask := "h00ffffff".U >> delayed_req_bits
+    lwr_mask := ~("hffffffff".U >> delayed_req_bits)
+    val last = Reg(UInt(len.W))
+    val ori = Mux(dcacheStall, last, exFwdRtData(2))
+    last := ori
+    val shamt = delayed_req_bits
+    switch(wbInsts(2).mem_width) {
+      is(MicroOpCtrl.MemWordL) { 
+        wbLdData := ((io.dcache.resp.bits.rdata(0)<<(24.U-shamt)) & ~lwl_mask)|(last & lwl_mask)
+      }
+      is(MicroOpCtrl.MemWordR) { 
+        wbLdData := ((io.dcache.resp.bits.rdata(0)>>shamt) & ~lwr_mask)|(last & lwr_mask)
+      }
+    }
   }
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
@@ -575,7 +599,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbResult(1) := mdu.io.resp.lo
 
     if (withBigCore) {
-      wbInsts(0).next_pc := Mux(alu.io.zero === 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
+      wbInsts(0).next_pc := Mux(alu.io.zero =/= 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
       wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond, 
         Mux(exMoveCondNo, 
           MicroOpCtrl.DXXX, MicroOpCtrl.DReg
@@ -669,6 +693,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   wbExcepts(1) := wbMDUOvfReal
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
+  when (wb_ev.asUInt.orR && wbInstsValid.asUInt.orR) {
+    printf("\nexception or error wb_evec = %x\n", wb_ev.asUInt)
+  }
   wb_ev(Interrupt   ) := false.B
   wb_ev(TLBModify   ) := wbModReal
   wb_ev(TLBLoad     ) := wbTlblReal
@@ -699,18 +726,37 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
-  cp0.io.ftc.sel              := 0.U  // TODO Config and Config1, fix it for Linux
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
     cp0.io.ftTlb.exec.op        := Mux(wbInsts(0).tlb_op =/= notlb.U, wbInsts(0).tlb_op, exInsts(0).tlb_op) // assume no two tlb inst execute continously
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
     cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
+    cp0.io.ftc.sel              := exInsts(0).sel
+  }
+  else {
+    cp0.io.ftc.sel              := 0.U
   }
 
   /**
    *  [---------- DiffTest stage -----------]
    */
+
+  val dcache_info = false
+    if(dcache_info){
+      val reg_last = Reg(UInt(len.W))
+      val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
+      reg_last := pc
+      when(io.dcache.resp.valid){
+        
+        printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
+        when(RegNext(io.dcache.req.bits.wen)){
+          printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
+        }.otherwise{
+          printf("reading %x\n", io.dcache.resp.bits.rdata(0))
+        }
+      }
+    }
    
   if (verilator) {
     def exceptionFun(i: Int): Bool = {

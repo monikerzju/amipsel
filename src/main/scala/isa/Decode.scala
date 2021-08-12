@@ -29,6 +29,7 @@ class Mops extends Bundle with Config with InstType with TLBOpType {
   val atomic        = if (withBigCore) Bool() else null
   val tlb_exp       = if (withBigCore) new TLBExceptIO else null
   val tlb_op        = if (withBigCore) UInt(TLBOPTYPE_SIZE.W) else null
+  val sel           = if (withBigCore) UInt(3.W) else null
 }
 
 class DecIO extends Bundle with Config {
@@ -214,12 +215,12 @@ class Dec extends Module with InstType with TLBOpType with Config {
     SW    -> List(DMem   , MemWord , IRT , IXX )
   )
   val lsu_signal_ext = Array(
-    LWL   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    LWR   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    SWL   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    SWR   -> List(DReg   , MemByteU, IXX , IRT ),// TODO
-    LL    -> List(DReg   , MemWord , IXX , IRT ),       
-    SC    -> List(DMem   , MemWord , IRT , IRT )
+    LWL   -> List(DReg   , MemWordL , IRT , IRT ),
+    LWR   -> List(DReg   , MemWordR , IRT , IRT ),
+    SWL   -> List(DReg   , MemWordL , IRT , IXX ),
+    SWR   -> List(DReg   , MemWordR , IRT , IXX ), 
+    LL    -> List(DReg   , MemWord  , IXX , IRT ),       
+    SC    -> List(DMem   , MemWord  , IRT , IRT )
   )
   val lsu_signal_final = if (withBigCore) Array.concat(lsu_signal_base, lsu_signal_ext) else lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 
@@ -249,8 +250,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
   )
   val bju_signal_ext = Array(
     TNE   -> List(NETrap  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
-    MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IXX , IRD),
-    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IXX , IRD)
+    MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD),
+    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD)
   )
   val bju_signal_final = if (withBigCore) Array.concat(bju_signal_base, bju_signal_ext) else bju_signal_base
   val bju_signal = ListLookup(io.inst,
@@ -364,5 +365,6 @@ class Dec extends Module with InstType with TLBOpType with Config {
                               TLBWR -> List(tlbwr.U)
                             )
                           )(0)
+    io.mops.sel         := io.inst(2,0)
   }
 }

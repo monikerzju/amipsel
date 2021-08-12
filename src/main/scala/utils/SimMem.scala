@@ -26,7 +26,7 @@ class SimMem extends Module with Config with MemAccessType {
       // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
     }
     when(io.dcache_io.req.addr(28, 0) === "h1fd003f8".U && io.dcache_io.req.wen && !io.dcache_io.resp.valid) {
-      printf("%c", io.dcache_io.req.data(7, 0))
+      // printf("%c", io.dcache_io.req.data(7, 0))
     }
   }
 
@@ -46,7 +46,15 @@ class SimMem extends Module with Config with MemAccessType {
     icandidates(i) := memory.read(ram_mask & (io.icache_io.req.addr + i.U))
     dcandidates(i) := memory.read(ram_mask & (io.dcache_io.req.addr + i.U))
   }
-
+  when(io.dcache_io.req.valid && io.dcache_io.req.addr(31, 0) >= "ha0000000".U) {
+    write_ram := false.B
+    dcandidates(0) := "hdeadbeef".U
+    switch(io.dcache_io.req.addr){  // linux only
+      is("hbfd003fd".U){  for(i <- 0 until 8)dcandidates(i) := "h60".U }
+    }
+    // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
+    // printf("returning %x\n",dcandidates.asUInt)
+  }
 //   printf("mem 0x80000000 is %x\n", Cat(memory.read(3.U), memory.read(2.U), memory.read(1.U), memory.read(0.U)))
 
   // read is simple
