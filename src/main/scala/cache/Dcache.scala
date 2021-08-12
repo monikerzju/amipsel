@@ -123,7 +123,7 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
   val index_raw =
     __reg(io.cpu.req.bits.addr(len - dTagBits - 1, len - dTagBits - dIndexBits))
   val reg_index = RegNext(index_raw)
-  val mmio = __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
+  val mmio = if (withBigCore && bigCoreDMMIO) true.B else __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0
@@ -331,11 +331,11 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
       io.bar.req.addr := __reg(io.cpu.req.bits.addr)
       io.bar.req.data := __reg(io.cpu.req.bits.wdata)
       io.bar.req.wen := reg_write
-
+      val shamt = Cat(__reg(io.cpu.req.bits.addr(1,0)),0.U(3.W))
       when(io.bar.resp.valid) {
         state := s_cpu_resp
         when(!reg_write) {
-          reg_rdata := io.bar.resp.data(31, 0)
+          reg_rdata := io.bar.resp.data(31, 0) << shamt
         }
       }.otherwise {
         io.bar.req.valid := true.B

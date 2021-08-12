@@ -402,19 +402,28 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
     memReq.invalidate := false.B
-    memReq.mtype := MicroOpCtrl.MemWord
+    memReq.mtype := MEM_WORD.U
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
     memReq
   }
   )
-
+  def mtype_trans(c:UInt):UInt = {
+    MuxLookup(c, MEM_WORD.U,
+      Seq(
+        MicroOpCtrl.MemByteU -> MEM_BYTE.U,
+        MicroOpCtrl.MemByte -> MEM_BYTE.U,
+        MicroOpCtrl.MemHalf -> MEM_HALF.U,
+        MicroOpCtrl.MemHalf -> MEM_HALF.U,
+      )
+    )
+  }
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
     memReq.invalidate := false.B
-    memReq.mtype := exInsts(2).mem_width
+    memReq.mtype := mtype_trans(exInsts(2).mem_width)
     memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     memReq.wdata := exFwdRtData(2)
     if (withBigCore) { memReq.addr := io.tlbAddrTransl.phys_addr } else { memReq.addr := ldstAddr }
