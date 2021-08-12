@@ -10,7 +10,7 @@ trait Config {
   var len: Int = 32
   var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
   var endAddr: String = "hbfc00100"
-  var trapAddr: String = if (withBigCore) "hbfc00380" else "hbfc00380"
+  var trapAddr: String = if (withBigCore) "h8002a180" else "hbfc00380"
   var tlbTrapAddr: String = "h80024b40" // "hbfc00200"
   var statusVal: String = if (withBigCore) "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
   // Super Scalar
