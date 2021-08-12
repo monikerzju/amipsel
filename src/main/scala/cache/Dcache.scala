@@ -187,6 +187,12 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
       mask_raw := "h000000ff".U
     }
   }
+  val reg_write = RegInit(false.B)
+  reg_write := Mux(
+    responsive,
+    io.cpu.req.bits.wen && io.cpu.req.valid,
+    reg_write
+  )
   val reg_wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
   val wd = Wire(UInt(len.W))
   wd := ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
@@ -195,24 +201,16 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
     val swr_mask = Wire(UInt(len.W))
     swl_mask := ~("hffffff00".U << reg_shift)
     swr_mask := "hffffffff".U << reg_shift
-    when(io.cpu.req.bits.swlr(0)){  // swl
+    when(RegEnable(io.cpu.req.bits.swlr(0).asBool,responsive)){  // swl
       wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (line(reg_word1) & ~swl_mask) 
-      printf("wd for swl = %x, wdata=%x, mask = %x\n",wd,reg_wdata,swl_mask)
-    }.elsewhen(io.cpu.req.bits.swlr(1)){  // swr
+    }.elsewhen(RegEnable(io.cpu.req.bits.swlr(1).asBool,responsive)){  // swr
       wd := ((reg_wdata << reg_shift) & swr_mask) | (line(reg_word1) & ~swr_mask)
-      printf("wd for swr = %x, wdata=%x, mask = %x\n",wd,reg_wdata,swr_mask)
     }
   }
 
   val reg_tag_evict = RegInit(0.U(dTagBits.W))
   val reg_rdata = RegNext(Mux(state === s_uncached, io.bar.resp.data(len-1,0), line(reg_word1)))
 
-  val reg_write = RegInit(false.B)
-  reg_write := Mux(
-    responsive,
-    io.cpu.req.bits.wen && io.cpu.req.valid,
-    reg_write
-  )
   val reg_line = RegInit(0.U((1<<(offsetBits+3)).W))
   val reg_miss = RegInit(false.B)
   val reg_forward = RegInit(false.B)

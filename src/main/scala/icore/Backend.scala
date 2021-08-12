@@ -442,7 +442,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wdata := exFwdRtData(2)
     memReq.addr := ldstAddr
     if(withBigCore){
-      memReq.swlr := Mux(memReq.wen,Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U)),0.U)
+      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
       memReq.addr := io.tlbAddrTransl.phys_addr
     }
     else { memReq.addr := ldstAddr }
