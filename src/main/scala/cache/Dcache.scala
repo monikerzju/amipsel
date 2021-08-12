@@ -287,7 +287,16 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
       }.elsewhen(mmio && __reg(io.cpu.req.valid)(0)) {
           state := s_uncached
           io.bar.req.valid := true.B
-          io.bar.req.addr := io.cpu.req.bits.addr
+          if(bigCoreDMMIO){
+            io.bar.req.addr := Mux(
+              io.cpu.req.bits.swlr =/= 0.U,
+              Cat(Seq(tag_raw,io.cpu.req.bits.addr(len-dTagBits-1,2),0.U(2.W))),   // fetch whole word if lwl or lwr
+              Cat(tag_raw,io.cpu.req.bits.addr(len-dTagBits-1,0))
+            )
+          }
+          else {
+            io.bar.req.addr := io.cpu.req.bits.addr
+          }
           io.bar.req.data := io.cpu.req.bits.wdata
           io.bar.req.wen := io.cpu.req.bits.wen
         }
@@ -338,14 +347,18 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
       // }
     }
     is(s_uncached) {
-      io.bar.req.addr := __reg(io.cpu.req.bits.addr)
-      io.bar.req.data := __reg(io.cpu.req.bits.wdata)
+      io.bar.req.addr := RegEnable(io.bar.req.addr, state === s_normal)
+      io.bar.req.data := RegEnable(io.bar.req.data, state === s_normal)
       io.bar.req.wen := reg_write
       val shamt = Cat(__reg(io.cpu.req.bits.addr(1,0)),0.U(3.W))
       when(io.bar.resp.valid) {
         state := s_cpu_resp
         when(!reg_write) {
-          reg_rdata := io.bar.resp.data(31, 0) << shamt
+          if(!withBigCore){
+            reg_rdata := io.bar.resp.data(31, 0)
+          } else{
+            reg_rdata := Mux(io.cpu.req.bits.swlr =/= 0.U, io.bar.resp.data(31, 0), io.bar.resp.data(31, 0) << shamt)
+          }
         }
       }.otherwise {
         io.bar.req.valid := true.B
