@@ -216,8 +216,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
   val lsu_signal_ext = Array(
     LWL   -> List(DReg   , MemWordL , IRT , IRT ),
     LWR   -> List(DReg   , MemWordR , IRT , IRT ),
-    SWL   -> List(DReg   , MemWordL , IRT , IXX ),
-    SWR   -> List(DReg   , MemWordR , IRT , IXX ), 
+    SWL   -> List(DMem   , MemWordL , IRT , IXX ),
+    SWR   -> List(DMem   , MemWordR , IRT , IXX ), 
     LL    -> List(DReg   , MemWord  , IXX , IRT ),       
     SC    -> List(DMem   , MemWord  , IRT , IRT )
   )

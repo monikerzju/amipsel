@@ -397,7 +397,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       // cp0 redirect, store on the overlapped address, store conditional succeeds or not
       linkValid := false.B
     }
-    val dcache_info = false
+    val dcache_info = true
     if(dcache_info){
       val reg_last = Reg(UInt(len.W))
       val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
@@ -442,7 +442,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wdata := exFwdRtData(2)
     memReq.addr := ldstAddr
     if(withBigCore){
-      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
+      memReq.swlr := Mux(memReq.wen,Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U)),0.U)
       memReq.addr := io.tlbAddrTransl.phys_addr
     }
     else { memReq.addr := ldstAddr }

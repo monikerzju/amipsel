@@ -171,8 +171,19 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val epcr      = Reg(UInt(len.W))
   
   val pridr     = if(withBigCore) RegInit("h19300".U(len.W)) else null
-  val configr   = if(withBigCore) RegInit("h80000482".U(len.W)) else null
-  val config1r  = if(withBigCore) RegInit("h9e190c8f".U(len.W)) else null
+  // val configr   = if(withBigCore) RegInit("h80000482".U(len.W)) else null
+  // val config1r  = if(withBigCore) RegInit("h9e190c8f".U(len.W)) else null
+  // val config2r  = if(withBigCore) RegInit("h80000000".U(len.W)) else null
+  // val config3r  = if(withBigCore) RegInit(0.U(len.W)) else null
+  val configv   = if(withBigCore) RegInit(VecInit(Seq(
+    "h80000482".U(len.W),
+    "h9e190c8f".U(len.W),
+    "h80000000".U(len.W),
+    0.U(len.W)
+    ))) else null
+  val r15_1     = if(withBigCore) RegInit("h80000000".U(len.W)) else null
+  val r12_2     = if(withBigCore) RegInit(0.U(len.W)) else null
+  // val watchhir  = if(withBigCore) RegInit("h80000000".U(len.W)) else null
 
   val entryHir  = if (withBigCore) RegInit(0.U(len.W)) else null
   val entryLor  = if (withBigCore) RegInit(VecInit(Seq.fill(2)(0.U(len.W)))) else null
@@ -261,7 +272,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     switch (io.ftc.code) {
       is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
       is (Count.U)    {   io.ftc.dout := countw         }
-      is (Status.U)   {   io.ftc.dout := statusr        }
+      is (Status.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, statusr, r12_2)}
       is (Cause.U)    {   io.ftc.dout := read_causer    }
       is (EPC.U)      {   io.ftc.dout := epcr           }
       is (Compare.U)  {   io.ftc.dout := comparer       }
@@ -270,8 +281,9 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (EntryLo1.U) {   io.ftc.dout := entryLor(1)    }
       is (PageMask.U) {   io.ftc.dout := pageMaskr      }
       is (Index.U)    {   io.ftc.dout := indexr         }
-      is (PRId.U)     {   io.ftc.dout := pridr          }
-      is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
+      is (PRId.U)     {   io.ftc.dout := Mux(io.ftc.sel === 0.U, pridr, r15_1)}
+      // is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
+      is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel)}
       is (Random.U)   {   io.ftc.dout := randomr        }
     }
     io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))

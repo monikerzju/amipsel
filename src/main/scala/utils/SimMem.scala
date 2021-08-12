@@ -43,7 +43,7 @@ class SimMem extends Module with Config with MemAccessType {
       is("hbfd003fd".U){  for(i <- 0 until 8)dcandidates(i) := "h60".U }
     }
     // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
-    printf("returning %x\n",dcandidates.asUInt)
+    // printf("returning %x\n",dcandidates.asUInt)
   }
 //   printf("mem 0x80000000 is %x\n", Cat(memory.read(3.U), memory.read(2.U), memory.read(1.U), memory.read(0.U)))
 
