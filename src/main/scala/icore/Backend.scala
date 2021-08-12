@@ -219,6 +219,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     }    
   }
   // ex to is
+  // val is_sc = if (withBigCore) exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic else null
+  val is_sc = if (withBigCore) exInsts(2).write_dest === MicroOpCtrl.DMem && exInsts(2).atomic else null
+  val storeCondMask = if (withBigCore) !storeCondSuccess && is_sc else null 
   val exCondFwdEnable = if (withBigCore) (exInsts(0).write_dest === MicroOpCtrl.DRegCond && !exMoveCondNo) else false.B
   val movn_info = false
   if(movn_info){
@@ -226,7 +229,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       printf("mov/movz, rs, rt = (%x,%x), %d, pc=%x, redirect kill = %d, wfds %d\n",exFwdRsData(0),exFwdRtData(0),exCondFwdEnable,exInsts(0).pc,io.fb.bmfs.redirect_kill,wfds)
     }
   }
-  when(exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DReg || exCondFwdEnable) && exInsts(0).rd =/= 0.U) {
+  when(exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DReg || exCondFwdEnable) && exInsts(0).rd =/= 0.U  || is_sc) {
     for(i <- 0 until backendIssueN) {
       when(exInsts(0).rd === issueInsts(i).rs1) {
         rsFwdData(i) := aluWbData
@@ -234,8 +237,29 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       when(exInsts(0).rd === issueInsts(i).rs2) {
         rtFwdData(i) := aluWbData
       }
+      if(withBigCore){
+        when (is_sc && exInsts(2).rd === issueInsts(i).rs1) {
+          rsFwdData(i) := Mux(storeCondSuccess, 1.U, 0.U)
+          // issueRss(i) := Mux(storeCondSuccess, 1.U, 0.U)
+          // exFwdRsData(0) := Mux(storeCondSuccess, 1.U, 0.U)
+          printf("sc forwarding %d\n",storeCondSuccess)
+        }
+        when (is_sc && exInsts(2).rd === issueInsts(i).rs2) {
+          rtFwdData(i) := Mux(storeCondSuccess, 1.U, 0.U)
+          // issueRts(i) := Mux(storeCondSuccess, 1.U, 0.U)
+          printf("sc forwarding %d\n",storeCondSuccess)
+          // exFwdRtData(0) := Mux(storeCondSuccess, 1.U, 0.U)
+        }
+        // FIXME: will sw and the immediate following inst issue at the same time and share rt ?
+      }
     }
   }
+  when(exInsts(0).pc === "h8019884c".U && exInsts(0).next_pc === MicroOpCtrl.Branch){
+    printf("beqz, rs, rt %x %x \n",exFwdRsData(0),exFwdRtData(0))
+  }
+  // when(RegNext(is_sc)){
+  //   printf("rs, rt = %x, %x\n",rsFwdData(2), rtFwdData(2))
+  // }
   when(exInstsValid(1) && exInsts(1).write_dest === MicroOpCtrl.DReg && exInsts(1).rd =/= 0.U) {
     for(i <- 0 until backendIssueN) {
       when(exInsts(1).rd === issueInsts(i).rs1) {
@@ -388,7 +412,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
   val mmioMask = io.dcache.req.bits.wen && io.dcache.req.bits.addr(28, 0) === "h1faffff0".U
-  val storeCondMask = if (withBigCore) !storeCondSuccess && exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic else null
+  // val storeCondMask = if (withBigCore) !storeCondSuccess && exInsts(2).write_dest === MicroOpCtrl.DMem && !dcacheStall && exInsts(2).atomic else null
   val dcacheMask = if (withBigCore) storeCondMask else if (simpleNBDCache) mmioMask else false.B
   io.dcache.req.valid := exMemRealValid && !dcacheMask || dcacheStall
   io.dcache.resp.ready := true.B
