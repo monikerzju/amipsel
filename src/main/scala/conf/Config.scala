@@ -6,6 +6,7 @@ trait Config {
   // Compile
   var useLookupBi: Boolean = false
   var withBigCore: Boolean = true   // big core for final
+  var bigCoreBootSys: String = "ucore-kernel-initrd" // "vmlinux"
   // Basic Option
   var len: Int = 32
   var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
