@@ -130,6 +130,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
     TLBWI      -> List(F ,  toBJU.U),
     TLBWR      -> List(F ,  toBJU.U),
     CLZ        -> List(F ,  toALU.U),
+    CACHE      -> List(F ,  toALU.U),
     SYNC       -> List(F ,  toALU.U),
     WAIT       -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
@@ -182,7 +183,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
   val alu_signal_final = if (withBigCore) Array.concat(alu_signal_base, alu_signal_ext) else alu_signal_base 
   val alu_signal = ListLookup(io.inst, 
     //              src_a  | src_b | aluop      | rs1 | rs2 | rd  |  uimm
-               List(AReg   ,  BReg , aluAddu.U  , IXX , IXX , IXX , SIMM), // PREF or WAIT or SYNC
+               List(AReg   ,  BReg , aluAddu.U  , IXX , IXX , IXX , SIMM), // PREF or WAIT or SYNC or CACHE
     alu_signal_final
   )
 
