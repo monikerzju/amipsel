@@ -437,6 +437,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     }
     memReq
   })
+  if (withBigCore) {
+    io.tlbAddrTransl.virt_addr := ldstAddr
+    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
+  }
   def mtype_trans(c:UInt):UInt = {
     MuxLookup(c, MEM_WORD.U,
       Seq(
@@ -761,6 +765,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
+    cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
     cp0.io.ftTlb.exec.op        := Mux(wbInsts(0).tlb_op =/= notlb.U, wbInsts(0).tlb_op, exInsts(0).tlb_op) // assume no two tlb inst execute continously
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
@@ -781,7 +786,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
       reg_last := pc
       when(io.dcache.resp.valid){
-        
+
         printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
         when(RegNext(io.dcache.req.bits.wen)){
           printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
@@ -790,7 +795,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
         }
       }
     }
-   
+
   if (verilator) {
     def exceptionFun(i: Int): Bool = {
       if (i == 0) {
