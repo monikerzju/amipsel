@@ -51,6 +51,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
       tmp.tlb_op := 0.U
       tmp.sel := 0.U
+      tmp.branch_likely := false.B
     }
     tmp
   }
@@ -107,11 +108,13 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
   val exIsTlbAddrFind = if (withBigCore) io.tlbAddrTransl.exp.expType === TLBExceptType.noExp else true.B
+  val exBrLikelyDSKill = if (withBigCore) !reBranchBrTaken else false.B
+  val exLikelyAndNT    = if (withBigCore) exInstsTrueValid(0) && exInsts(0).branch_likely && !reBranchBrTaken else false.B
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
                           exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(0))
-  val mduExptMask      = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(1) ||
+  val mduExptMask      = (exInstsValid(0) && (alu.io.ovf || exBrLikelyDSKill) && exInstsOrder(0) < exInstsOrder(1) ||
                           exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(1))
-  val ldstExptMask     = (exInstsValid(0) && alu.io.ovf && exInstsOrder(0) < exInstsOrder(2) ||
+  val ldstExptMask     = (exInstsValid(0) && (alu.io.ovf || exBrLikelyDSKill) && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
   val exMemRealValid = exInstsTrueValid(2) && !memMisaligned && exIsTlbAddrFind
   val bpuV      = (isExPCBr || isExPCJump) && exInstsValid(0)
@@ -468,7 +471,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
           MicroOpCtrl.BrLT -> (alu.io.a.asSInt < 0.S)
         )
       )
-      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && (exInsts(0).target_pc(len - 1, 2)  =/= brPC(len - 1, 2) || brPC(1, 0).orR))
+      reBranch := (reBranchBrTaken ^ exInsts(0).predict_taken) || (reBranchBrTaken && (exInsts(0).target_pc(len - 1, 2)  =/= brPC(len - 1, 2) || brPC(1, 0).orR)) || exLikelyAndNT
 
       if (traceBPU) {
         when (!stall_x && !kill_x) {
@@ -572,7 +575,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
   // delay slot and then just jump
   when (!bubble_w) {
-    when (exInstsTrueValid(0) && exIsBrFinal && reBranch) {
+    when (exInstsTrueValid(0) && exIsBrFinal && reBranch && !exLikelyAndNT) {
       wfds := true.B
     }.elsewhen(exInstsValid.asUInt.orR) {
       wfds := false.B

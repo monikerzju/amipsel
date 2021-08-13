@@ -30,6 +30,7 @@ class Mops extends Bundle with Config with InstType with TLBOpType {
   val tlb_exp       = if (withBigCore) new TLBExceptIO else null
   val tlb_op        = if (withBigCore) UInt(TLBOPTYPE_SIZE.W) else null
   val sel           = if (withBigCore) UInt(3.W) else null
+  val branch_likely = if (withBigCore) Bool() else null
 }
 
 class DecIO extends Bundle with Config {
@@ -144,7 +145,9 @@ class Dec extends Module with InstType with TLBOpType with Config {
     SWL        -> List(F ,  toLSU.U),
     SWR        -> List(F ,  toLSU.U),
     LL         -> List(F ,  toLSU.U),       
-    SC         -> List(F ,  toLSU.U)
+    SC         -> List(F ,  toLSU.U),
+    BEQL       -> List(F ,  toBJU.U),
+    BNEL       -> List(F ,  toBJU.U)
   )
   val control_signal_final = if (withBigCore) Array.concat(control_signal_base, control_signal_ext) else control_signal_base
   val control_signal = ListLookup(io.inst, List(T ,  toBJU.U), control_signal_final)
@@ -252,7 +255,9 @@ class Dec extends Module with InstType with TLBOpType with Config {
   val bju_signal_ext = Array(
     TNE   -> List(NETrap  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
     MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD),
-    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD)
+    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD),
+    BEQL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
+    BNEL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX)
   )
   val bju_signal_final = if (withBigCore) Array.concat(bju_signal_base, bju_signal_ext) else bju_signal_base
   val bju_signal = ListLookup(io.inst,
@@ -260,15 +265,21 @@ class Dec extends Module with InstType with TLBOpType with Config {
     bju_signal_final
   )
 
+  val branch_signal_base = Array (
+    BEQ   -> List(BrEQ),
+    BNE   -> List(BrNE),
+    BGTZ  -> List(BrGT),
+    BLEZ  -> List(BrLE),
+    BLTZ  -> List(BrLT),
+    BLTZAL-> List(BrLT)
+  )
+  val branch_signal_ext = Array (
+    BEQL  -> List(BrEQ),
+    BNEL  -> List(BrNE)
+  )
+  val branch_signal_final = if (withBigCore) Array.concat(branch_signal_base, branch_signal_ext) else branch_signal_base
   val branch_signal = ListLookup(io.inst, List(BrGE),
-    Array (
-      BEQ   -> List(BrEQ),
-      BNE   -> List(BrNE),
-      BGTZ  -> List(BrGT),
-      BLEZ  -> List(BrLE),
-      BLTZ  -> List(BrLT),
-      BLTZAL-> List(BrLT)
-    )
+    branch_signal_final
   )
   val mov_cond_signal = ListLookup(io.inst, List(BrEQ), // MOVZ
     Array(
@@ -367,5 +378,6 @@ class Dec extends Module with InstType with TLBOpType with Config {
                             )
                           )(0)
     io.mops.sel         := io.inst(2,0)
+    io.mops.branch_likely := io.inst === BEQL || io.inst === BNEL
   }
 }
