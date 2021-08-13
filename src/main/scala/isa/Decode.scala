@@ -27,6 +27,7 @@ class Mops extends Bundle with Config with InstType with TLBOpType {
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
   val atomic        = if (withBigCore) Bool() else null
+  val sc            = if (withBigCore) Bool() else null
   val tlb_exp       = if (withBigCore) new TLBExceptIO else null
   val tlb_op        = if (withBigCore) UInt(TLBOPTYPE_SIZE.W) else null
   val sel           = if (withBigCore) UInt(3.W) else null
@@ -219,7 +220,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
     SWL   -> List(DMem   , MemWordL , IRT , IXX ),
     SWR   -> List(DMem   , MemWordR , IRT , IXX ), 
     LL    -> List(DReg   , MemWord  , IXX , IRT ),       
-    SC    -> List(DMem   , MemWord  , IRT , IRT )
+    SC    -> List(DReg   , MemWord  , IRT , IRT )
   )
   val lsu_signal_final = if (withBigCore) Array.concat(lsu_signal_base, lsu_signal_ext) else lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 
@@ -355,6 +356,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
   io.mops.target_pc     := io.target_pc
   if(withBigCore){
     io.mops.atomic      := io.inst === SC || io.inst === LL
+    io.mops.sc          := io.inst === SC
     io.mops.tlb_exp     := io.tlb_exp
     io.mops.tlb_op      := ListLookup(io.inst, List(notlb.U),
                             Array (
