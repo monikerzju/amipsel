@@ -51,6 +51,7 @@ class SimMem extends Module with Config with MemAccessType {
     dcandidates(0) := "hdeadbeef".U
     switch(io.dcache_io.req.addr){  // linux only
       is("hbfd003fd".U){  for(i <- 0 until 8)dcandidates(i) := "h60".U }
+      is("hbfd00071".U){  for(i <- 0 until 8)dcandidates(i) := "hff".U }  // refered by pc = 80192864
     }
     // printf("dcache is accessing %x, might be mmio\n", io.dcache_io.req.addr)
     // printf("returning %x\n",dcandidates.asUInt)

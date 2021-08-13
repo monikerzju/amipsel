@@ -131,6 +131,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
     TLBWR      -> List(F ,  toBJU.U),
     CLZ        -> List(F ,  toALU.U),
     SYNC       -> List(F ,  toALU.U),
+    CACHE      -> List(F ,  toALU.U),
     WAIT       -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
     MADD       -> List(F ,  toMDU.U),
@@ -217,8 +218,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
   val lsu_signal_ext = Array(
     LWL   -> List(DReg   , MemWordL , IRT , IRT ),
     LWR   -> List(DReg   , MemWordR , IRT , IRT ),
-    SWL   -> List(DReg   , MemWordL , IRT , IXX ),
-    SWR   -> List(DReg   , MemWordR , IRT , IXX ), 
+    SWL   -> List(DMem   , MemWordL , IRT , IXX ),
+    SWR   -> List(DMem   , MemWordR , IRT , IXX ), 
     LL    -> List(DReg   , MemWord  , IXX , IRT ),       
     SC    -> List(DMem   , MemWord  , IRT , IRT )
   )
@@ -366,5 +367,8 @@ class Dec extends Module with InstType with TLBOpType with Config {
                             )
                           )(0)
     io.mops.sel         := io.inst(2,0)
+    when(io.inst === MOVN || io.inst === MOVZ){
+      io.mops.src_b := BZero
+    }
   }
 }
