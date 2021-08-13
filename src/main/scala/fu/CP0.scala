@@ -23,10 +23,10 @@ trait CP0Code extends Config {
   val PRId     = 15
   val Config   = 16
   val Config1  = 16
+  val WatchHi  = 19
   val TagLo    = 28
-
   val SZ_CP0_CODE = log2Ceil(TagLo)
-  val SZ_CP0_SEL  = 1
+  val SZ_CP0_SEL  = 3
 
   val StatusWMask  = if (withBigCore) "b00010000000000001111111100000011" else "b00000000000000001111111100000011"
   val nStatusWMask = if (withBigCore) "b11101111111111110000000011111100" else "b11111111111111110000000011111100"
@@ -182,7 +182,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     ))) else null
   val r15_1     = if(withBigCore) RegInit("h80000000".U(len.W)) else null
   val r12_2     = if(withBigCore) RegInit(0.U(len.W)) else null
-  // val watchhir  = if(withBigCore) RegInit("h80000000".U(len.W)) else null
+  val watchhir  = if(withBigCore) RegInit("h80000000".U(len.W)) else null
 
   val entryHir  = if (withBigCore) RegInit(0.U(len.W)) else null
   val entryLor  = if (withBigCore) RegInit(VecInit(Seq.fill(2)(0.U(len.W)))) else null
@@ -282,8 +282,9 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (Index.U)    {   io.ftc.dout := indexr         }
       is (PRId.U)     {   io.ftc.dout := Mux(io.ftc.sel === 0.U, pridr, r15_1)}
       // is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
-      is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel)}
+      is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel(1,0))}
       is (Random.U)   {   io.ftc.dout := randomr        }
+      is (WatchHi.U)  {   io.ftc.dout := watchhir       }
     }
   } else {
     switch (io.ftc.code) {
@@ -345,6 +346,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
         is (EntryLo1.U) {   entryLor(1) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
         is (PageMask.U) {   pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
         is (Index.U)    {   indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }  
+        is (WatchHi.U)  {   watchhir := io.ftc.din        }
       }
     } else {
       switch (io.ftc.code) {
