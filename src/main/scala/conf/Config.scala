@@ -9,7 +9,7 @@ trait Config {
   var bigCoreBootSys: String = "ucore-kernel-initrd" // "vmlinux"
   // Basic Option
   var len: Int = 32
-  var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
+  var startAddr: String = "hbfc00000" // if (withBigCore) "h80000000" else "hbfc00000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = if (withBigCore) "h8002a180" else "hbfc00380"
   var tlbTrapAddr: String = "h80024b40" // "hbfc00200"
@@ -34,7 +34,7 @@ trait Config {
   var VPNSize: Int = 19
   var PFNSize: Int = 20
   var TLBSize: Int = 16
-  var enableTLBAddrTransl = true
+  var enableTLBAddrTransl = false
   val enableItlbAddrTransl = true
   var useQEMURandomStrategy = true
   // BPU
