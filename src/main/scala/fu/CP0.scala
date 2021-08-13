@@ -24,8 +24,9 @@ trait CP0Code extends Config {
   val Config   = 16
   val Config1  = 16
   val TagLo    = 28
+  val ErrorEPC = 30
 
-  val SZ_CP0_CODE = log2Ceil(TagLo)
+  val SZ_CP0_CODE = log2Ceil(ErrorEPC)
   val SZ_CP0_SEL  = 1
 
   val StatusWMask  = if (withBigCore) "b00010000000000001111111100000011" else "b00000000000000001111111100000011"
@@ -178,6 +179,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val pageMaskr = if (withBigCore) RegInit(0.U(len.W)) else null
   val indexr    = if (withBigCore) RegInit(0.U(len.W)) else null
   val randomr   = if (withBigCore) RegInit((TLBSize - 1).U(len.W)) else null // do not implement Wired cp0
+  val errorEPCr = if (withBigCore) RegInit(startAddr.U(len.W)) else null
 
   if (withBigCore) {
     if (useQEMURandomStrategy) {
@@ -272,6 +274,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (PRId.U)     {   io.ftc.dout := pridr          }
       is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
       is (Random.U)   {   io.ftc.dout := randomr        }
+      is (ErrorEPC.U) {   io.ftc.dout := errorEPCr      }
     }
   } else {
     switch (io.ftc.code) {
@@ -332,7 +335,8 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
         is (EntryLo0.U) {   entryLor(0) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
         is (EntryLo1.U) {   entryLor(1) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
         is (PageMask.U) {   pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
-        is (Index.U)    {   indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }  
+        is (Index.U)    {   indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }
+        is (ErrorEPC.U) {   errorEPCr := io.ftc.din                                            }
       }
     } else {
       switch (io.ftc.code) {
@@ -341,7 +345,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
         is (Status.U)   {   statusr := status_imut | status_mut                                }
         is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
         is (EPC.U)      {   epcr := io.ftc.din                                                 }
-        is (Compare.U)  {   comparer := io.ftc.din                                             } 
+        is (Compare.U)  {   comparer := io.ftc.din                                             }
       }      
     }
   }
