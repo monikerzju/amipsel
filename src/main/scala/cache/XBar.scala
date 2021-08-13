@@ -283,7 +283,7 @@ class AXI3Server(nclient: Int = 2, bit_cacheline: Int = 128, id_width: Int = 1, 
     is (ws_write) {
       io.axi3.w.valid := true.B
       wptr := wptr + Mux(io.axi3.w.ready && wtype === MEM_DWORD.U, 1.U, 0.U)
-      next_wstate := Mux(io.axi3.w.bits.last.orR, ws_wait_valid, wstate)
+      next_wstate := Mux(io.axi3.w.bits.last.orR && io.axi3.w.ready, ws_wait_valid, wstate)
     }
     is (ws_wait_valid) {
       next_wstate := Mux(io.axi3.b.valid, ws_finish, wstate)
