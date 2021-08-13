@@ -28,10 +28,7 @@ class RegFile(nregs: Int = 32, len: Int = 32, nread: Int = 6, nwrite: Int = 3, v
   }
 
   if (verilator) {
-    def wt(j: Int, i: Int): Bool = {
-      io.wen_vec(j) && io.rd_addr_vec(j).orR && io.rd_addr_vec(j) === i.U
-    }
-    BoringUtils.addSource(VecInit((0 to 31).map(i => Mux(wt(0, i), io.rd_data_vec(0), Mux(wt(1, i), io.rd_data_vec(1), regs(i))))), "difftestRegs")
+    BoringUtils.addSource(VecInit((0 to 31).map(i => regs(i))), "difftestRegs")
 
     val dtsync = WireInit(false.B)
     val dtsaddr = WireInit(0.U(5.W))

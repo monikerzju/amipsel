@@ -100,7 +100,6 @@ class FromToTlb extends Bundle with Config {
 class CP0IO extends Bundle with Config {
   val ftc = new FromToCIO
   val except = new ExceptIO
-  val step = if(withBigCore) Input(UInt(2.W)) else null
   val ftTlb = if (withBigCore) new FromToTlb else null
 }
 
@@ -217,7 +216,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       val entry = Wire(new TLBEntryIO)
       entry.entryHi  := entryHir.asTypeOf(new EntryHiStruct)
       entry.pageMask := pageMaskr.asTypeOf(new PageMaskStruct)
-      entry.index    := Mux(io.ftTlb.exec.op === tlbwi.U, indexr.asTypeOf(new IndexStruct), randomr.asTypeOf(new IndexStruct))
+      entry.index    := Mux(io.ftTlb.exec.op === tlbwr.U, randomr.asTypeOf(new IndexStruct), indexr.asTypeOf(new IndexStruct))
       for (i <- 0 until 2) {
         entry.entryLo(i) := entryLor(i).asTypeOf(new EntryLoStruct)
       }
@@ -286,7 +285,6 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel)}
       is (Random.U)   {   io.ftc.dout := randomr        }
     }
-    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, "hbfc00200".U, trapAddr.U))
   } else {
     switch (io.ftc.code) {
       is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
@@ -296,16 +294,17 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (EPC.U)      {   io.ftc.dout := epcr           }
       is (Compare.U)  {   io.ftc.dout := comparer       }
     }    
+  }
+
+
+  if (withBigCore) {
+    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, tlbTrapAddr.U, trapAddr.U))
+  } else {
     io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   }
   io.except.except_kill     := has_except || ret
   io.except.call_for_int    := int_en
-  if(withBigCore){
-    countr := countr +io.step
-  }
-  else {
-    countr := countr + 1.U
-  }
+  countr := countr + 1.U
   when (has_except || error_ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 1.U

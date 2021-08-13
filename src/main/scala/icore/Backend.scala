@@ -428,7 +428,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
     memReq.invalidate := false.B
-    memReq.mtype := MicroOpCtrl.MemWord
+    memReq.mtype := MEM_WORD.U
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
@@ -441,12 +441,21 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     io.tlbAddrTransl.virt_addr := ldstAddr
     io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
   }
-
+  def mtype_trans(c:UInt):UInt = {
+    MuxLookup(c, MEM_WORD.U,
+      Seq(
+        MicroOpCtrl.MemByteU -> MEM_BYTE.U,
+        MicroOpCtrl.MemByte -> MEM_BYTE.U,
+        MicroOpCtrl.MemHalf -> MEM_HALF.U,
+        MicroOpCtrl.MemHalf -> MEM_HALF.U,
+      )
+    )
+  }
   val exCurMemReq = {
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
     memReq.invalidate := false.B
-    memReq.mtype := exInsts(2).mem_width
+    memReq.mtype := mtype_trans(exInsts(2).mem_width)
     memReq.wdata := exFwdRtData(2)
     if(withBigCore){
       memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
@@ -711,11 +720,19 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbModReal     = if (withBigCore) wbInsts(2).tlb_exp.expType === TLBExceptType.mod && wbInstsValid(2) else false.B
   val wbTlbBadAddr  = if (withBigCore) Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr) else "hdeadbeef".U
   val respInt       = wbInterruptd && wbInstsValid(0)
-  wbExcepts(0) := wbALUOvfReal
+  if (withBigCore) {
+    wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl
+    wbExcepts(2) := wbLdMaReal || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl
+  } else {
+    wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR
+    wbExcepts(2) := wbLdMaReal  // store would not cause write to GPR
+  }
   wbExcepts(1) := wbMDUOvfReal
-  wbExcepts(2) := wbLdMaReal || wbStMaReal
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
+  when (wb_ev.asUInt.orR && wbInstsValid.asUInt.orR) {
+    printf("\nexception or error wb_evec = %x\n", wb_ev.asUInt)
+  }
   wb_ev(Interrupt   ) := false.B
   wb_ev(TLBModify   ) := wbModReal
   wb_ev(TLBLoad     ) := wbTlblReal
@@ -749,7 +766,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
     cp0.io.step               := wbInstsValid(0).asUInt + wbInstsValid(1).asUInt + wbInstsValid(2).asUInt
-    cp0.io.ftTlb.exec.op        := wbInsts(0).tlb_op
+    cp0.io.ftTlb.exec.op        := Mux(wbInsts(0).tlb_op =/= notlb.U, wbInsts(0).tlb_op, exInsts(0).tlb_op) // assume no two tlb inst execute continously
     cp0.io.ftTlb.exec.din       := wbTlbOut
     cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
     cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
@@ -762,12 +779,35 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   /**
    *  [---------- DiffTest stage -----------]
    */
-   
+
+  val dcache_info = false
+    if(dcache_info){
+      val reg_last = Reg(UInt(len.W))
+      val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
+      reg_last := pc
+      when(io.dcache.resp.valid){
+
+        printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
+        when(RegNext(io.dcache.req.bits.wen)){
+          printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
+        }.otherwise{
+          printf("reading %x\n", io.dcache.resp.bits.rdata(0))
+        }
+      }
+    }
+
   if (verilator) {
-    // printf("AMIPSEL has commit %x, 1 %x, 2 %x, 3 %x\n", (wbInstsValid(0) || wbInstsValid(1) || wbInstsValid(2)) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
-    BoringUtils.addSource(VecInit((0 to 2).map(i => (wbInstsValid(i) && !bubble_w))), "difftestValids")
-    BoringUtils.addSource(VecInit((0 to 2).map(i => Mux(wbInstsValid(i), wbInsts(i).pc, 0.U))), "difftestPCs")
-    // printf("valids %x, %x, %x; pcs %x, %x, %x\n", wbInstsValid(0) && !bubble_w, wbInstsValid(1) && !bubble_w, wbInstsValid(2) && !bubble_w, wbInsts(0).pc, wbInsts(1).pc, wbInsts(2).pc)
+    def exceptionFun(i: Int): Bool = {
+      if (i == 0) {
+        wbALUOvf || wbInsts(0).next_pc === MicroOpCtrl.Trap || wbInsts(0).next_pc === MicroOpCtrl.Break || wbInsts(0).illegal || wbInsts(0).pc(1, 0).orR || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs
+      } else if (i == 1) {
+        wbMDUOvf
+      } else {
+        wbLdMa || wbStMa || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs || wbInsts(2).tlb_exp.expType === TLBExceptType.mod
+      }
+    }
+    BoringUtils.addSource(VecInit((0 to 2).map(i => RegNext(wbInstsValid(i) && !bubble_w))), "difftestValids")
+    BoringUtils.addSource(VecInit((0 to 2).map(i => RegNext(Mux(wbInstsValid(i), wbInsts(i).pc, 0.U)))), "difftestPCs")
   }
 
   if (diffTestV) {

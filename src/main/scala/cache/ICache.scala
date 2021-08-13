@@ -41,7 +41,7 @@ class ICache(verilator: Boolean = false) extends Module with Config with MemAcce
   val req_addr = RegNext(io.cpu.req.bits.addr)
   val word1 = req_addr(offsetBits - 1, 2)
   val word2 = word1 + 1.U
-  val hit   = meta.io.dout(iTagBits).asBool && meta.io.dout(iTagBits - 1, 0) === req_addr(len - 1, len - iTagBits)
+  val hit   = if (withBigCore && bigCoreIMMIO) false.B else meta.io.dout(iTagBits).asBool && meta.io.dout(iTagBits - 1, 0) === req_addr(len - 1, len - iTagBits)
   meta.io.we   := false.B
   meta.io.addr := index_req
   meta.io.din  := Cat(true.B, tag_req)

@@ -3,28 +3,25 @@ package conf
 import chisel3._
 
 trait Config {
-  // TODO
-  // TODO
-  // TODO
-  // TODO     Flush pipeline after write CP0 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO
-  // TODO
-  // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // Compile
   var useLookupBi: Boolean = false
   var withBigCore: Boolean = true   // big core for final
+  var bigCoreBootSys: String = "ucore-kernel-initrd" // "vmlinux"
   // Basic Option
   var len: Int = 32
   var startAddr: String = if (withBigCore) "h80000000" else "hbfc00000"
   var endAddr: String = "hbfc00100"
-  var trapAddr: String = "hbfc00380"
-  var statusVal: String = if (withBigCore)  "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
+  var trapAddr: String = if (withBigCore) "h8002a180" else "hbfc00380"
+  var tlbTrapAddr: String = "h80024b40" // "hbfc00200"
+  var statusVal: String = if (withBigCore) "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
   var backendFuN: Int = 3
   val queueSize: Int = 8
   // Cache
+  var bigCoreIMMIO: Boolean = true  // TODO to bypass cache instruction and coherence issue
+  var bigCoreDMMIO: Boolean = true
   val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
   var iTagBits: Int = if (withBigCore) 22 else 18
@@ -38,6 +35,7 @@ trait Config {
   var PFNSize: Int = 20
   var TLBSize: Int = 16
   var enableTLBAddrTransl = true
+  val enableItlbAddrTransl = true
   var useQEMURandomStrategy = true
   // BPU
   var traceCallRet: Boolean = false

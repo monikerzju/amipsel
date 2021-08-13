@@ -77,6 +77,7 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
   val illegal_pc     = pc_gen.io.pc_o(1, 0).orR
   val dec_kill_redirect_pc = Wire(UInt(len.W))
   val may_illegal_req_addr = Mux(stall_f, repc, pc_gen.io.pc_o)
+  val tlbFetchExp = if(withBigCore) io.tlb(0).exp.expType =/= TLBExceptType.noExp || io.tlb(1).exp.expType =/= TLBExceptType.noExp else null
 
   // ID
   val decode_pc_low_reg = RegInit(UInt(len.W), startAddr.U)
@@ -144,7 +145,7 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
   io.icache.req.valid      := true.B
   io.icache.resp.ready     := true.B 
   if (withBigCore) {
-    io.icache.req.bits.addr:= io.tlb(0).phys_addr
+    io.icache.req.bits.addr := Mux(tlbFetchExp, startAddr.U, io.tlb(0).phys_addr)
   } else {
     io.icache.req.bits.addr:= Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
   }
