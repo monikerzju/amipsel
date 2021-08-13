@@ -67,7 +67,6 @@ class ALU extends Module with Config with AluOpType {
     aluClz.U  -> getLeadingZeroRecur(io.a, 32, 0)
   )
   val alu_seq_final = if (withBigCore) (alu_seq_base ++ alu_seq_ext) else alu_seq_base
-
   if (useLookupBi) {
     io.r := MuxLookupBi(
       io.aluOp,
