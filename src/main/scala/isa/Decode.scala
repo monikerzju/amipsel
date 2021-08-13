@@ -131,6 +131,7 @@ class Dec extends Module with InstType with TLBOpType with Config {
     TLBWI      -> List(F ,  toBJU.U),
     CLZ        -> List(F ,  toALU.U),
     SYNC       -> List(F ,  toALU.U),
+    CACHE      -> List(F ,  toALU.U),
     WAIT       -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
     MADD       -> List(F ,  toMDU.U),
