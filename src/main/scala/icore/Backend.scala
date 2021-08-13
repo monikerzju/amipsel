@@ -51,7 +51,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
       tmp.tlb_op := 0.U
       tmp.sel := 0.U
-      tmp.sc := false.B
     }
     tmp
   }
@@ -123,7 +122,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val exMoveCondNo = ((exInsts(0).branch_type === MicroOpCtrl.BrEQ).asUInt ^ (exFwdRtData(0) === 0.U).asUInt).andR
   val linkBaseAddrHi = if (withBigCore) Reg(UInt((len - 2).W)) else null
   val linkValid = if (withBigCore) RegInit(false.B) else null
-  val storeCondSuccess = if (withBigCore) (linkValid && linkBaseAddrHi === ldstAddr(len - 1, 2))  else null  // this is only a wire of data, need other control signals
+  val exStoreCondSuccess = if (withBigCore) (linkValid && linkBaseAddrHi === ldstAddr(len - 1, 2))  else null  // this is only a wire of data, need other control signals
 
   // WB
   val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
@@ -192,7 +191,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   } else {
     issueArbiter.io.mtc0_ex   := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
   }
-  issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd
+  issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd // make sc and load stall one cycle
   issueArbiter.io.insts_in    := issueInsts
   issueArbiter.io.rss_in      := rsFwdData
   issueArbiter.io.rts_in      := rtFwdData
@@ -217,9 +216,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
           rtFwdData(i) := wbData(j)
         }
       }
-    }    
+    }
   }
   // ex to is
+  //TODO: DEL!!!!!!!!!!!!!!!!!!!!!!!!
+  // !!!!!!!!!!!!!!!!!!!!!!
+
   val exCondFwdEnable = if (withBigCore) (exInsts(0).write_dest === MicroOpCtrl.DRegCond && !exMoveCondNo) else false.B
   val movn_info = false
   if(movn_info){
@@ -265,7 +267,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
   /**
    *  [---------- EX stage -----------]
-   */ 
+   */
     /*
     exInsts(0) -> ALU
     exInsts(1) -> MDU
@@ -355,7 +357,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     MicroOpCtrl.DHiLoAdd -> (hi + mdu.io.resp.hi)
   )
   val newHiSeqFinal = if (withBigCore) (newHiSeqBase ++ newHiSeqExt) else newHiSeqBase
-  hi := Mux(!bubble_w && exInstsTrueValid(1), 
+  hi := Mux(!bubble_w && exInstsTrueValid(1),
     MuxLookup(exInsts(1).write_dest, hi, newHiSeqFinal),
     hi
   )
@@ -366,8 +368,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val newLoSeqExt = Seq(
     MicroOpCtrl.DHiLoAdd -> (lo + mdu.io.resp.lo)
   )
-  val newLoSeqFinal = if (withBigCore) (newLoSeqBase ++ newLoSeqExt) else newLoSeqBase  
-  lo := Mux(!bubble_w && exInstsTrueValid(1), 
+  val newLoSeqFinal = if (withBigCore) (newLoSeqBase ++ newLoSeqExt) else newLoSeqBase
+  lo := Mux(!bubble_w && exInstsTrueValid(1),
     MuxLookup(exInsts(1).write_dest, lo, newLoSeqFinal),
     lo
   )
@@ -410,7 +412,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
       reg_last := pc
       when(io.dcache.resp.valid){
-        
+
         printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
         when(RegNext(io.dcache.req.bits.wen)){
           printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
@@ -445,14 +447,15 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.flush := false.B
     memReq.invalidate := false.B
     memReq.mtype := exInsts(2).mem_width
-    memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem || (exInsts(2).sc && storeCondSuccess)
     memReq.wdata := exFwdRtData(2)
-    memReq.addr := ldstAddr
     if(withBigCore){
       memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
       memReq.addr := io.tlbAddrTransl.phys_addr
+      memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem && (!exInsts(2).atomic || exStoreCondSuccess)
+    } else {
+      memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
+      memReq.addr := ldstAddr
     }
-    else { memReq.addr := ldstAddr }
     memReq
   }
 
@@ -571,13 +574,11 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   if(withBigCore){
     def _ex2wb(c: UInt):UInt = {     // remembers the cache request
       val last = Reg(UInt(c.getWidth.W))
-      val req = Mux(dcacheStall, last, c)
-      last := req
+      last := Mux(dcacheStall, last, c)
       last
     }
-    when(wbInsts(2).sc){
-      // store condition
-      wbLdData := Mux(_ex2wb(storeCondSuccess && exInsts(2).sc).asBool, 1.U, 0.U)
+    when(wbInsts(2).atomic && _ex2wb(exInsts(2).write_dest === MicroOpCtrl.DMem).asBool()) { // is sc not load or ll
+      wbLdData := Mux(_ex2wb(exStoreCondSuccess).asBool(), 1.U, 0.U)
     }
     val lwl_mask = Wire(UInt(32.W))
     val lwr_mask = Wire(UInt(32.W))
@@ -586,10 +587,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     val shamt = delayed_req_bits
     val last = _ex2wb(exFwdRtData(2))
     switch(wbInsts(2).mem_width) {
-      is(MicroOpCtrl.MemWordL) { 
+      is(MicroOpCtrl.MemWordL) {
         wbLdData := ((io.dcache.resp.bits.rdata(0)<<(24.U-shamt)) & ~lwl_mask)|(last & lwl_mask)
       }
-      is(MicroOpCtrl.MemWordR) { 
+      is(MicroOpCtrl.MemWordR) {
         wbLdData := ((io.dcache.resp.bits.rdata(0)>>shamt) & ~lwr_mask)|(last & lwr_mask)
       }
     }
@@ -628,12 +629,13 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
     if (withBigCore) {
       wbInsts(0).next_pc := Mux(alu.io.zero =/= 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
-      wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond, 
-        Mux(exMoveCondNo, 
+      wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond,
+        Mux(exMoveCondNo,
           MicroOpCtrl.DXXX, MicroOpCtrl.DReg
         ), exInsts(0).write_dest
       )   // MOVN and MOVZ instructions
-      wbStCondSuccess := storeCondSuccess
+      wbStCondSuccess := exStoreCondSuccess
+      wbInsts(2).write_dest := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem && exInsts(2).atomic, MicroOpCtrl.DReg, exInsts(2).write_dest)
     }
     wbALUOvf := alu.io.ovf
     wbMDUOvf := mdu.io.resp.except
@@ -683,20 +685,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   )
   regFile.io.rd_addr_vec(0) := Mux(wbInstsValid(0), wbInsts(0).rd, wbInsts(1).rd)
   regFile.io.rd_data_vec(0) := Mux(wbInstsValid(0), wbData(0), wbData(1))
-  if (withBigCore) {
-    regFile.io.wen_vec(1) := Mux(
-      wbInstsValid(2), (wbInsts(2).write_dest === MicroOpCtrl.DReg || wbInsts(2).atomic) && !wbExcepts(2),
-      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-    )
-    // store conditional 0 success, 1 failed
-    regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), Mux(wbInsts(2).atomic && wbInsts(2).write_dest === MicroOpCtrl.DMem, Mux(wbStCondSuccess, 1.U, 0.U), wbData(2)), wbData(1))
-  } else {
-    regFile.io.wen_vec(1) := Mux(
-      wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2),
-      wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
-    )
-    regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
-  }
+
+  regFile.io.wen_vec(1) := Mux(
+    wbInstsValid(2), wbInsts(2).write_dest === MicroOpCtrl.DReg && !wbExcepts(2),
+    wbInstsValid(1) && wbInsts(1).write_dest === MicroOpCtrl.DReg && !wbExcepts(1),
+  )
+  regFile.io.rd_data_vec(1) := Mux(wbInstsValid(2), wbData(2), wbData(1))
   regFile.io.rd_addr_vec(1) := Mux(wbInstsValid(2), wbInsts(2).rd, wbInsts(1).rd)
 
   // cp0
