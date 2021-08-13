@@ -6,6 +6,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 import cache._
+import conf._
 
 class RASReq() extends Bundle {
   val call = Input(Bool())  // 
@@ -83,7 +84,7 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
   override def cloneType = (new BPUIO(width, issueN)).asInstanceOf[this.type]
 }
 
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true, cacheDepth: Int = 4, verilator: Boolean = false) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true, cacheDepth: Int = 4, verilator: Boolean = false) extends Module with Config {
   val io = IO(new BPUIO(width, issueN))
   
   // strongly not taken
@@ -141,8 +142,12 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
   val bht_first   = Mux(last_update, Mux(cache_or_update_hit, chosen_result, Fill(2, 0.U)), history.io.douta)
 
   // if (withBPU) {
-  io.resp.taken_vec(0)  := bht_first(1)
-  io.resp.taken_vec(1)  := history.io.doutb(1)
+  if (withBigCore) {
+    io.resp.taken_vec(0) := Mux(io.resp.target_first(31) === 0.U, false.B, bht_first(1))
+  } else {
+    io.resp.taken_vec(0) := bht_first(1)
+  }
+  io.resp.taken_vec(1)   := history.io.doutb(1)
   // }
   // else {
   //   io.resp.taken_vec(0)  := false.B
@@ -154,7 +159,7 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
   buffer.io.addr := getHashedIndexWith2(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
-  io.resp.target_first := Cat(buffer.io.dout, bht_first)
+  io.resp.target_first := Cat(Mux(RegNext(buffer.io.we), RegNext(buffer.io.din), buffer.io.dout), bht_first)
   io.resp.state_second := history.io.doutb
 
   // BHT cache
