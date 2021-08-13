@@ -6,6 +6,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 import cache._
+import conf._
 
 class RASReq() extends Bundle {
   val call = Input(Bool())  // 
@@ -83,7 +84,7 @@ class BPUIO(width: Int = 32, issueN: Int = 2) extends Bundle {
   override def cloneType = (new BPUIO(width, issueN)).asInstanceOf[this.type]
 }
 
-class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true, cacheDepth: Int = 4, verilator: Boolean = false) extends Module {
+class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, instByte: Int = 4, delaySlot: Boolean = true, cacheDepth: Int = 4, verilator: Boolean = false) extends Module with Config {
   val io = IO(new BPUIO(width, issueN))
   
   // strongly not taken
