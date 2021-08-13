@@ -154,7 +154,7 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
   buffer.io.we := io.update.exe.errpr && io.update.exe.v
   buffer.io.addr := getHashedIndexWith2(Mux(io.update.exe.errpr, io.update.exe.pc_br, io.req.next_line))
   buffer.io.din := io.update.exe.target(width - 1, log2Ceil(instByte))
-  io.resp.target_first := Cat(buffer.io.dout, bht_first)
+  io.resp.target_first := Cat(Mux(RegNext(buffer.io.we), RegNext(buffer.io.din), buffer.io.dout), bht_first)
   io.resp.state_second := history.io.doutb
 
   // BHT cache
