@@ -44,7 +44,7 @@ class SimMem extends Module with Config with MemAccessType {
 
   for (i <- 0 until 32) {
     icandidates(i) := memory.read(ram_mask & (io.icache_io.req.addr + i.U))
-    dcandidates(i) := memory.read(ram_mask & (io.dcache_io.req.addr + i.U))
+    dcandidates(i) := memory.read(ram_mask & (Cat(io.dcache_io.req.addr(31,2),0.U(2.W)) + i.U))
   }
   when(io.dcache_io.req.valid && io.dcache_io.req.addr(31, 0) >= "ha0000000".U) {
     write_ram := false.B

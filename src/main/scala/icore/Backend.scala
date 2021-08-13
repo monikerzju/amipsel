@@ -406,7 +406,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       // cp0 redirect, store on the overlapped address, store conditional succeeds or not
       linkValid := false.B
     }
-    val dcache_info = false
+    val dcache_info = true
     if(dcache_info){
       val reg_last = Reg(UInt(len.W))
       val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
