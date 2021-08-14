@@ -559,7 +559,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
 
   // handle load-inst separately
-  val delayed_req_bits = RegNext(io.dcache.req.bits.addr(1, 0) << 3.U)
+  val delayed_req_bits = RegNext(io.dcache.req.bits.addr(1, 0) << 3.U).asUInt()
   val dataFromDcache = io.dcache.resp.bits.rdata(0) >> delayed_req_bits
   val wbLdData = Wire(UInt(len.W))
 
@@ -578,32 +578,26 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
   }
-  // TODO rewrite begin
   if(withBigCore){
-    def _ex2wb(c: UInt):UInt = {     // remembers the cache request
-      val last = Reg(UInt(c.getWidth.W))
-      last := Mux(dcacheStall, last, c)
-      last
-    }
-    when(wbInsts(2).atomic && _ex2wb(exInsts(2).write_dest === MicroOpCtrl.DMem).asBool()) { // is sc not load or ll
-      wbLdData := Mux(_ex2wb(exStoreCondSuccess).asBool(), 1.U, 0.U)
+    val wbIsSc = RegEnable(exInsts(2).atomic && exInsts(2).write_dest === MicroOpCtrl.DMem, false.B, dcacheStall) // is sc not load or ll
+    when(wbIsSc) {
+      wbLdData := Mux(wbStCondSuccess, 1.U, 0.U)
     }
     val lwl_mask = Wire(UInt(32.W))
     val lwr_mask = Wire(UInt(32.W))
     lwl_mask := "h00ffffff".U >> delayed_req_bits
-    lwr_mask := ~("hffffffff".U >> delayed_req_bits)
+    lwr_mask := ~("hffffffff".U >> delayed_req_bits).asUInt()
     val shamt = delayed_req_bits
-    val last = _ex2wb(exFwdRtData(2))
+    val wbFwdRtdata = RegEnable(exFwdRtData(2), dcacheStall)
     switch(wbInsts(2).mem_width) {
       is(MicroOpCtrl.MemWordL) {
-        wbLdData := ((io.dcache.resp.bits.rdata(0)<<(24.U-shamt)) & ~lwl_mask)|(last & lwl_mask)
+        wbLdData := ((io.dcache.resp.bits.rdata(0) << (24.U - shamt)).asUInt() & (~lwl_mask).asUInt()) | (wbFwdRtdata & lwl_mask)
       }
       is(MicroOpCtrl.MemWordR) {
-        wbLdData := ((io.dcache.resp.bits.rdata(0)>>shamt) & ~lwr_mask)|(last & lwr_mask)
+        wbLdData := ((io.dcache.resp.bits.rdata(0) >> shamt).asUInt() & (~lwr_mask).asUInt()) | (wbFwdRtdata & lwr_mask)
       }
     }
   }
-  // TODO rewrite end
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
   wbData(2) := Mux(wbLdDataValid, wbLdData, wbLdDataForStall)

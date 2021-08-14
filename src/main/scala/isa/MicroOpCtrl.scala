@@ -5,7 +5,7 @@ import chisel3._
 import chisel3.util._ 
 import conf._
 
-object MicroOpCtrl extends MDUOperation {
+object MicroOpCtrl extends MDUOperation with Config {
   val AMN           = "b110".U(3.W) 
   val ANN           = "b100".U(3.W) 
   val NMN           = "b010".U(3.W)
