@@ -578,8 +578,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
   }
   if(withBigCore){
-    val wbIsSc = RegEnable(exInsts(2).atomic && exInsts(2).write_dest === MicroOpCtrl.DMem, false.B, dcacheStall) // is sc not load or ll
-    val wbStCondSuccess = RegEnable(exStoreCondSuccess, false.B, dcacheStall)
+    val wbIsSc = RegEnable(exInsts(2).atomic && exInsts(2).write_dest === MicroOpCtrl.DMem, false.B, !dcacheStall) // is sc not load or ll
+    val wbStCondSuccess = RegEnable(exStoreCondSuccess, false.B, !dcacheStall)
     when(wbIsSc) {
       wbLdData := Mux(wbStCondSuccess, 1.U, 0.U)
     }
@@ -588,7 +588,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     lwl_mask := "h00ffffff".U >> delayed_req_bits
     lwr_mask := ~("hffffffff".U >> delayed_req_bits).asUInt()
     val shamt = delayed_req_bits
-    val wbFwdRtdata = RegEnable(exFwdRtData(2), dcacheStall)
+    val wbFwdRtdata = RegEnable(exFwdRtData(2), !dcacheStall)
     switch(wbInsts(2).mem_width) {
       is(MicroOpCtrl.MemWordL) {
         wbLdData := ((io.dcache.resp.bits.rdata(0) << (24.U - shamt)).asUInt() & (~lwl_mask).asUInt()) | (wbFwdRtdata & lwl_mask)

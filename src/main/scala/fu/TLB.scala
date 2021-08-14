@@ -157,8 +157,8 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
   /**
    * MIPS hardwired memory layout:
    *    0xc0000000 - 0xffffffff   kseg2 (kernel, tlb-mapped)
-   *    0xa0000000 - 0xbfffffff   kseg1 (kernel, unmapped, uncached)
-   *    0x80000000 - 0x9fffffff   kseg0 (kernel, unmapped, cached)
+   *    0xa0000000 - 0xbfffffff   kseg1 (kernel, unmapped, uncached) -> 0x00000000 - 0x1ffffffff
+   *    0x80000000 - 0x9fffffff   kseg0 (kernel, unmapped, cached)   -> 0x00000000 - 0x1ffffffff
    *    0x00000000 - 0x7fffffff   kuseg (user, tlb-mapped)
    */
   def direct_map(j: Int) = {
@@ -233,7 +233,6 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
           direct_map(j)
         }
       } else {
-
         direct_map(j)
       }
     }
