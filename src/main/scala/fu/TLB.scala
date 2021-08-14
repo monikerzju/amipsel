@@ -167,7 +167,7 @@ class TLB(port: Int = 3) extends Module with Config with RefType with TLBOpType 
     io.addrTransl(j).exp := 0.U.asTypeOf(new TLBExceptIO)
   }
   val timeToUcore = RegInit(false.B)
-  timeToUcore := Mux(io.addrTransl(0).virt_addr(31, 28) === 0x8.U, true.B, timeToUcore)
+  timeToUcore := Mux(io.addrTransl(0).virt_addr === startRAMAddr.U, true.B, timeToUcore)
   if (enableTLBAddrTransl) {
     for (j <- 0 until port) {
       if (enableItlbAddrTransl && (j == 0 || j == 1) || j == 2) {

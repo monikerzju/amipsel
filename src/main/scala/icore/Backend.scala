@@ -407,7 +407,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
       // cp0 redirect, store on the overlapped address, store conditional succeeds or not
       linkValid := false.B
     }
-    val dcache_info = true
+    val dcache_info = false
     if(dcache_info){
       val reg_last = Reg(UInt(len.W))
       val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
@@ -723,9 +723,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   wbExcepts(1) := wbMDUOvfReal
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
-  when (wb_ev.asUInt.orR && wbInstsValid.asUInt.orR) {
-    printf("\nexception or error wb_evec = %x\n", wb_ev.asUInt)
-  }
+  // when (wb_ev.asUInt.orR && wbInstsValid.asUInt.orR) {
+  //   printf("\nexception or error wb_evec = %x\n", wb_ev.asUInt)
+  // }
   wb_ev(Interrupt   ) := false.B
   wb_ev(TLBModify   ) := wbModReal
   wb_ev(TLBLoad     ) := wbTlblReal
