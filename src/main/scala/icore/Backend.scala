@@ -154,7 +154,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbBpuPCBr        = RegNext(Cat(bpuPCBr(len - 1, 2), exInsts(0).target_pc(1, 0)))
   val wbBpuTarget      = RegNext(bpuTarget)
   val wbBpuTaken       = RegNext(bpuTaken)
-  val wbStCondSuccess  = if (withBigCore) RegInit(false.B) else null
   val wbTlbOut         = if (withBigCore) Reg(new TLBEntryIO) else null
 
   /**
@@ -580,6 +579,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   }
   if(withBigCore){
     val wbIsSc = RegEnable(exInsts(2).atomic && exInsts(2).write_dest === MicroOpCtrl.DMem, false.B, dcacheStall) // is sc not load or ll
+    val wbStCondSuccess = RegEnable(exStoreCondSuccess, false.B, dcacheStall)
     when(wbIsSc) {
       wbLdData := Mux(wbStCondSuccess, 1.U, 0.U)
     }
@@ -637,7 +637,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
           MicroOpCtrl.DXXX, MicroOpCtrl.DReg
         ), exInsts(0).write_dest
       )   // MOVN and MOVZ instructions
-      wbStCondSuccess := exStoreCondSuccess
       wbInsts(2).write_dest := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem && exInsts(2).atomic, MicroOpCtrl.DReg, exInsts(2).write_dest)
     }
     wbALUOvf := alu.io.ovf
