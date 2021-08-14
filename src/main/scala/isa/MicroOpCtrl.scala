@@ -3,6 +3,7 @@ package isa
 import fu.MDUOperation
 import chisel3._ 
 import chisel3.util._ 
+import conf._
 
 object MicroOpCtrl extends MDUOperation {
   val AMN           = "b110".U(3.W) 
@@ -41,9 +42,10 @@ object MicroOpCtrl extends MDUOperation {
   val AShamt        = 4.U(3.W)
   val SZ_ALU_A      = AXXX.getWidth
 
-  val BXXX          = 0.U(1.W)
-  val BReg          = 0.U(1.W)
-  val BImm          = 1.U(1.W)
+  val BXXX          = if (withBigCore) 0.U(2.W) else 0.U(1.W)
+  val BReg          = if (withBigCore) 0.U(2.W) else 0.U(1.W)
+  val BImm          = if (withBigCore) 1.U(2.W) else 1.U(1.W)
+  val BZero         = if (withBigCore) 2.U(2.W) else 1.U(1.W)
   val SZ_ALU_B      = BXXX.getWidth
 
   val DXXX          = 0.U(3.W)

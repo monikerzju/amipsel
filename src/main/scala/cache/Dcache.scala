@@ -105,8 +105,8 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
   def __reg(raw: UInt) = {
     Mux(responsive, raw, RegEnable(raw, responsive))
   }
-  val s_normal :: s_evict :: s_refill :: s_uncached :: s_cpu_resp :: Nil = Enum(
-    5
+  val s_normal :: s_evict :: s_refill :: s_uncached :: s_cpu_resp :: s_uncached_read :: Nil = Enum(
+    6
   )
   val state = RegInit(s_normal)
   val nline = 1 << dIndexBits
@@ -187,29 +187,38 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
       mask_raw := "h000000ff".U
     }
   }
-  val reg_wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
-  val wd = WireDefault(
-    ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
-  )
-  if(withBigCore){
-    val swl_mask = ~("hffffff00".U << reg_shift)
-    val swr_mask = "hffffffff".U << reg_shift
-    when(io.cpu.req.bits.swlr(0)){  // swl
-      wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (line(reg_word1) & ~swl_mask) 
-    }.elsewhen(io.cpu.req.bits.swlr(1)){  // swr
-      wd := ((reg_wdata << reg_shift) & swr_mask) | (line(reg_word1) & ~swr_mask)
-    }
-  }
-
-  val reg_tag_evict = RegInit(0.U(dTagBits.W))
-  val reg_rdata = RegNext(Mux(state === s_uncached, io.bar.resp.data(len-1,0), line(reg_word1)))
-
   val reg_write = RegInit(false.B)
   reg_write := Mux(
     responsive,
     io.cpu.req.bits.wen && io.cpu.req.valid,
     reg_write
   )
+  val reg_wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
+  val wd = Wire(UInt(len.W))
+  wd := ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
+  if(withBigCore){
+    val swl_mask = Wire(UInt(len.W))
+    val swr_mask = Wire(UInt(len.W))
+    swl_mask := ~("hffffff00".U << reg_shift)
+    swr_mask := "hffffffff".U << reg_shift
+    when(RegEnable(io.cpu.req.bits.swlr(0).asBool,responsive)){  // swl
+      if(!bigCoreDMMIO){
+        wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (line(reg_word1) & ~swl_mask) 
+      }else {
+        wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (io.bar.resp.data(31,0) & ~swl_mask) 
+      }
+    }.elsewhen(RegEnable(io.cpu.req.bits.swlr(1).asBool,responsive)){  // swr
+      if(!bigCoreDMMIO){
+        wd := ((reg_wdata << reg_shift) & swr_mask) | (line(reg_word1) & ~swr_mask)
+      }else {
+        wd := ((reg_wdata << reg_shift) & swr_mask) | (io.bar.resp.data(31,0) & ~swr_mask)
+      }
+    }
+  }
+
+  val reg_tag_evict = RegInit(0.U(dTagBits.W))
+  val reg_rdata = RegNext(Mux(state === s_uncached, io.bar.resp.data(len-1,0), line(reg_word1)))
+
   val reg_line = RegInit(0.U((1<<(offsetBits+3)).W))
   val reg_miss = RegInit(false.B)
   val reg_forward = RegInit(false.B)
@@ -285,20 +294,23 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
           }
         }
       }.elsewhen(mmio && __reg(io.cpu.req.valid)(0)) {
-          state := s_uncached
+          // if swl or swr, go to state uncached_read
           io.bar.req.valid := true.B
           if(bigCoreDMMIO){
+            state := Mux(io.cpu.req.bits.swlr =/= 0.U && io.cpu.req.bits.wen , s_uncached_read, s_uncached)
             io.bar.req.addr := Mux(
               io.cpu.req.bits.swlr =/= 0.U,
               Cat(Seq(tag_raw,io.cpu.req.bits.addr(len-dTagBits-1,2),0.U(2.W))),   // fetch whole word if lwl or lwr
               Cat(tag_raw,io.cpu.req.bits.addr(len-dTagBits-1,0))
             )
+            io.bar.req.wen := io.cpu.req.bits.swlr === 0.U && io.cpu.req.bits.wen
           }
           else {
+            state := s_uncached
             io.bar.req.addr := io.cpu.req.bits.addr
+            io.bar.req.wen := io.cpu.req.bits.wen
           }
           io.bar.req.data := io.cpu.req.bits.wdata
-          io.bar.req.wen := io.cpu.req.bits.wen
         }
     }
     is(s_refill) {
@@ -348,21 +360,29 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
     }
     is(s_uncached) {
       io.bar.req.addr := RegEnable(io.bar.req.addr, state === s_normal)
-      io.bar.req.data := RegEnable(io.bar.req.data, state === s_normal)
+      io.bar.req.data := RegEnable(io.bar.req.data, state === s_normal || state === s_uncached_read)
       io.bar.req.wen := reg_write
-      // val shamt = Cat(__reg(io.cpu.req.bits.addr(1,0)),0.U(3.W))
       when(io.bar.resp.valid) {
         state := s_cpu_resp
         when(!reg_write) {
-          if(!withBigCore){
-            reg_rdata := io.bar.resp.data(31, 0)
-          } else{
-            // reg_rdata := Mux(io.cpu.req.bits.swlr =/= 0.U, io.bar.resp.data(31, 0), (io.bar.resp.data(31, 0) << shamt)(31,0))
-            reg_rdata := io.bar.resp.data(31, 0)
-          }
+          reg_rdata := io.bar.resp.data(31, 0)
         }
       }.otherwise {
         io.bar.req.valid := true.B
+      }
+    }
+  }
+  if(bigCoreDMMIO){
+    when(state === s_uncached_read){
+      // for swl, swr; needs to read before write
+      io.bar.req.valid := true.B
+      io.bar.req.addr := RegEnable(io.bar.req.addr,state === s_normal)
+      when(io.bar.resp.valid){
+        state := s_uncached
+        io.bar.req.wen := true.B
+        io.bar.req.data := Cat(0.U((dataBits-len).W),wd)
+      }.otherwise{
+        io.bar.req.wen := false.B
       }
     }
   }

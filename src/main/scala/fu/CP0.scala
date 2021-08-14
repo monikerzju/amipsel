@@ -23,11 +23,12 @@ trait CP0Code extends Config {
   val PRId     = 15
   val Config   = 16
   val Config1  = 16
+  val WatchHi  = 19
   val TagLo    = 28
   val ErrorEPC = 30
 
   val SZ_CP0_CODE = log2Ceil(ErrorEPC)
-  val SZ_CP0_SEL  = 1
+  val SZ_CP0_SEL  = 3
 
   val StatusWMask  = if (withBigCore) "b00010000000000001111111100000011" else "b00000000000000001111111100000011"
   val nStatusWMask = if (withBigCore) "b11101111111111110000000011111100" else "b11111111111111110000000011111100"
@@ -171,8 +172,15 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val epcr      = Reg(UInt(len.W))
   
   val pridr     = if(withBigCore) RegInit("h19300".U(len.W)) else null
-  val configr   = if(withBigCore) RegInit("h80000482".U(len.W)) else null
-  val config1r  = if(withBigCore) RegInit("h9e190c8f".U(len.W)) else null
+  val configv   = if(withBigCore) RegInit(VecInit(Seq(
+    "h80000482".U(len.W),
+    "h9e190c8f".U(len.W),
+    "h80000000".U(len.W),
+    0.U(len.W)
+    ))) else null
+  val r15_1     = if(withBigCore) RegInit("h80000000".U(len.W)) else null
+  val r12_2     = if(withBigCore) RegInit(0.U(len.W)) else null
+  val watchhir  = if(withBigCore) RegInit("h80000000".U(len.W)) else null
 
   val entryHir  = if (withBigCore) RegInit(0.U(len.W)) else null
   val entryLor  = if (withBigCore) RegInit(VecInit(Seq.fill(2)(0.U(len.W)))) else null
@@ -262,7 +270,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     switch (io.ftc.code) {
       is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
       is (Count.U)    {   io.ftc.dout := countw         }
-      is (Status.U)   {   io.ftc.dout := statusr        }
+      is (Status.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, statusr, r12_2)}
       is (Cause.U)    {   io.ftc.dout := read_causer    }
       is (EPC.U)      {   io.ftc.dout := epcr           }
       is (Compare.U)  {   io.ftc.dout := comparer       }
@@ -271,10 +279,12 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (EntryLo1.U) {   io.ftc.dout := entryLor(1)    }
       is (PageMask.U) {   io.ftc.dout := pageMaskr      }
       is (Index.U)    {   io.ftc.dout := indexr         }
-      is (PRId.U)     {   io.ftc.dout := pridr          }
-      is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
+      is (PRId.U)     {   io.ftc.dout := Mux(io.ftc.sel === 0.U, pridr, r15_1)}
+      // is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
+      is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel(1,0))}
       is (Random.U)   {   io.ftc.dout := randomr        }
       is (ErrorEPC.U) {   io.ftc.dout := errorEPCr      }
+      is (WatchHi.U)  {   io.ftc.dout := watchhir       }
     }
   } else {
     switch (io.ftc.code) {
@@ -337,6 +347,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
         is (PageMask.U) {   pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
         is (Index.U)    {   indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }
         is (ErrorEPC.U) {   errorEPCr := io.ftc.din                                            }
+        is (WatchHi.U)  {   watchhir := io.ftc.din                                             }
       }
     } else {
       switch (io.ftc.code) {
