@@ -108,7 +108,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
   val exIsTlbAddrFind = if (withBigCore) io.tlbAddrTransl.exp.expType === TLBExceptType.noExp else true.B
-  val exLikelyAndNT    = if (withBigCore) exInstsTrueValid(0) && exInsts(0).branch_likely && !reBranchBrTaken else false.B
+  val exLikelyAndNT    = if (withBigCore) exInsts(0).branch_likely && !reBranchBrTaken else false.B
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
                           exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(0))
   val mduExptMask      = (exInstsValid(0) && (alu.io.ovf || exLikelyAndNT) && exInstsOrder(0) < exInstsOrder(1) ||
