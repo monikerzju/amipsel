@@ -64,8 +64,6 @@ object MicroOpCtrl extends MDUOperation with Config {
   val MemByteU      = 6.U(4.W)  // Byte 110
   val MemHalf       = 1.U(4.W)  // Half 001
   val MemHalfU      = 5.U(4.W)  // Half 101
-  val MemWordR      = 7.U(4.W)  // for swr, lwr
-  val MemWordL      = 8.U(4.W)  // lwl, lwr
   val SZ_MEM_TYPE   = MemXXX.getWidth
 
   val WBXXX         = 0.U(2.W)

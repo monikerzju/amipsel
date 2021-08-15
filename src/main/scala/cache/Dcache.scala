@@ -61,12 +61,12 @@ class MetaIODSimple extends MetaIOISimple with Config {
   val dirty = Output(Bool())
 }
 
-class MetaDataBRAM(nline: Int, verilator: Boolean = false) extends Module with Config {
+class MetaDataBRAM(nline: Int) extends Module with Config {
   // to support simutanious write and read, implement dirty bit with regs
 
   // FIXME: io.write-> reg_write
   val io = IO(new MetaIODSimple)
-  val blk = if (verilator) Module(new DPSyncReadMem(nline, dTagBits + 2)) else Module(new DPBRAMSyncReadMem(nline, dTagBits + 2))
+  val blk = Module(new DPBRAMSyncReadMem(nline, dTagBits + 2))
 
   val dout = Mux(RegNext(blk.io.web && blk.io.addra === blk.io.addrb),RegNext(blk.io.dinb),blk.io.douta)
   val v = dout(dTagBits)
@@ -105,13 +105,11 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
   def __reg(raw: UInt) = {
     Mux(responsive, raw, RegEnable(raw, responsive))
   }
-  val s_normal :: s_evict :: s_refill :: s_uncached :: s_cpu_resp :: s_uncached_read :: Nil = Enum(
-    6
-  )
+  val s_normal :: s_evict :: s_refill :: s_uncached :: s_cpu_resp :: Nil = Enum(5)
   val state = RegInit(s_normal)
   val nline = 1 << dIndexBits
-  val data = if (verilator) Module(new DPSyncReadMem(nline, 1 << (offsetBits + 3))) else Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
-  val meta = Module(new MetaDataBRAM(nline, verilator));
+  val data = Module(new DPBRAMSyncReadMem(nline, 1 << (offsetBits + 3)))
+  val meta = Module(new MetaDataBRAM(nline));
   val unmaped = __reg(io.cpu.req.bits.addr(31, 29) === "b100".U).asBool
   // 0x80000000-0xa000000
   // translate virtual addr from start
@@ -196,25 +194,6 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
   val reg_wdata = RegEnable(io.cpu.req.bits.wdata, responsive)
   val wd = Wire(UInt(len.W))
   wd := ((reg_mask & reg_wdata) << reg_shift) | ((~(reg_mask << reg_shift)) & line(reg_word1))
-  if(withBigCore){
-    val swl_mask = Wire(UInt(len.W))
-    val swr_mask = Wire(UInt(len.W))
-    swl_mask := ~("hffffff00".U << reg_shift)
-    swr_mask := "hffffffff".U << reg_shift
-    when(RegEnable(io.cpu.req.bits.swlr(0).asBool,responsive)){  // swl
-      if(!bigCoreDMMIO){
-        wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (line(reg_word1) & ~swl_mask) 
-      }else {
-        wd := ((reg_wdata >> (24.U-reg_shift)) & swl_mask) | (io.bar.resp.data(31,0) & ~swl_mask) 
-      }
-    }.elsewhen(RegEnable(io.cpu.req.bits.swlr(1).asBool,responsive)){  // swr
-      if(!bigCoreDMMIO){
-        wd := ((reg_wdata << reg_shift) & swr_mask) | (line(reg_word1) & ~swr_mask)
-      }else {
-        wd := ((reg_wdata << reg_shift) & swr_mask) | (io.bar.resp.data(31,0) & ~swr_mask)
-      }
-    }
-  }
 
   val reg_tag_evict = RegInit(0.U(dTagBits.W))
   val reg_rdata = RegNext(Mux(state === s_uncached, io.bar.resp.data(len-1,0), line(reg_word1)))
@@ -294,22 +273,10 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
           }
         }
       }.elsewhen(mmio && __reg(io.cpu.req.valid)(0)) {
-          // if swl or swr, go to state uncached_read
           io.bar.req.valid := true.B
-          if(bigCoreDMMIO){
-            state := Mux(io.cpu.req.bits.swlr =/= 0.U && io.cpu.req.bits.wen , s_uncached_read, s_uncached)
-            io.bar.req.addr := Mux(
-              io.cpu.req.bits.swlr =/= 0.U,
-              Cat(Seq(tag_raw,io.cpu.req.bits.addr(len-dTagBits-1,2),0.U(2.W))),   // fetch whole word if lwl or lwr
-              Cat(tag_raw,io.cpu.req.bits.addr(len-dTagBits-1,0))
-            )
-            io.bar.req.wen := io.cpu.req.bits.swlr === 0.U && io.cpu.req.bits.wen
-          }
-          else {
-            state := s_uncached
-            io.bar.req.addr := io.cpu.req.bits.addr
-            io.bar.req.wen := io.cpu.req.bits.wen
-          }
+          io.bar.req.wen := io.cpu.req.bits.wen
+          state := s_uncached
+          io.bar.req.addr := io.cpu.req.bits.addr
           io.bar.req.data := io.cpu.req.bits.wdata
         }
     }
@@ -360,7 +327,7 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
     }
     is(s_uncached) {
       io.bar.req.addr := RegEnable(io.bar.req.addr, state === s_normal)
-      io.bar.req.data := RegEnable(io.bar.req.data, state === s_normal || state === s_uncached_read)
+      io.bar.req.data := RegEnable(io.bar.req.data, state === s_normal)
       io.bar.req.wen := reg_write
       when(io.bar.resp.valid) {
         state := s_cpu_resp
@@ -369,20 +336,6 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
         }
       }.otherwise {
         io.bar.req.valid := true.B
-      }
-    }
-  }
-  if(bigCoreDMMIO){
-    when(state === s_uncached_read){
-      // for swl, swr; needs to read before write
-      io.bar.req.valid := true.B
-      io.bar.req.addr := RegEnable(io.bar.req.addr,state === s_normal)
-      when(io.bar.resp.valid){
-        state := s_uncached
-        io.bar.req.wen := true.B
-        io.bar.req.data := Cat(0.U((dataBits-len).W),wd)
-      }.otherwise{
-        io.bar.req.wen := false.B
       }
     }
   }

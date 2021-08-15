@@ -12,7 +12,6 @@ trait Config {
   var startRAMAddr: String = "h80000000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
-  var tlbTrapAddr: String = "hbfc00200"
   var statusVal: String = "b00000000010000000000000000000000"
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2

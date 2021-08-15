@@ -122,8 +122,8 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
   val chosen_result = Reg(UInt(2.W))
 
   // BHT are registers, because it is relatively small and BRAM does not support reset
-  val history      = if (verilator) Module(new DPSyncReadMem(depth, 2)) else Module(new DPBRAMSyncReadMem(depth, 2, 1))
-  val buffer       = if (verilator) Module(new SPSyncReadMem(depth, width - log2Ceil(instByte))) else Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
+  val history      = Module(new DPBRAMSyncReadMem(depth, 2, 1))
+  val buffer       = Module(new BRAMSyncReadMem(depth, width - log2Ceil(instByte), 1))
 
   // for BHT
   val waddr      = Mux(!io.update.dec.v, io.update.exe.pc_br, io.update.dec.pc_br)

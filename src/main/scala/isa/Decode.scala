@@ -124,10 +124,6 @@ class Dec extends Module with InstType with Config {
     PREF       -> List(F ,  toALU.U),
     MADD       -> List(F ,  toMDU.U),
     MADDU      -> List(F ,  toMDU.U),
-    LWL        -> List(F ,  toLSU.U),
-    LWR        -> List(F ,  toLSU.U),
-    SWL        -> List(F ,  toLSU.U),
-    SWR        -> List(F ,  toLSU.U),
     BEQL       -> List(F ,  toBJU.U),
     BNEL       -> List(F ,  toBJU.U)
   )
@@ -197,13 +193,7 @@ class Dec extends Module with InstType with Config {
     SH    -> List(DMem   , MemHalf , IRT , IXX ),
     SW    -> List(DMem   , MemWord , IRT , IXX )
   )
-  val lsu_signal_ext = Array(
-    LWL   -> List(DReg   , MemWordL , IRT , IRT ),
-    LWR   -> List(DReg   , MemWordR , IRT , IRT ),
-    SWL   -> List(DMem   , MemWordL , IRT , IXX ),
-    SWR   -> List(DMem   , MemWordR , IRT , IXX )
-  )
-  val lsu_signal_final = if (withBigCore) Array.concat(lsu_signal_base, lsu_signal_ext) else lsu_signal_base
+  val lsu_signal_final = lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 
     //              dest   | mem     | rs2 | rd 
     /*LB*/     List(DReg   , MemByte , IXX , IRT ),

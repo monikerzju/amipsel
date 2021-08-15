@@ -370,9 +370,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wen := false.B
     memReq.wdata := 0.U
     memReq.addr := 0.U
-    if(withBigCore){
-      memReq.swlr := 0.U
-    }
     memReq
   })
   def mtype_trans(c:UInt):UInt = {
@@ -393,9 +390,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.wdata := exFwdRtData(2)
     memReq.addr  := ldstAddr
     memReq.wen   := exInsts(2).write_dest === MicroOpCtrl.DMem
-    if(withBigCore){
-      memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
-    }
     memReq
   }
 
@@ -510,22 +504,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemByteU) { wbLdData := Cat(Fill(24, 0.U), dataFromDcache(7, 0)) }
     is(MicroOpCtrl.MemHalf)  { wbLdData := Cat(Fill(16, dataFromDcache(15)), dataFromDcache(15, 0)) }
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
-  }
-  if(withBigCore){
-    val lwl_mask = Wire(UInt(32.W))
-    val lwr_mask = Wire(UInt(32.W))
-    lwl_mask := "h00ffffff".U >> delayed_req_bits
-    lwr_mask := ~("hffffffff".U >> delayed_req_bits).asUInt()
-    val shamt = delayed_req_bits
-    val wbFwdRtdata = RegEnable(exFwdRtData(2), !dcacheStall)
-    switch(wbInsts(2).mem_width) {
-      is(MicroOpCtrl.MemWordL) {
-        wbLdData := ((io.dcache.resp.bits.rdata(0) << (24.U - shamt)).asUInt() & (~lwl_mask).asUInt()) | (wbFwdRtdata & lwl_mask)
-      }
-      is(MicroOpCtrl.MemWordR) {
-        wbLdData := ((io.dcache.resp.bits.rdata(0) >> shamt).asUInt() & (~lwr_mask).asUInt()) | (wbFwdRtdata & lwr_mask)
-      }
-    }
   }
   wbData(0) := wbResult(0)
   wbData(1) := wbResult(1)
