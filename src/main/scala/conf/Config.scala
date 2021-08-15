@@ -15,7 +15,7 @@ trait Config {
   var endAddr: String = "hbfc00100"
   var trapAddr: String = if (withBigCore && !bootFromPmon) "h8002a180" else "hbfc00380"
   var tlbTrapAddr: String = if (withBigCore && !bootFromPmon) "h80024b40" else "hbfc00200"
-  var statusVal: String = if (withBigCore) "b00000000000000000000000000000000" else "b00000000010000000000000000000000"
+  var statusVal: String = "b00000000010000000000000000000000"
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
   var backendIssueN: Int = 2    // 2 backend issue num only affect issue stage
