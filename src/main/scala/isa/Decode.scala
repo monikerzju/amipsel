@@ -115,9 +115,7 @@ class Dec extends Module with InstType with Config {
     SW         -> List(F ,  toLSU.U),     
     ERET       -> List(F ,  toBJU.U),
     MFC0       -> List(F ,  toBJU.U),
-    MTC0       -> List(F ,  toBJU.U)
-  )
-  val control_signal_ext = Array(
+    MTC0       -> List(F ,  toBJU.U),
     TLBWI      -> List(F ,  toALU.U),
     CACHE      -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
@@ -126,8 +124,7 @@ class Dec extends Module with InstType with Config {
     BEQL       -> List(F ,  toBJU.U),
     BNEL       -> List(F ,  toBJU.U)
   )
-  val control_signal_final =Array.concat(control_signal_base, control_signal_ext)
-  val control_signal = ListLookup(io.inst, List(T ,  toBJU.U), control_signal_final)
+  val control_signal = ListLookup(io.inst, List(T ,  toBJU.U), control_signal_base)
 
   val alu_signal_base = Array (
     ADD   -> List(AReg   ,  BReg , aluAdd.U   , IRS , IRT , IRD , SIMM),
@@ -156,12 +153,11 @@ class Dec extends Module with InstType with Config {
     SRL   -> List(AShamt ,  BReg , aluSrl.U   , IXX , IRT , IRD , SIMM),
     MFHI  -> List(AHi    ,  BXXX , aluAddu.U  , IXX , IXX , IRD , SIMM),
     MFLO  -> List(ALo    ,  BXXX , aluAddu.U  , IXX , IXX , IRD , SIMM)
-  )
-  val alu_signal_final = alu_signal_base 
+  ) 
   val alu_signal = ListLookup(io.inst, 
     //              src_a  | src_b | aluop      | rs1 | rs2 | rd  |  uimm
                List(AReg   ,  BReg , aluAddu.U  , IXX , IXX , IXX , SIMM), // PREF or WAIT or SYNC or CACHE
-    alu_signal_final
+    alu_signal_base 
   )
 
   val mdu_signal_base = Array (
@@ -170,17 +166,14 @@ class Dec extends Module with InstType with Config {
     MULTU -> List(DHiLo   , MDU_MULU.U , IRT ),
     MTHI  -> List(DHi     , aluAddu.U  , IXX ),
     MTLO  -> List(DLo     , aluAddu.U  , IXX ),
-    MUL   -> List(DReg    , MDU_MUL.U  , IRT )
-  )
-  val mdu_signal_ext = Array (
+    MUL   -> List(DReg    , MDU_MUL.U  , IRT ),
     MADD  -> List(DHiLoAdd, MDU_MUL.U  , IRT ),
     MADDU -> List(DHiLoAdd, MDU_MULU.U , IRT )
   )
-  val mdu_signal_final = Array.concat(mdu_signal_base, mdu_signal_ext)
   val mdu_signal = ListLookup(io.inst, 
     //              dest   | mduop      | rs2 
     /*DIV*/  List(DHiLo   , MDU_DIV.U  , IRT ),
-    mdu_signal_final
+    mdu_signal_base
   )
 
   val lsu_signal_base = Array (
@@ -192,11 +185,10 @@ class Dec extends Module with InstType with Config {
     SH    -> List(DMem   , MemHalf , IRT , IXX ),
     SW    -> List(DMem   , MemWord , IRT , IXX )
   )
-  val lsu_signal_final = lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 
     //              dest   | mem     | rs2 | rd 
     /*LB*/     List(DReg   , MemByte , IXX , IRT ),
-    lsu_signal_final
+    lsu_signal_base
   )
 
   val bju_signal_base = Array (
@@ -216,32 +208,27 @@ class Dec extends Module with InstType with Config {
     SYS   -> List(Trap    ,  AXXX   ,  DXXX      ,  WBXXX     , IXX , IXX , IXX),
     ERET  -> List(Ret     ,  AXXX   ,  DXXX      ,  WBXXX     , IXX , IXX , IXX),
     MFC0  -> List(PC4     ,  ACP0   ,  DReg      ,  WBReg     , IRD , IXX , IRT),
-    MTC0  -> List(PC4     ,  AReg   ,  DCP0      ,  WBReg     , IRT , IXX , IRD)
-  )
-  val bju_signal_ext = Array(
+    MTC0  -> List(PC4     ,  AReg   ,  DCP0      ,  WBReg     , IRT , IXX , IRD),
     BEQL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
     BNEL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX)
   )
-  val bju_signal_final = Array.concat(bju_signal_base, bju_signal_ext)
   val bju_signal = ListLookup(io.inst,
     /*Illegal*/List(PC4     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
-    bju_signal_final
+    bju_signal_base
   )
 
   val branch_signal_base = Array (
-    BGE   -> List(BrGE),
+    BGEZ  -> List(BrGE),
+    BGEZAL-> List(BrGE),
     BNE   -> List(BrNE),
     BGTZ  -> List(BrGT),
     BLEZ  -> List(BrLE),
     BLTZ  -> List(BrLT),
-    BLTZAL-> List(BrLT)
-  )
-  val branch_signal_ext = Array (
+    BLTZAL-> List(BrLT),
     BNEL  -> List(BrNE)
   )
-  val branch_signal_final = Array.concat(branch_signal_base, branch_signal_ext)
   val branch_signal = ListLookup(io.inst, List(BrEQ),
-    branch_signal_final
+    branch_signal_base
   )
 
   //     illegal | npc  | fu   | br  |  srca  |  scrb  |  dest  |  aluop  |  memtype  |  src   |   rs  |  rt   | rd   |  imm
