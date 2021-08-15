@@ -25,7 +25,7 @@ class Mops extends Bundle with Config with InstType {
   val pc            = UInt(len.W)
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
-  val branch_likely = Bool()
+  val branch_likely = if (trustLikely) null else Bool()
 }
 
 class DecIO extends Bundle with Config {
@@ -229,7 +229,7 @@ class Dec extends Module with InstType with Config {
   )
 
   val branch_signal_base = Array (
-    BEQ   -> List(BrEQ),
+    BGE   -> List(BrGE),
     BNE   -> List(BrNE),
     BGTZ  -> List(BrGT),
     BLEZ  -> List(BrLE),
@@ -237,17 +237,11 @@ class Dec extends Module with InstType with Config {
     BLTZAL-> List(BrLT)
   )
   val branch_signal_ext = Array (
-    BEQL  -> List(BrEQ),
     BNEL  -> List(BrNE)
   )
   val branch_signal_final = Array.concat(branch_signal_base, branch_signal_ext)
-  val branch_signal = ListLookup(io.inst, List(BrGE),
+  val branch_signal = ListLookup(io.inst, List(BrEQ),
     branch_signal_final
-  )
-  val mov_cond_signal = ListLookup(io.inst, List(BrEQ), // MOVZ
-    Array(
-      MOVN  -> List(BrNE)
-    )
   )
 
   //     illegal | npc  | fu   | br  |  srca  |  scrb  |  dest  |  aluop  |  memtype  |  src   |   rs  |  rt   | rd   |  imm
@@ -322,5 +316,7 @@ class Dec extends Module with InstType with Config {
   io.mops.pc            := io.pc
   io.mops.predict_taken := io.bht_predict_taken
   io.mops.target_pc     := io.target_pc
-  io.mops.branch_likely := io.inst === BEQL || io.inst === BNEL
+  if (!trustLikely) {
+    io.mops.branch_likely := io.inst === BEQL || io.inst === BNEL
+  }
 }

@@ -56,13 +56,13 @@ class ALU extends Module with Config with AluOpType {
   val alu_seq_final = alu_seq_base
   if (useLookupBi) {
     io.r := MuxLookupBi(
-      io.aluOp,
+      io.aluOp(aluOpWidth - 2, 0),
       addResult,
       alu_seq_final
     )
   } else {
     io.r := MuxLookup(
-      io.aluOp,
+      io.aluOp(aluOpWidth - 2, 0),
       addResult,
       alu_seq_final
     )    

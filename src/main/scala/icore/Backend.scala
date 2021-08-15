@@ -46,7 +46,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     tmp.pc := 0.U
     tmp.predict_taken := false.B
     tmp.target_pc := 0.U
-    tmp.branch_likely := false.B
+    if (!trustLikely) {
+      tmp.branch_likely := false.B
+    }
     tmp
   }
   val alu          = Module(new ALU)
@@ -101,7 +103,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
-  val exLikelyAndNT    = exInsts(0).branch_likely && !reBranchBrTaken
+  val exLikelyAndNT    = if (trustLikely) false.B else exInsts(0).branch_likely && !reBranchBrTaken
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
                           exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(0))
   val mduExptMask      = (exInstsValid(0) && (alu.io.ovf || exLikelyAndNT) && exInstsOrder(0) < exInstsOrder(1) ||
