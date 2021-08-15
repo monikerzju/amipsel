@@ -30,8 +30,8 @@ trait CP0Code extends Config {
   val SZ_CP0_CODE = log2Ceil(ErrorEPC)
   val SZ_CP0_SEL  = 3
 
-  val StatusWMask  = if (withBigCore) "b00010000000000001111111100000011" else "b00000000000000001111111100000011"
-  val nStatusWMask = if (withBigCore) "b11101111111111110000000011111100" else "b11111111111111110000000011111100"
+  val StatusWMask  = "b00000000000000001111111100000011"
+  val nStatusWMask = "b11111111111111110000000011111100"
 }
 
 trait CauseExcCode {
@@ -99,8 +99,7 @@ class CP0IO extends Bundle with Config {
 }
 
 class StatusStruct extends Bundle with Config {
-  val res0 = if (withBigCore) Output(UInt((31-27+1).W)) else Output(UInt((31-28+1).W))
-  val cu0  = if (withBigCore) Output(UInt(1.W)) else null
+  val res0 = Output(UInt((31-28+1).W))
   val res1 = Output(UInt((27-23+1).W))
   val bev  = Output(UInt(1.W))
   val res2 = Output(UInt((21-16+1).W))
@@ -131,16 +130,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   val statusr   = RegInit(statusVal.U(len.W))
   val causer    = RegInit(0.U(len.W))
   val epcr      = Reg(UInt(len.W))
-  
-  val pridr     = if(withBigCore) RegInit("h19300".U(len.W)) else null
-  val configv   = if(withBigCore) RegInit(VecInit(Seq(
-    "h80000482".U(len.W),
-    "h9e190c8f".U(len.W),
-    "h80000000".U(len.W),
-    0.U(len.W)
-    ))) else null
-  val r15_1     = if(withBigCore) RegInit("h80000000".U(len.W)) else null
-  val r12_2     = if(withBigCore) RegInit(0.U(len.W)) else null
+  val pridr     = "h19300".U(len.W)
 
   val tim_int = RegInit(false.B)
   when (io.ftc.wen && io.ftc.code === Compare.U && io.except.valid_inst) {
@@ -177,13 +167,11 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     switch (io.ftc.code) {
       is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
       is (Count.U)    {   io.ftc.dout := countw         }
-      is (Status.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, statusr, r12_2)}
+      is (Status.U)   {   io.ftc.dout := statusr        }
       is (Cause.U)    {   io.ftc.dout := read_causer    }
       is (EPC.U)      {   io.ftc.dout := epcr           }
       is (Compare.U)  {   io.ftc.dout := comparer       }
-      is (PRId.U)     {   io.ftc.dout := Mux(io.ftc.sel === 0.U, pridr, r15_1)}
-      // is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
-      is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel(1,0))}
+      is (PRId.U)     {   io.ftc.dout := pridr          }
     }
   } else {
     switch (io.ftc.code) {

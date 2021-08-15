@@ -6,15 +6,13 @@ trait Config {
   // Compile
   var useLookupBi: Boolean = false
   var withBigCore: Boolean = true   // big core for final
-  var bigCoreBootSys: String = "ucore-kernel-initrd" // "vmlinux"
-  var bootFromPmon: Boolean = true
   // Basic Option
   var len: Int = 32
-  var startAddr: String = if (withBigCore && !bootFromPmon) "h80000000" else "hbfc00000"
+  var startAddr: String = "hbfc00000"
   var startRAMAddr: String = "h80000000"
   var endAddr: String = "hbfc00100"
-  var trapAddr: String = if (withBigCore && !bootFromPmon) "h8002a180" else "hbfc00380"
-  var tlbTrapAddr: String = if (withBigCore && !bootFromPmon) "h80024b40" else "hbfc00200"
+  var trapAddr: String = "hbfc00380"
+  var tlbTrapAddr: String = "hbfc00200"
   var statusVal: String = "b00000000010000000000000000000000"
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2
@@ -26,19 +24,12 @@ trait Config {
   var bigCoreDMMIO: Boolean = true
   val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
-  var iTagBits: Int = if (withBigCore) 22 else 18
-  var iIndexBits: Int = if (withBigCore) 5 else 9   // 1KB with big core, 16KB for competition
-  var dTagBits: Int = if (withBigCore) 22 else 18
-  var dIndexBits: Int = if (withBigCore) 5 else 9
+  var iTagBits: Int = 18
+  var iIndexBits: Int = 9   // 1KB with big core, 16KB for competition
+  var dTagBits: Int = 18
+  var dIndexBits: Int = 9
   var offsetBits: Int = 5
   var dataBits: Int = 256
-  // TLB
-  var VPNSize: Int = 19
-  var PFNSize: Int = 20
-  var TLBSize: Int = 16
-  var enableTLBAddrTransl = true
-  val enableItlbAddrTransl = true
-  var useQEMURandomStrategy = true
   // BPU
   var traceCallRet: Boolean = false
   var traceBPU: Boolean = false

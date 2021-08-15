@@ -121,8 +121,6 @@ class Dec extends Module with InstType with Config {
   val control_signal_ext = Array(
     TLBWI      -> List(F ,  toALU.U),
     CACHE      -> List(F ,  toALU.U),
-    SYNC       -> List(F ,  toALU.U),
-    WAIT       -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
     MADD       -> List(F ,  toMDU.U),
     MADDU      -> List(F ,  toMDU.U),
