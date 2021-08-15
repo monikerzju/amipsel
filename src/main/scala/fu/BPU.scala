@@ -142,11 +142,7 @@ class BPU(depth: Int = 256, offset: Int = 3, width: Int = 32, issueN: Int = 2, i
   val bht_first   = Mux(last_update, Mux(cache_or_update_hit, chosen_result, Fill(2, 0.U)), history.io.douta)
 
   // if (withBPU) {
-  if (withBigCore) {
-    io.resp.taken_vec(0) := Mux(io.resp.target_first(31) === 0.U, false.B, bht_first(1))
-  } else {
-    io.resp.taken_vec(0) := bht_first(1)
-  }
+  io.resp.taken_vec(0) := Mux(io.resp.target_first(31) === 0.U, false.B, bht_first(1))
   io.resp.taken_vec(1)   := history.io.doutb(1)
   // }
   // else {

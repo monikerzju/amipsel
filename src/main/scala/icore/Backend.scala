@@ -46,10 +46,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     tmp.pc := 0.U
     tmp.predict_taken := false.B
     tmp.target_pc := 0.U
-    if (withBigCore) {
-      tmp.sel := 0.U
-      tmp.branch_likely := false.B
-    }
+    tmp.branch_likely := false.B
     tmp
   }
   val alu          = Module(new ALU)
@@ -104,7 +101,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
-  val exLikelyAndNT    = if (withBigCore) exInsts(0).branch_likely && !reBranchBrTaken else false.B
+  val exLikelyAndNT    = exInsts(0).branch_likely && !reBranchBrTaken
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
                           exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(0))
   val mduExptMask      = (exInstsValid(0) && (alu.io.ovf || exLikelyAndNT) && exInstsOrder(0) < exInstsOrder(1) ||
@@ -171,13 +168,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
   val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
   val blockSecondItem = trapBlockSecondItem
-  if (withBigCore) {  // redirect mtc0 // TODO more redirect, such as cache, sync...
-    val redirectFlushBlockSecondItem = issueInsts(0).write_dest === MicroOpCtrl.DCP0
-    val redirectFlushBlockSecondItemFinal = if (verilator) (issueInsts(0).src_a === MicroOpCtrl.ACP0 || redirectFlushBlockSecondItem) else redirectFlushBlockSecondItem
-    issueArbiter.io.queue_items := Mux(blockSecondItem || redirectFlushBlockSecondItemFinal, trap_ret_items0, issueQueue.io.items)
-  } else {
-    issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
-  }
+  issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
   issueArbiter.io.mtc0_ex     := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd // make sc and load stall one cycle
   issueArbiter.io.insts_in    := issueInsts
@@ -333,7 +324,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val newHiSeqExt = Seq(
     MicroOpCtrl.DHiLoAdd -> (hi + mdu.io.resp.hi)
   )
-  val newHiSeqFinal = if (withBigCore) (newHiSeqBase ++ newHiSeqExt) else newHiSeqBase
+  val newHiSeqFinal = newHiSeqBase ++ newHiSeqExt
   hi := Mux(!bubble_w && exInstsTrueValid(1),
     MuxLookup(exInsts(1).write_dest, hi, newHiSeqFinal),
     hi
@@ -345,7 +336,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val newLoSeqExt = Seq(
     MicroOpCtrl.DHiLoAdd -> (lo + mdu.io.resp.lo)
   )
-  val newLoSeqFinal = if (withBigCore) (newLoSeqBase ++ newLoSeqExt) else newLoSeqBase
+  val newLoSeqFinal = newLoSeqBase ++ newLoSeqExt
   lo := Mux(!bubble_w && exInstsTrueValid(1),
     MuxLookup(exInsts(1).write_dest, lo, newLoSeqFinal),
     lo
@@ -357,7 +348,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
   ldMisaligned := exInsts(2).write_dest =/= MicroOpCtrl.DMem && memMisaligned
   stMisaligned := exInsts(2).write_dest === MicroOpCtrl.DMem && memMisaligned
-  val mmioMask = io.dcache.req.bits.wen && io.dcache.req.bits.addr(28, 0) === "h1faffff0".U
+  val mmioMask = io.dcache.req.bits.addr(28, 0) === "h1faffff0".U
   val dcacheMask = if (simpleNBDCache) mmioMask else false.B
   io.dcache.req.valid := exMemRealValid && !dcacheMask || dcacheStall
   io.dcache.resp.ready := true.B
@@ -451,16 +442,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
           }
         }
       }
-
-      if (traceCallRet) {
-        when (!stall_x && !kill_x) {
-          when (exInsts(0).next_pc === MicroOpCtrl.Jump && exInsts(0).write_dest === MicroOpCtrl.DReg) {
-            printf("call at %x, target %x, hit %x\n", exInsts(0).pc, jumpPc, !reBranch)
-          }.elsewhen (exInsts(0).next_pc === MicroOpCtrl.PCReg && exInsts(0).write_dest === MicroOpCtrl.DXXX) {
-            printf("return at %x, target %x, hit %x\n", exInsts(0).pc, jumpPc, !reBranch)
-          }
-        }
-      }
     }
   }
 
@@ -550,16 +531,8 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbBpuV := false.B
   }
 
-  if (withBigCore) {
-    val flushPipeLineRedirect = wbInstsValid(0) && (wbInsts(0).write_dest === MicroOpCtrl.DCP0 || false.B) // TODO add more, such as cache, priority exchange
-     // to sync count for qemu
-    val flushPipeLineRedirectFinal = if (verilator) flushPipeLineRedirect || (!dcacheStall && wbInstsValid(0) && wbInsts(0).src_a === MicroOpCtrl.ACP0) else flushPipeLineRedirect
-    io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill || flushPipeLineRedirectFinal
-    io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, Mux(wbReBranch && !wfds, reBranchPC, wbInsts(0).pc + 4.U))
-  } else {
-    io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
-    io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
-  }
+  io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
+  io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
   io.fb.bmfs.bpu.v           := wbBpuV
   io.fb.bmfs.bpu.errpr       := wbBpuErrpr
   io.fb.bmfs.bpu.pc_br       := wbBpuPCBr
@@ -627,12 +600,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.din              := wbData(0)
-  if (withBigCore) {
-    cp0.io.ftc.sel              := exInsts(0).sel
-  }
-  else {
-    cp0.io.ftc.sel              := 0.U
-  }
+  cp0.io.ftc.sel              := 0.U
 
   /**
    *  [---------- DiffTest stage -----------]

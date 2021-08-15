@@ -5,11 +5,9 @@ import chisel3._
 trait Config {
   // Compile
   var useLookupBi: Boolean = false
-  var withBigCore: Boolean = true   // big core for final
   // Basic Option
   var len: Int = 32
   var startAddr: String = "hbfc00000"
-  var startRAMAddr: String = "h80000000"
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"
@@ -30,7 +28,6 @@ trait Config {
   var offsetBits: Int = 5
   var dataBits: Int = 256
   // BPU
-  var traceCallRet: Boolean = false
   var traceBPU: Boolean = false
   var BPUEntryN: Int = 256
   var BPUOffset: Int = 32  // 2 is same with 3

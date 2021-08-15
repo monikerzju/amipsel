@@ -163,25 +163,14 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   io.ftc.dout := badvaddrr
   val read_causer = Cat(causer(len - 1), tim_int, causer(29, 16), real_hard_int_vec, causer(9, 0))
   val countw = if (diffTestV) 0.U else countr(len, 1)
-  if (withBigCore) {
-    switch (io.ftc.code) {
-      is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
-      is (Count.U)    {   io.ftc.dout := countw         }
-      is (Status.U)   {   io.ftc.dout := statusr        }
-      is (Cause.U)    {   io.ftc.dout := read_causer    }
-      is (EPC.U)      {   io.ftc.dout := epcr           }
-      is (Compare.U)  {   io.ftc.dout := comparer       }
-      is (PRId.U)     {   io.ftc.dout := pridr          }
-    }
-  } else {
-    switch (io.ftc.code) {
-      is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
-      is (Count.U)    {   io.ftc.dout := countw         }
-      is (Status.U)   {   io.ftc.dout := statusr        }
-      is (Cause.U)    {   io.ftc.dout := read_causer    }
-      is (EPC.U)      {   io.ftc.dout := epcr           }
-      is (Compare.U)  {   io.ftc.dout := comparer       }
-    }    
+  switch (io.ftc.code) {
+    is (BadVAddr.U) {   io.ftc.dout := badvaddrr      }
+    is (Count.U)    {   io.ftc.dout := countw         }
+    is (Status.U)   {   io.ftc.dout := statusr        }
+    is (Cause.U)    {   io.ftc.dout := read_causer    }
+    is (EPC.U)      {   io.ftc.dout := epcr           }
+    is (Compare.U)  {   io.ftc.dout := comparer       }
+    is (PRId.U)     {   io.ftc.dout := pridr          }
   }
 
   io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)

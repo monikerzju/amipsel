@@ -121,7 +121,7 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
   val index_raw =
     __reg(io.cpu.req.bits.addr(len - dTagBits - 1, len - dTagBits - dIndexBits))
   val reg_index = RegNext(index_raw)
-  val mmio = if (withBigCore && bigCoreDMMIO) true.B else __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
+  val mmio = if (bigCoreDMMIO) true.B else __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0

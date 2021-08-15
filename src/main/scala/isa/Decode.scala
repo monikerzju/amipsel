@@ -25,8 +25,7 @@ class Mops extends Bundle with Config with InstType {
   val pc            = UInt(len.W)
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
-  val sel           = if (withBigCore) UInt(3.W) else null
-  val branch_likely = if (withBigCore) Bool() else null
+  val branch_likely = Bool()
 }
 
 class DecIO extends Bundle with Config {
@@ -127,7 +126,7 @@ class Dec extends Module with InstType with Config {
     BEQL       -> List(F ,  toBJU.U),
     BNEL       -> List(F ,  toBJU.U)
   )
-  val control_signal_final = if (withBigCore) Array.concat(control_signal_base, control_signal_ext) else control_signal_base
+  val control_signal_final =Array.concat(control_signal_base, control_signal_ext)
   val control_signal = ListLookup(io.inst, List(T ,  toBJU.U), control_signal_final)
 
   val alu_signal_base = Array (
@@ -177,7 +176,7 @@ class Dec extends Module with InstType with Config {
     MADD  -> List(DHiLoAdd, MDU_MUL.U  , IRT ),
     MADDU -> List(DHiLoAdd, MDU_MULU.U , IRT )
   )
-  val mdu_signal_final = if (withBigCore) Array.concat(mdu_signal_base, mdu_signal_ext) else mdu_signal_base
+  val mdu_signal_final = Array.concat(mdu_signal_base, mdu_signal_ext)
   val mdu_signal = ListLookup(io.inst, 
     //              dest   | mduop      | rs2 
     /*DIV*/  List(DHiLo   , MDU_DIV.U  , IRT ),
@@ -223,7 +222,7 @@ class Dec extends Module with InstType with Config {
     BEQL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
     BNEL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX)
   )
-  val bju_signal_final = if (withBigCore) Array.concat(bju_signal_base, bju_signal_ext) else bju_signal_base
+  val bju_signal_final = Array.concat(bju_signal_base, bju_signal_ext)
   val bju_signal = ListLookup(io.inst,
     /*Illegal*/List(PC4     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
     bju_signal_final
@@ -241,7 +240,7 @@ class Dec extends Module with InstType with Config {
     BEQL  -> List(BrEQ),
     BNEL  -> List(BrNE)
   )
-  val branch_signal_final = if (withBigCore) Array.concat(branch_signal_base, branch_signal_ext) else branch_signal_base
+  val branch_signal_final = Array.concat(branch_signal_base, branch_signal_ext)
   val branch_signal = ListLookup(io.inst, List(BrGE),
     branch_signal_final
   )
@@ -257,11 +256,7 @@ class Dec extends Module with InstType with Config {
   // BJU   ?     |  ?   | bj   | ?   |   ?    | bxxx   |   ?    |  alusubu|    xxx    |  ?     |  rs?  | rt?   |  ?   |   ?      10 fields
   // LSU   0     | pc4  | ?    | xxx | areg   | bimm   |   ?    |  add    |   ?       |  xxx   |  rs?  | ?     |  ?   |  simm    6 fields
 
-  if (withBigCore) {
-    io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
-  } else {
-    io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
-  }
+  io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
   io.mops.branch_type   := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
   io.mops.alu_mdu_lsu   := control_signal(1)
   io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
@@ -327,8 +322,5 @@ class Dec extends Module with InstType with Config {
   io.mops.pc            := io.pc
   io.mops.predict_taken := io.bht_predict_taken
   io.mops.target_pc     := io.target_pc
-  if(withBigCore){
-    io.mops.sel         := io.inst(2,0)
-    io.mops.branch_likely := io.inst === BEQL || io.inst === BNEL
-  }
+  io.mops.branch_likely := io.inst === BEQL || io.inst === BNEL
 }
