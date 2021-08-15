@@ -23,7 +23,7 @@ class StoreInfo extends Bundle with Config {
 }
 
 // TODO ALU_LSU ALU_MDU LSU_BJU
-class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode with RefType with TLBOpType {
+class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
   val io = IO(new BackendIO)
 
   // Global
@@ -48,8 +48,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     tmp.target_pc := 0.U
     if (withBigCore) {
       tmp.atomic := false.B
-      tmp.tlb_exp := 0.U.asTypeOf(new TLBExceptIO)
-      tmp.tlb_op := 0.U
       tmp.sel := 0.U
       tmp.branch_likely := false.B
     }
@@ -107,15 +105,14 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val ldMisaligned = Wire(Bool())
   val stMisaligned = Wire(Bool())
   val exInstsTrueValid = Wire(Vec(backendFuN, Bool()))
-  val exIsTlbAddrFind = if (withBigCore) io.tlbAddrTransl.exp.expType === TLBExceptType.noExp else true.B
   val exLikelyAndNT    = if (withBigCore) exInsts(0).branch_likely && !reBranchBrTaken else false.B
   val aluExptMask      = (exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(0) ||
-                          exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(0))
+                          exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(0))
   val mduExptMask      = (exInstsValid(0) && (alu.io.ovf || exLikelyAndNT) && exInstsOrder(0) < exInstsOrder(1) ||
-                          exInstsValid(2) && (memMisaligned || !exIsTlbAddrFind) && exInstsOrder(2) < exInstsOrder(1))
+                          exInstsValid(2) && memMisaligned && exInstsOrder(2) < exInstsOrder(1))
   val ldstExptMask     = (exInstsValid(0) && (alu.io.ovf || exLikelyAndNT) && exInstsOrder(0) < exInstsOrder(2) ||
                           exInstsValid(1) && mdu.io.resp.except && exInstsOrder(1) < exInstsOrder(2))
-  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned && exIsTlbAddrFind
+  val exMemRealValid = exInstsTrueValid(2) && !memMisaligned
   val bpuV      = (isExPCBr || isExPCJump) && exInstsValid(0)
   val bpuErrpr  = isExPCBr && exInsts(0).target_pc(len - 1, 2) =/= brPC(len - 1, 2) && reBranchBrTaken || isExPCJump && exInsts(0).target_pc(len - 1, 2) =/= jumpPc(len - 1, 2)
   val bpuPCBr   = exInsts(0).pc
@@ -154,7 +151,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbBpuPCBr        = RegNext(Cat(bpuPCBr(len - 1, 2), exInsts(0).target_pc(1, 0)))
   val wbBpuTarget      = RegNext(bpuTarget)
   val wbBpuTaken       = RegNext(bpuTaken)
-  val wbTlbOut         = if (withBigCore) Reg(new TLBEntryIO) else null
 
   /**
    *  [---------- IS stage -----------]
@@ -187,11 +183,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   } else {
     issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
   }
-  if (withBigCore) {
-    issueArbiter.io.mtc0_ex   := exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DCP0 || exInsts(0).tlb_op === tlbr.U || exInsts(0).tlb_op === tlbp.U)
-  } else {
-    issueArbiter.io.mtc0_ex   := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
-  }
+  issueArbiter.io.mtc0_ex     := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd // make sc and load stall one cycle
   issueArbiter.io.insts_in    := issueInsts
   issueArbiter.io.rss_in      := rsFwdData
@@ -375,16 +367,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     lo
   )
 
-  if (withBigCore) {
-    // tlb addr translate
-    io.tlbAddrTransl.virt_addr := ldstAddr
-    io.tlbAddrTransl.refType := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem, store.U, load.U)
-
-    // tlb exec
-    io.tlbExec.op := exInsts(0).tlb_op
-    io.tlbExec.din := cp0.io.ftTlb.exec.dout
-  }
-
   // initialize lsu
   val exLastMemReqValid = RegInit(false.B)
   dcacheStall := exLastMemReqValid && !io.dcache.resp.valid
@@ -454,13 +436,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.invalidate := false.B
     memReq.mtype := mtype_trans(exInsts(2).mem_width)
     memReq.wdata := exFwdRtData(2)
+    memReq.addr  := ldstAddr
     if(withBigCore){
       memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
-      memReq.addr := io.tlbAddrTransl.phys_addr
       memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem && (!exInsts(2).atomic || exStoreCondSuccess)
     } else {
       memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
-      memReq.addr := ldstAddr
     }
     memReq
   }
@@ -644,11 +625,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbLdMa := ldMisaligned
     wbStMa := stMisaligned
 
-    if (withBigCore) {
-      wbInsts(2).tlb_exp := io.tlbAddrTransl.exp // tlb exception
-      wbTlbOut := io.tlbExec.dout // tlb exec
-    }
-
     when (!wfds) {
       reBranchPC := exReBranchPC
       wbReBranch := reBranch
@@ -706,30 +682,19 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
   val wbFetchMaReal = wbInsts(0).pc(1, 0).orR && wbInstsValid(0)  // will be in mops.illegal = 1
-  val wbTlblReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl && wbInstsValid(0) ||
-    wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl && wbInstsValid(2) else false.B
-  val wbTlbsReal    = if (withBigCore) wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(0) ||
-    wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs && wbInstsValid(2) else false.B
-  val wbModReal     = if (withBigCore) wbInsts(2).tlb_exp.expType === TLBExceptType.mod && wbInstsValid(2) else false.B
-  val wbTlbBadAddr  = if (withBigCore) Mux(wbInstsValid(2), wbInsts(2).tlb_exp.badVaddr, wbInsts(0).tlb_exp.badVaddr) else "hdeadbeef".U
   val respInt       = wbInterruptd && wbInstsValid(0)
-  if (withBigCore) {
-    wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl
-    wbExcepts(2) := wbLdMaReal || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl
-  } else {
-    wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR
-    wbExcepts(2) := wbLdMaReal  // store would not cause write to GPR
-  }
+  wbExcepts(0) := wbALUOvfReal || wbInsts(0).pc(1, 0).orR
   wbExcepts(1) := wbMDUOvfReal
+  wbExcepts(2) := wbLdMaReal  // store would not cause write to GPR
   val wb_ev = Wire(Vec(SZ_EXC_CODE, Bool()))
 
   // when (wb_ev.asUInt.orR && wbInstsValid.asUInt.orR) {
   //   printf("\nexception or error wb_evec = %x\n", wb_ev.asUInt)
   // }
   wb_ev(Interrupt   ) := false.B
-  wb_ev(TLBModify   ) := wbModReal
-  wb_ev(TLBLoad     ) := wbTlblReal
-  wb_ev(TLBStore    ) := wbTlbsReal
+  wb_ev(TLBModify   ) := false.B
+  wb_ev(TLBLoad     ) := false.B
+  wb_ev(TLBStore    ) := false.B
   wb_ev(AddrErrLoad ) := wbLdMaReal || wbFetchMaReal
   wb_ev(AddrErrStore) := wbStMaReal
   wb_ev(Syscall     ) := wbALUSysReal
@@ -752,16 +717,12 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
                                   Mux(wbMDUOvfReal, wbInsts(1).pc, wbInsts(2).pc)
                                  )
   cp0.io.except.in_delay_slot := cp0.io.except.epc === latestBJPC + 4.U
-  cp0.io.except.bad_addr      := Mux(wbTlblReal || wbTlbsReal || wbModReal, wbTlbBadAddr, Mux(wbFetchMaReal, wbInsts(0).pc, wbMisalignedAddr))
+  cp0.io.except.bad_addr      := Mux(wbFetchMaReal, wbInsts(0).pc, wbMisalignedAddr)
   cp0.io.except.resp_for_int  := respInt
   cp0.io.ftc.wen              := wbInsts(0).write_dest === MicroOpCtrl.DCP0
   cp0.io.ftc.code             := Mux(cp0.io.ftc.wen, wbInsts(0).rd, exInsts(0).rs1)
   cp0.io.ftc.din              := wbData(0)
   if (withBigCore) {
-    cp0.io.ftTlb.exec.op        := Mux(wbInsts(0).tlb_op =/= notlb.U, wbInsts(0).tlb_op, exInsts(0).tlb_op) // assume no two tlb inst execute continously
-    cp0.io.ftTlb.exec.din       := wbTlbOut
-    cp0.io.ftTlb.vpn            := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.vpn, wbInsts(0).tlb_exp.vpn)
-    cp0.io.ftTlb.expVec         := Mux(wbInstsValid(2), wbInsts(2).tlb_exp.expVec, wbInsts(0).tlb_exp.expVec)
     cp0.io.ftc.sel              := exInsts(0).sel
   }
   else {
@@ -771,36 +732,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   /**
    *  [---------- DiffTest stage -----------]
    */
-
-  val dcache_info = false
-    if(dcache_info){
-      val reg_last = Reg(UInt(len.W))
-      val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
-      reg_last := pc
-      when(io.dcache.resp.valid){
-
-        printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
-        when(RegNext(io.dcache.req.bits.wen)){
-          printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
-        }.otherwise{
-          printf("reading %x\n", io.dcache.resp.bits.rdata(0))
-        }
-      }
-    }
-
-  if (verilator) {
-    def exceptionFun(i: Int): Bool = {
-      if (i == 0) {
-        wbALUOvf || wbInsts(0).next_pc === MicroOpCtrl.Trap || wbInsts(0).next_pc === MicroOpCtrl.Break || wbInsts(0).illegal || wbInsts(0).pc(1, 0).orR || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbl || wbInsts(0).tlb_exp.expType === TLBExceptType.tlbs
-      } else if (i == 1) {
-        wbMDUOvf
-      } else {
-        wbLdMa || wbStMa || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbl || wbInsts(2).tlb_exp.expType === TLBExceptType.tlbs || wbInsts(2).tlb_exp.expType === TLBExceptType.mod
-      }
-    }
-    BoringUtils.addSource(VecInit((0 to 2).map(i => RegNext(wbInstsValid(i) && !bubble_w))), "difftestValids")
-    BoringUtils.addSource(VecInit((0 to 2).map(i => RegNext(Mux(wbInstsValid(i), wbInsts(i).pc, 0.U)))), "difftestPCs")
-  }
 
   if (diffTestV) {
     val instret    = RegInit(0.U(64.W))

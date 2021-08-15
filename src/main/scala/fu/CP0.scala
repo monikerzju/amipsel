@@ -92,17 +92,10 @@ class ExceptIO extends Bundle with Config with CauseExcCode {
   val except_redirect = Output(UInt(len.W))
 }
 
-class FromToTlb extends Bundle with Config {
-  val exec = new TLBOpIO
-  val vpn = Input(UInt(VPNSize.W))
-  val expVec = Input(Bool())
-}
-
 // There might be other IO, but we will use BoringUtils.
 class CP0IO extends Bundle with Config {
   val ftc = new FromToCIO
   val except = new ExceptIO
-  val ftTlb = if (withBigCore) new FromToTlb else null
 }
 
 class StatusStruct extends Bundle with Config {
@@ -128,40 +121,8 @@ class CauseStruct extends Bundle {
   val res2 = Output(UInt(2.W))
 }
 
-class EntryHiStruct extends Bundle {
-  val vpn2 = Output(UInt((31 - 13 + 1).W))
-  val const0 = Output(UInt((12 - 8 + 1).W))
-  val asid = Output(UInt(8.W))
-}
-
-class EntryLoStruct extends Bundle {
-  val const0 = Output(UInt((31 - 26 + 1).W))
-  val pfn = Output(UInt((25 - 6 + 1).W))
-  val c = Output(UInt((5 - 3 + 1).W))
-  val d = Output(UInt(1.W))
-  val v = Output(UInt(1.W))
-  val g = Output(UInt(1.W))
-}
-
-class PageMaskStruct extends Bundle {
-  val const0_0 = Output(UInt((31 - 25 + 1).W))
-  val mask = Output(UInt((24 - 13 + 1).W))
-  val const0_1 = Output(UInt(13.W))
-}
-
-class IndexStruct extends Bundle with Config {
-  val p = Output(UInt(1.W))
-  val const0 = Output(UInt((30 - log2Up(TLBSize) + 1).W))
-  val index = Output(UInt(log2Up(TLBSize).W))
-}
-
-class RandomStruct extends Bundle with Config {
-  val const0 = Output(UInt((len - log2Up(TLBSize) + 1).W))
-  val random = Output(UInt(log2Up(TLBSize).W))
-}
-
 // Put CP0 in WB stage anyway
-class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config with TLBOpType {
+class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcCode with Config {
   val io = IO(new CP0IO)
 
   val badvaddrr = Reg(UInt(len.W))
@@ -180,60 +141,6 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     ))) else null
   val r15_1     = if(withBigCore) RegInit("h80000000".U(len.W)) else null
   val r12_2     = if(withBigCore) RegInit(0.U(len.W)) else null
-  val watchhir  = if(withBigCore) RegInit("h80000000".U(len.W)) else null
-
-  val entryHir  = if (withBigCore) RegInit(0.U(len.W)) else null
-  val entryLor  = if (withBigCore) RegInit(VecInit(Seq.fill(2)(0.U(len.W)))) else null
-  val pageMaskr = if (withBigCore) RegInit(0.U(len.W)) else null
-  val indexr    = if (withBigCore) RegInit(0.U(len.W)) else null
-  val randomr   = if (withBigCore) RegInit((TLBSize - 1).U(len.W)) else null // do not implement Wired cp0
-  val errorEPCr = if (withBigCore) RegInit(startAddr.U(len.W)) else null
-
-  if (withBigCore) {
-    if (useQEMURandomStrategy) {
-      val prev_randomr = RegInit(0.U(len.W))
-      val seed = RegInit(1.U(len.W))
-      def getNextSeed(s: UInt): UInt = {
-        1103515245.U * s + 12345.U
-      }
-      def getRandom(s: UInt): UInt = {
-        // qemu 4.2 implementation
-        (getNextSeed(s) >> 16).asUInt() % TLBSize.U
-      }
-      // TODO: avoid stall influence the seed
-      when(io.ftTlb.exec.op === tlbwr.U || io.ftc.code === Random.U) {
-        // omit third or more getRandom return the same value as before
-        seed := Mux(getRandom(seed) === prev_randomr, getNextSeed(getNextSeed(seed)), getNextSeed(seed))
-        randomr := Mux(getRandom(seed) === prev_randomr, getRandom(getNextSeed(seed)), getRandom(seed))
-        prev_randomr := randomr
-      }
-    } else {
-      randomr := randomr - 1.U // simple random strategy
-    }
-
-    io.ftTlb.exec.dout := {
-      val entry = Wire(new TLBEntryIO)
-      entry.entryHi  := entryHir.asTypeOf(new EntryHiStruct)
-      entry.pageMask := pageMaskr.asTypeOf(new PageMaskStruct)
-      entry.index    := Mux(io.ftTlb.exec.op === tlbwr.U, randomr.asTypeOf(new IndexStruct), indexr.asTypeOf(new IndexStruct))
-      for (i <- 0 until 2) {
-        entry.entryLo(i) := entryLor(i).asTypeOf(new EntryLoStruct)
-      }
-      entry
-    }
-
-    switch (io.ftTlb.exec.op) {
-      is (tlbr.U) {
-        entryHir     := io.ftTlb.exec.din.entryHi.asUInt()
-        entryLor(0)  := io.ftTlb.exec.din.entryLo(0).asUInt()
-        entryLor(1)  := io.ftTlb.exec.din.entryLo(1).asUInt()
-        pageMaskr    := io.ftTlb.exec.din.pageMask.asUInt()
-      }
-      is (tlbp.U) {
-        indexr := io.ftTlb.exec.din.index.asUInt()
-      }
-    }
-  }
 
   val tim_int = RegInit(false.B)
   when (io.ftc.wen && io.ftc.code === Compare.U && io.except.valid_inst) {
@@ -274,17 +181,9 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       is (Cause.U)    {   io.ftc.dout := read_causer    }
       is (EPC.U)      {   io.ftc.dout := epcr           }
       is (Compare.U)  {   io.ftc.dout := comparer       }
-      is (EntryHi.U)  {   io.ftc.dout := entryHir       }
-      is (EntryLo0.U) {   io.ftc.dout := entryLor(0)    }
-      is (EntryLo1.U) {   io.ftc.dout := entryLor(1)    }
-      is (PageMask.U) {   io.ftc.dout := pageMaskr      }
-      is (Index.U)    {   io.ftc.dout := indexr         }
       is (PRId.U)     {   io.ftc.dout := Mux(io.ftc.sel === 0.U, pridr, r15_1)}
       // is (Config.U)   {   io.ftc.dout := Mux(io.ftc.sel === 0.U, configr, config1r)}
       is (Config.U)   {   io.ftc.dout := configv(io.ftc.sel(1,0))}
-      is (Random.U)   {   io.ftc.dout := randomr        }
-      is (ErrorEPC.U) {   io.ftc.dout := errorEPCr      }
-      is (WatchHi.U)  {   io.ftc.dout := watchhir       }
     }
   } else {
     switch (io.ftc.code) {
@@ -297,12 +196,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
     }    
   }
 
-
-  if (withBigCore) {
-    io.except.except_redirect := Mux(ret && !error_ret, epcr, Mux(io.ftTlb.expVec, tlbTrapAddr.U, trapAddr.U))
-  } else {
-    io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
-  }
+  io.except.except_redirect := Mux(ret && !error_ret, epcr, trapAddr.U)
   io.except.except_kill     := has_except || ret
   io.except.call_for_int    := int_en
   countr := countr + 1.U
@@ -317,14 +211,7 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
       causer := new_cause.asUInt
       epcr := Mux(error_ret, epcr, Mux(io.except.in_delay_slot, io.except.epc - 4.U, io.except.epc))
     }
-    if (withBigCore) {
-      badvaddrr := Mux(error_ret, epcr,
-        Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U || except_code === TLBLoad.U || except_code === TLBStore.U,
-          io.except.bad_addr, badvaddrr))
-      entryHir := Mux(except_code === TLBLoad.U || except_code === TLBStore.U, Cat(io.ftTlb.vpn, entryHir(12, 0)), entryHir)
-    } else {
-      badvaddrr := Mux(error_ret, epcr, Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U, io.except.bad_addr, badvaddrr))
-    }
+    badvaddrr := Mux(error_ret, epcr, Mux(except_code === AddrErrLoad.U || except_code === AddrErrStore.U, io.except.bad_addr, badvaddrr))
   }.elsewhen (ret) {
     val new_status = WireInit(statusr.asTypeOf(new StatusStruct))
     new_status.exl := 0.U
@@ -332,32 +219,13 @@ class CP0(diffTestV: Boolean = false) extends Module with CP0Code with CauseExcC
   }.elsewhen (io.ftc.wen && io.except.valid_inst) {
     val status_imut = statusr & nStatusWMask.U
     val status_mut  = io.ftc.din & StatusWMask.U
-    if (withBigCore) {
-      val n = log2Up(TLBSize)
-      switch (io.ftc.code) {
-        // BadVAddr is unwritable
-        is (Count.U)    {   countr := Cat(io.ftc.din, 0.U(1.W))                                }
-        is (Status.U)   {   statusr := status_imut | status_mut                                }
-        is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
-        is (EPC.U)      {   epcr := io.ftc.din                                                 }
-        is (Compare.U)  {   comparer := io.ftc.din                                             }
-        is (EntryHi.U)  {   entryHir := Cat(io.ftc.din(31, 13), 0.U(5.W), io.ftc.din(7, 0))    }
-        is (EntryLo0.U) {   entryLor(0) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
-        is (EntryLo1.U) {   entryLor(1) := Cat(0.U(6.W), io.ftc.din(25, 0))                    }
-        is (PageMask.U) {   pageMaskr := Cat(0.U(7.W), io.ftc.din(24, 13), 0.U(13.W))          }
-        is (Index.U)    {   indexr := Cat(indexr(len - 1, n), io.ftc.din(n - 1, 0))            }
-        is (ErrorEPC.U) {   errorEPCr := io.ftc.din                                            }
-        is (WatchHi.U)  {   watchhir := io.ftc.din                                             }
-      }
-    } else {
-      switch (io.ftc.code) {
-        // BadVAddr is unwritable
-        is (Count.U)    {   countr := Cat(io.ftc.din, 0.U(1.W))                                }
-        is (Status.U)   {   statusr := status_imut | status_mut                                }
-        is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
-        is (EPC.U)      {   epcr := io.ftc.din                                                 }
-        is (Compare.U)  {   comparer := io.ftc.din                                             }
-      }      
-    }
+    switch (io.ftc.code) {
+      // BadVAddr is unwritable
+      is (Count.U)    {   countr := Cat(io.ftc.din, 0.U(1.W))                                }
+      is (Status.U)   {   statusr := status_imut | status_mut                                }
+      is (Cause.U)    {   causer := Cat(causer(31, 10), io.ftc.din(9, 8), causer(7, 0))      }
+      is (EPC.U)      {   epcr := io.ftc.din                                                 }
+      is (Compare.U)  {   comparer := io.ftc.din                                             }
+    }      
   }
 }

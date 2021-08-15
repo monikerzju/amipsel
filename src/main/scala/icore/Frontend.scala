@@ -59,7 +59,7 @@ class PCGen(va_width: Int = 32, start_va: String = "h80000000", increment: Int =
   }
 }
 
-class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with MemAccessType with FrontToBack with RefType {
+class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with MemAccessType with FrontToBack {
   val io = IO(new FrontendIO)
 
   // IF
@@ -77,7 +77,6 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
   val illegal_pc     = pc_gen.io.pc_o(1, 0).orR
   val dec_kill_redirect_pc = Wire(UInt(len.W))
   val may_illegal_req_addr = Mux(stall_f, repc, pc_gen.io.pc_o)
-  val tlbFetchExp = if(withBigCore) io.tlb(0).exp.expType =/= TLBExceptType.noExp || io.tlb(1).exp.expType =/= TLBExceptType.noExp else null
 
   // ID
   val decode_pc_low_reg = RegInit(UInt(len.W), startAddr.U)
@@ -134,21 +133,9 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     }
   }
 
-  if (withBigCore) {
-    // 2 insts
-    // TODO: if exp happens, do not access icache
-    io.tlb(0).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
-    io.tlb(0).refType   := fetch.U
-    io.tlb(1).virt_addr := Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U)) + 4.U
-    io.tlb(1).refType   := fetch.U
-  }
   io.icache.req.valid      := true.B
-  io.icache.resp.ready     := true.B 
-  if (withBigCore) {
-    io.icache.req.bits.addr := Mux(tlbFetchExp, startAddr.U, io.tlb(0).phys_addr)
-  } else {
-    io.icache.req.bits.addr:= Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
-  }
+  io.icache.resp.ready     := true.B
+  io.icache.req.bits.addr:= Cat(may_illegal_req_addr(len - 1, 2), Fill(2, 0.U))
   io.icache.req.bits.wdata := DontCare
   io.icache.req.bits.wen   := false.B
   if(withBigCore){
@@ -188,9 +175,6 @@ class Frontend(diffTestV: Boolean, verilator: Boolean) extends Module with Confi
     } else {
       decs(i).bht_predict_taken := false.B
       decs(i).target_pc := Cat(Fill(30, 0.U), decode_pc_second_state)
-    }
-    if (withBigCore) {
-      decs(i).tlb_exp := RegEnable(io.tlb(i).exp, 0.U.asTypeOf(new TLBExceptIO), !kill_d && !stall_f)
     }
     io.fb.fmbs.inst_ops(i) := decs(i).mops.asUInt
   }
