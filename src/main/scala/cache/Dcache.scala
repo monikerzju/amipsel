@@ -1,46 +1,8 @@
-/** *********************************************************
-  * ********************dcache prototype*********************
-  * 1-way direct-mapped instruction cache
-  * features:
-  *    - AXI protocol added
-  *    - serialized blocking access
-  *    - hit signal delay 1 cycle
-  *    - data delay 1 cycle
-  *
-  * TODO:  [x] output serialized to cater for AXI bandwidth
-  *        [x] traits not compatible with icore defination
-  *        [x] BRAM interface for data access
-  *        [ ] invalidate instructions
-  *        [ ] flush
-  *        [x] dual-issue for icache
-  *        [x] mmio
-  *        [x] map from virtual to physical
-  *
-  * NOTICE: - expect the valid signal early in the cycle, not withstandable with the latency
-  *        - provides access for aligned address only
-  * FIXME:  [x] skeptical : the valid signal might not trigger the state transfer;
-  *                in which case both meta and data will suffer 1-cycle lantency
-  *        [x] valid-ready protocol
-  *
-  * *********************************************************
-  * 5/7 changelog
-  * assert cpu input not steady, e.g. send valid even when stall
-  * add `responsive` singal, asserted when resp.valid and put down when req.valid
-  * change all cpu raw input in states apart from s_normal to mux(raw,regEnable(raw,responsive));
-  * replace RegNext with RegEnable(_,responsive)
-  * *********************************************************
-  * bram diff:
-  * 1. valid change to RegNext; now stay up to 2 cycle in s_normal instead of 1
-  * 2. cancel data delay when bar.resp.valid is received
-  * 3. meta output hit, dirty, compatible with current, no diff
-  * 4. `responsive` definition
-  * *********************************************************
-  */
 package cache
 
 import chisel3._
 import chisel3.util._
-import chisel3.experimental._
+import chisel3.util.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
@@ -98,6 +60,11 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
     val cpu = new MemIO(1)
     val bar = new CacheIO(1 << (offsetBits + 3))
   })
+  val mmioen = WireDefault(false.B)
+  BoringUtils.addSink(mmioen, "mmioen")
+  val mmio_perm = RegInit(false.B)
+  mmio_perm := Mux(mmioen, true.B, mmio_perm)
+
   val responsive = Wire(Bool())
   val reg_tmp = RegInit(true.B)
   reg_tmp := io.cpu.resp.valid || !io.cpu.req.valid
@@ -121,7 +88,7 @@ class DCacheSimple(diffTest: Boolean = true, verilator: Boolean = false)
   val index_raw =
     __reg(io.cpu.req.bits.addr(len - dTagBits - 1, len - dTagBits - dIndexBits))
   val reg_index = RegNext(index_raw)
-  val mmio = __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
+  val mmio = mmio_perm || __reg(io.cpu.req.bits.addr(31, 29) === "b101".U).asBool
   val line = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   val writeline = Wire(Vec(1 << (offsetBits - 2), UInt(len.W)))
   var i = 0

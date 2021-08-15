@@ -11,6 +11,7 @@ trait Config {
   var endAddr: String = "hbfc00100"
   var trapAddr: String = "hbfc00380"
   var statusVal: String = "b00000000010000000000000000000000"
+  var specialMFC: String = "h40806000"
   var trustLikely: Boolean = true
   // Super Scalar
   var frontendIssueN: Int = 2   // 1 or 2

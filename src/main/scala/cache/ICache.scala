@@ -2,7 +2,7 @@ package cache
 
 import chisel3._
 import chisel3.util._
-import chisel3.experimental._
+import chisel3.util.experimental._
 import chisel3.experimental.BundleLiterals._
 import conf._
 import icore._
@@ -39,12 +39,15 @@ class ICache(verilator: Boolean = false) extends Module with Config with MemAcce
 
   // Meta Tile
   val req_addr = RegNext(io.cpu.req.bits.addr)
+  val permanent_mmio_en = req_addr === startAddr.U && io.cpu.resp.valid && io.cpu.resp.bits.rdata(0) === specialMFC.U
   val word1 = req_addr(offsetBits - 1, 2)
   val word2 = word1 + 1.U
   val hit   = meta.io.dout(iTagBits).asBool && meta.io.dout(iTagBits - 1, 0) === req_addr(len - 1, len - iTagBits)
   meta.io.we   := false.B
   meta.io.addr := index_req
   meta.io.din  := Cat(true.B, tag_req)
+
+  BoringUtils.addSource(permanent_mmio_en, "mmioen")
 
   // Data Tile
   val refill_data = Reg(Vec(1 << (offsetBits - 2), UInt(len.W)))
