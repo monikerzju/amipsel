@@ -18,8 +18,6 @@ trait Config {
   var backendFuN: Int = 3
   val queueSize: Int = 8
   // Cache
-  var bigCoreIMMIO: Boolean = true  // TODO to bypass cache instruction and coherence issue
-  var bigCoreDMMIO: Boolean = true
   val traceCache: Boolean = false
   var simpleNBDCache: Boolean = true
   var iTagBits: Int = 18
