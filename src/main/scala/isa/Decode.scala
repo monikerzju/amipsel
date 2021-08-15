@@ -25,7 +25,6 @@ class Mops extends Bundle with Config with InstType {
   val pc            = UInt(len.W)
   val predict_taken = Bool()
   val target_pc     = UInt(len.W)
-  val atomic        = if (withBigCore) Bool() else null
   val sel           = if (withBigCore) UInt(3.W) else null
   val branch_likely = if (withBigCore) Bool() else null
 }
@@ -121,22 +120,16 @@ class Dec extends Module with InstType with Config {
   )
   val control_signal_ext = Array(
     TLBWI      -> List(F ,  toALU.U),
-    CLZ        -> List(F ,  toALU.U),
     CACHE      -> List(F ,  toALU.U),
     SYNC       -> List(F ,  toALU.U),
     WAIT       -> List(F ,  toALU.U),
     PREF       -> List(F ,  toALU.U),
     MADD       -> List(F ,  toMDU.U),
     MADDU      -> List(F ,  toMDU.U),
-    TNE        -> List(F ,  toBJU.U),
-    MOVZ       -> List(F ,  toBJU.U),
-    MOVN       -> List(F ,  toBJU.U),
     LWL        -> List(F ,  toLSU.U),
     LWR        -> List(F ,  toLSU.U),
     SWL        -> List(F ,  toLSU.U),
     SWR        -> List(F ,  toLSU.U),
-    LL         -> List(F ,  toLSU.U),       
-    SC         -> List(F ,  toLSU.U),
     BEQL       -> List(F ,  toBJU.U),
     BNEL       -> List(F ,  toBJU.U)
   )
@@ -171,10 +164,7 @@ class Dec extends Module with InstType with Config {
     MFHI  -> List(AHi    ,  BXXX , aluAddu.U  , IXX , IXX , IRD , SIMM),
     MFLO  -> List(ALo    ,  BXXX , aluAddu.U  , IXX , IXX , IRD , SIMM)
   )
-  val alu_signal_ext = Array(
-    CLZ   -> List(AReg   ,  BXXX , aluClz.U   , IRS , IXX , IRD , SIMM)
-  )
-  val alu_signal_final = if (withBigCore) Array.concat(alu_signal_base, alu_signal_ext) else alu_signal_base 
+  val alu_signal_final = alu_signal_base 
   val alu_signal = ListLookup(io.inst, 
     //              src_a  | src_b | aluop      | rs1 | rs2 | rd  |  uimm
                List(AReg   ,  BReg , aluAddu.U  , IXX , IXX , IXX , SIMM), // PREF or WAIT or SYNC or CACHE
@@ -213,9 +203,7 @@ class Dec extends Module with InstType with Config {
     LWL   -> List(DReg   , MemWordL , IRT , IRT ),
     LWR   -> List(DReg   , MemWordR , IRT , IRT ),
     SWL   -> List(DMem   , MemWordL , IRT , IXX ),
-    SWR   -> List(DMem   , MemWordR , IRT , IXX ), 
-    LL    -> List(DReg   , MemWord  , IXX , IRT ),       
-    SC    -> List(DMem   , MemWord  , IRT , IRT )
+    SWR   -> List(DMem   , MemWordR , IRT , IXX )
   )
   val lsu_signal_final = if (withBigCore) Array.concat(lsu_signal_base, lsu_signal_ext) else lsu_signal_base
   val lsu_signal = ListLookup(io.inst, 
@@ -244,9 +232,6 @@ class Dec extends Module with InstType with Config {
     MTC0  -> List(PC4     ,  AReg   ,  DCP0      ,  WBReg     , IRT , IXX , IRD)
   )
   val bju_signal_ext = Array(
-    TNE   -> List(NETrap  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
-    MOVN  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD),
-    MOVZ  -> List(PC4     ,  AReg   ,  DRegCond  ,  WBALU     , IRS , IRT , IRD),
     BEQL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
     BNEL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX)
   )
@@ -286,12 +271,10 @@ class Dec extends Module with InstType with Config {
 
   if (withBigCore) {
     io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
-    io.mops.branch_type := Mux(control_signal(1) === toBJU.U, Mux(bju_signal(0) === Branch, 
-      branch_signal(0), Mux(bju_signal(2) === DRegCond, mov_cond_signal(0), BrXXX)), BrXXX)
   } else {
     io.mops.illegal       := control_signal(0).asBool || io.pc(1, 0).orR
-    io.mops.branch_type := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
   }
+  io.mops.branch_type   := Mux(control_signal(1) === toBJU.U && bju_signal(0) === Branch, branch_signal(0), BrXXX)
   io.mops.alu_mdu_lsu   := control_signal(1)
   io.mops.next_pc       := Mux(control_signal(1) === toBJU.U, bju_signal(0), PC4)
   io.mops.src_a         := MuxLookup(control_signal(1), AReg,
@@ -357,11 +340,7 @@ class Dec extends Module with InstType with Config {
   io.mops.predict_taken := io.bht_predict_taken
   io.mops.target_pc     := io.target_pc
   if(withBigCore){
-    io.mops.atomic      := io.inst === SC || io.inst === LL
     io.mops.sel         := io.inst(2,0)
     io.mops.branch_likely := io.inst === BEQL || io.inst === BNEL
-    when(io.inst === MOVN || io.inst === MOVZ){
-      io.mops.src_b := BZero
-    }
   }
 }

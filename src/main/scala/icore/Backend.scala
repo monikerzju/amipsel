@@ -47,7 +47,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     tmp.predict_taken := false.B
     tmp.target_pc := 0.U
     if (withBigCore) {
-      tmp.atomic := false.B
       tmp.sel := 0.U
       tmp.branch_likely := false.B
     }
@@ -118,10 +117,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val bpuPCBr   = exInsts(0).pc
   val bpuTarget = Mux(isExPCBr, brPC, jumpPc)
   val bpuTaken  = reBranchBrTaken || isExPCJump
-  val exMoveCondNo = ((exInsts(0).branch_type === MicroOpCtrl.BrEQ).asUInt ^ (exFwdRtData(0) === 0.U).asUInt).andR
-  val linkBaseAddrHi = if (withBigCore) Reg(UInt((len - 2).W)) else null
-  val linkValid = if (withBigCore) RegInit(false.B) else null
-  val exStoreCondSuccess = if (withBigCore) (linkValid && linkBaseAddrHi === ldstAddr(len - 1, 2))  else null  // this is only a wire of data, need other control signals
 
   // WB
   val wfds             = RegInit(false.B) // wait for delay slot, this name is from RV's WFI instruction
@@ -175,7 +170,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   // TODO lr sc, trap, only 1, never 2?
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
   val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
-  val blockSecondItem = if (withBigCore) (trapBlockSecondItem || issueInsts(0).atomic) else trapBlockSecondItem
+  val blockSecondItem = trapBlockSecondItem
   if (withBigCore) {  // redirect mtc0 // TODO more redirect, such as cache, sync...
     val redirectFlushBlockSecondItem = issueInsts(0).write_dest === MicroOpCtrl.DCP0
     val redirectFlushBlockSecondItemFinal = if (verilator) (issueInsts(0).src_a === MicroOpCtrl.ACP0 || redirectFlushBlockSecondItem) else redirectFlushBlockSecondItem
@@ -212,17 +207,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     }
   }
   // ex to is
-  //TODO: DEL!!!!!!!!!!!!!!!!!!!!!!!!
-  // !!!!!!!!!!!!!!!!!!!!!!
-
-  val exCondFwdEnable = if (withBigCore) (exInsts(0).write_dest === MicroOpCtrl.DRegCond && !exMoveCondNo) else false.B
-  val movn_info = false
-  if(movn_info){
-    when(exInsts(0).write_dest === MicroOpCtrl.DRegCond){
-      printf("mov/movz, rs, rt = (%x,%x), %d, pc=%x, redirect kill = %d, wfds %d\n",exFwdRsData(0),exFwdRtData(0),exCondFwdEnable,exInsts(0).pc,io.fb.bmfs.redirect_kill,wfds)
-    }
-  }
-  when(exInstsValid(0) && (exInsts(0).write_dest === MicroOpCtrl.DReg || exCondFwdEnable) && exInsts(0).rd =/= 0.U) {
+  when(exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DReg && exInsts(0).rd =/= 0.U) {
     for(i <- 0 until backendIssueN) {
       when(exInsts(0).rd === issueInsts(i).rs1) {
         rsFwdData(i) := aluWbData
@@ -317,8 +302,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   )
   alu.io.b := MuxLookup(exInsts(0).src_b, exFwdRtData(0),
     Seq(
-      MicroOpCtrl.BImm -> exInsts(0).imm,
-      MicroOpCtrl.BZero -> 0.U
+      MicroOpCtrl.BImm -> exInsts(0).imm
     )
   )
   alu.io.rega  := exFwdRsData(0)
@@ -378,35 +362,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   io.dcache.req.valid := exMemRealValid && !dcacheMask || dcacheStall
   io.dcache.resp.ready := true.B
 
-  if (withBigCore) {
-    // load linked - store conditional
-    val dcacheNewReqBeforeStoreCondMask = exMemRealValid && !dcacheStall
-    when (dcacheNewReqBeforeStoreCondMask && !io.dcache.req.bits.wen && exInsts(2).atomic) {
-      // load linked
-      linkValid := true.B
-      linkBaseAddrHi := ldstAddr(len - 1, 2)
-    }.elsewhen (!bubble_w && dcacheNewReqBeforeStoreCondMask && io.dcache.req.bits.wen && (linkBaseAddrHi === ldstAddr(len - 1, 2) || exInsts(2).atomic) || cp0.io.except.except_kill) {
-      // cp0 redirect, store on the overlapped address, store conditional succeeds or not
-      linkValid := false.B
-    }
-    val dcache_info = false
-    if(dcache_info){
-      val reg_last = Reg(UInt(len.W))
-      val pc = Mux(dcacheStall, reg_last, exInsts(2).pc)
-      reg_last := pc
-      when(io.dcache.resp.valid){
-
-        printf("dcache access in  addr %x, wen %d, pc= %x\n",RegNext(io.dcache.req.bits.addr),RegNext(io.dcache.req.bits.wen),reg_last)
-        when(RegNext(io.dcache.req.bits.wen)){
-          printf("writing %x\n", RegNext(io.dcache.req.bits.wdata))
-        }.otherwise{
-          printf("reading %x\n", io.dcache.resp.bits.rdata(0))
-        }
-      }
-
-    }
-  }
-
   val exLastMemReq = RegInit({
     val memReq = Wire(new MemReq)
     memReq.flush := false.B
@@ -437,11 +392,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     memReq.mtype := mtype_trans(exInsts(2).mem_width)
     memReq.wdata := exFwdRtData(2)
     memReq.addr  := ldstAddr
+    memReq.wen   := exInsts(2).write_dest === MicroOpCtrl.DMem
     if(withBigCore){
       memReq.swlr := Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordL, 1.U, Mux(exInsts(2).mem_width === MicroOpCtrl.MemWordR, 2.U, 0.U))
-      memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem && (!exInsts(2).atomic || exStoreCondSuccess)
-    } else {
-      memReq.wen := exInsts(2).write_dest === MicroOpCtrl.DMem
     }
     memReq
   }
@@ -559,11 +512,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     is(MicroOpCtrl.MemHalfU) { wbLdData := Cat(Fill(16, 0.U), dataFromDcache(15, 0)) }
   }
   if(withBigCore){
-    val wbIsSc = RegEnable(exInsts(2).atomic && exInsts(2).write_dest === MicroOpCtrl.DMem, false.B, !dcacheStall) // is sc not load or ll
-    val wbStCondSuccess = RegEnable(exStoreCondSuccess, false.B, !dcacheStall)
-    when(wbIsSc) {
-      wbLdData := Mux(wbStCondSuccess, 1.U, 0.U)
-    }
     val lwl_mask = Wire(UInt(32.W))
     val lwr_mask = Wire(UInt(32.W))
     lwl_mask := "h00ffffff".U >> delayed_req_bits
@@ -610,16 +558,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     wbInstsOrder := exInstsOrder
     wbResult(0) := aluWbData
     wbResult(1) := mdu.io.resp.lo
-
-    if (withBigCore) {
-      wbInsts(0).next_pc := Mux(alu.io.zero =/= 0.U && exInsts(0).next_pc === MicroOpCtrl.NETrap, MicroOpCtrl.PC4, exInsts(0).next_pc)
-      wbInsts(0).write_dest := Mux(exInsts(0).write_dest === MicroOpCtrl.DRegCond,
-        Mux(exMoveCondNo,
-          MicroOpCtrl.DXXX, MicroOpCtrl.DReg
-        ), exInsts(0).write_dest
-      )   // MOVN and MOVZ instructions
-      wbInsts(2).write_dest := Mux(exInsts(2).write_dest === MicroOpCtrl.DMem && exInsts(2).atomic, MicroOpCtrl.DReg, exInsts(2).write_dest)
-    }
     wbALUOvf := alu.io.ovf
     wbMDUOvf := mdu.io.resp.except
     wbLdMa := ldMisaligned
@@ -640,12 +578,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
     val flushPipeLineRedirectFinal = if (verilator) flushPipeLineRedirect || (!dcacheStall && wbInstsValid(0) && wbInsts(0).src_a === MicroOpCtrl.ACP0) else flushPipeLineRedirect
     io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill || flushPipeLineRedirectFinal
     io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, Mux(wbReBranch && !wfds, reBranchPC, wbInsts(0).pc + 4.U))
-    if(movn_info){
-      when(RegNext(exCondFwdEnable)){
-        printf("wb result: %x, redirect kill: %d, wfds %d\n",wbResult(0),io.fb.bmfs.redirect_kill,wfds)
-        printf("flush final: %d, except kill: %d, stall_x %d\n",flushPipeLineRedirectFinal,cp0.io.except.except_kill,stall_x)
-      }
-    }
   } else {
     io.fb.bmfs.redirect_kill := (wbReBranch && !wfds) || cp0.io.except.except_kill
     io.fb.bmfs.redirect_pc   := Mux(cp0.io.except.except_kill, cp0.io.except.except_redirect, reBranchPC)
@@ -677,7 +609,6 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   val wbMDUOvfReal  = wbInstsValid(1) && wbMDUOvf
   val wbLdMaReal    = wbInstsValid(2) && wbLdMa
   val wbStMaReal    = wbInstsValid(2) && wbStMa
-  val wbALUTrapReal = if (withBigCore) wbInsts(0).next_pc === MicroOpCtrl.NETrap && wbInstsValid(0) else null
   val wbALUSysReal  = wbInsts(0).next_pc === MicroOpCtrl.Trap && wbInstsValid(0)
   val wbALUBpReal   = wbInsts(0).next_pc === MicroOpCtrl.Break && wbInstsValid(0)
   val illegal       = wbInsts(0).illegal && wbInstsValid(0) // put all in illegal, but inst misaligned is of high prio
@@ -701,11 +632,7 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   wb_ev(Breakpoint  ) := wbALUBpReal
   wb_ev(ReservedInst) := illegal
   wb_ev(Overflow    ) := wbALUOvfReal || wbMDUOvfReal
-  if (withBigCore) {
-    wb_ev(Trap        ) := wbALUTrapReal
-  } else {
-    wb_ev(Trap        ) := false.B
-  }
+  wb_ev(Trap        ) := false.B
   wb_ev(Res0        ) := false.B
   wb_ev(Res1        ) := false.B
   wb_ev(Res2        ) := false.B

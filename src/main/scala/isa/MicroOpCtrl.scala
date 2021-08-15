@@ -42,10 +42,9 @@ object MicroOpCtrl extends MDUOperation with Config {
   val AShamt        = 4.U(3.W)
   val SZ_ALU_A      = AXXX.getWidth
 
-  val BXXX          = if (withBigCore) 0.U(2.W) else 0.U(1.W)
-  val BReg          = if (withBigCore) 0.U(2.W) else 0.U(1.W)
-  val BImm          = if (withBigCore) 1.U(2.W) else 1.U(1.W)
-  val BZero         = if (withBigCore) 2.U(2.W) else 1.U(1.W)
+  val BXXX          = 0.U(1.W)
+  val BReg          = 0.U(1.W)
+  val BImm          = 1.U(1.W)
   val SZ_ALU_B      = BXXX.getWidth
 
   val DXXX          = 0.U(3.W)
@@ -56,7 +55,6 @@ object MicroOpCtrl extends MDUOperation with Config {
   val DLo           = 4.U(3.W)
   val DHiLo         = 5.U(3.W)
   val DHiLoAdd      = 6.U(3.W)
-  val DRegCond      = 7.U(3.W)
   val SZ_W_DEST     = DXXX.getWidth
 
   // correspond with MemAccessType
@@ -84,7 +82,6 @@ object MicroOpCtrl extends MDUOperation with Config {
   val Trap          = 4.U(3.W)
   val Ret           = 5.U(3.W)
   val Break         = 6.U(3.W)
-  val NETrap        = 7.U(3.W)
   val SZ_NEXT_PC    = PC4.getWidth
 
   val SZ_ISSUE_FU   = 0

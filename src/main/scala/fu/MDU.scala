@@ -88,10 +88,7 @@ class MDU(width: Int = 32) extends Module with MDUOperation with Config {
     aluSra.U  -> (io.req.in2.asSInt() >> shamt).asUInt(),
     aluLui.U  -> Cat(io.req.in2(15, 0), Fill(16, 0.U))
   )
-  val alu_seq_ext = Seq(
-    aluClz.U  -> getLeadingZeroRecur(io.req.in1, 32, 0)
-  )
-  val alu_seq_final = if (withBigCore) (alu_seq_base ++ alu_seq_ext) else alu_seq_base
+  val alu_seq_final = alu_seq_base
   val lo = Mux(
     io.req.op(aluOpWidth - 1).andR,
     MuxLookup(
