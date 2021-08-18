@@ -5,6 +5,7 @@ import chisel3.util._
 import conf.Config
 import fu._
 import isa._
+import fu.AluOpType
 import chisel3.experimental.BundleLiterals._
 import chisel3.util.experimental.BoringUtils
 
@@ -23,7 +24,7 @@ class StoreInfo extends Bundle with Config {
 }
 
 // TODO ALU_LSU ALU_MDU LSU_BJU
-class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode {
+class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config with InstType with MemAccessType with CauseExcCode with AluOpType {
   val io = IO(new BackendIO)
 
   // Global
@@ -168,9 +169,10 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
 
   // TODO lr sc, trap, only 1, never 2?
   val trap_ret_items0 = Mux(issueQueue.io.items >= 1.U, 1.U, 0.U)   // break syscall eret tne
-  val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal
+  val trapBlockSecondItem = isNextPCMayTrap(issueInsts(0).next_pc) || issueInsts(0).illegal || (issueInsts(0).alu_op === aluFilt.U || issueInsts(1).alu_op === aluFilt.U)
+  val dontIssue = io.dcache.req.valid
   val blockSecondItem = trapBlockSecondItem
-  issueArbiter.io.queue_items := Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items)
+  issueArbiter.io.queue_items := Mux(dontIssue && issueInsts(0).alu_op === aluFilt.U, 0.U, Mux(blockSecondItem, trap_ret_items0, issueQueue.io.items))
   issueArbiter.io.mtc0_ex     := exInstsValid(0) && exInsts(0).write_dest === MicroOpCtrl.DCP0
   issueArbiter.io.ld_dest_ex  := Fill(len, exInstsValid(2)) & exInsts(2).rd // make sc and load stall one cycle
   issueArbiter.io.insts_in    := issueInsts
@@ -300,6 +302,9 @@ class Backend(diffTestV: Boolean, verilator: Boolean) extends Module with Config
   )
   alu.io.rega  := exFwdRsData(0)
   alu.io.aluOp := exInsts(0).alu_op
+  alu.io.valid := exInstsTrueValid(0)
+  alu.io.rd    := exInsts(0).rd
+  alu.io.rs    := exInsts(0).rs1
 
   // mdu execution
   // one inst only issues one req

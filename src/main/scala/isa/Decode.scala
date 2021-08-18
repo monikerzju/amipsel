@@ -122,7 +122,8 @@ class Dec extends Module with InstType with Config {
     MADD       -> List(F ,  toMDU.U),
     MADDU      -> List(F ,  toMDU.U),
     BEQL       -> List(F ,  toBJU.U),
-    BNEL       -> List(F ,  toBJU.U)
+    BNEL       -> List(F ,  toBJU.U),
+    FILTER     -> List(F ,  toBJU.U)
   )
   val control_signal = ListLookup(io.inst, List(T ,  toBJU.U), control_signal_base)
 
@@ -210,7 +211,8 @@ class Dec extends Module with InstType with Config {
     MFC0  -> List(PC4     ,  ACP0   ,  DReg      ,  WBReg     , IRD , IXX , IRT),
     MTC0  -> List(PC4     ,  AReg   ,  DCP0      ,  WBReg     , IRT , IXX , IRD),
     BEQL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
-    BNEL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX)
+    BNEL  -> List(Branch  ,  AReg   ,  DXXX      ,  WBXXX     , IRS , IRT , IXX),
+    FILTER-> List(PC4     ,  AReg   ,  DReg      ,  WBALU     , IRS , IXX , IRD)
   )
   val bju_signal = ListLookup(io.inst,
     /*Illegal*/List(PC4     ,  AXXX   ,  DXXX  ,  WBXXX     , IXX , IXX , IXX),
@@ -264,7 +266,7 @@ class Dec extends Module with InstType with Config {
                              Seq(
                                toMDU.U -> mdu_signal(1),
                                toALU.U -> alu_signal(2),
-                               toBJU.U -> aluSubu.U
+                               toBJU.U -> Mux(io.inst === FILTER, aluFilt.U, aluSubu.U)
                              )
                            )
   io.mops.mem_width     := Mux(control_signal(1) === toLSU.U, lsu_signal(1), MemXXX)
