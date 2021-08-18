@@ -45,10 +45,10 @@ class ALU extends Module with Config with AluOpType {
 
   val fCnt = RegInit(0.U(3.W))
   val fSum = RegInit(0.U(len.W))
-  val f1 = Reg(UInt(len.W))
-  val f2 = Reg(UInt(len.W))
-  val f3 = Reg(UInt(len.W))
-  val f4 = Reg(UInt(len.W))
+  val f1 = RegInit(0.U(len.W))
+  val f2 = RegInit(0.U(len.W))
+  val f3 = RegInit(0.U(len.W))
+  val f4 = RegInit(0.U(len.W))
   val filtResult = Wire(Bool())
 
   when (io.valid && io.aluOp === aluFilt.U) {
@@ -56,57 +56,105 @@ class ALU extends Module with Config with AluOpType {
       fCnt := 0.U
       filtResult := 0.U
       fSum := 0.U
+      f1 := 0.U 
+      f2 := 0.U 
+      f3 := 0.U 
+      f4 := 0.U 
     }.otherwise {
       fSum := fSum + io.a
       when (fCnt === 0.U) { // 1 num
         fCnt := 1.U
-        f1 := io.a
+        f4 := io.a
         filtResult := 0.U
       }.elsewhen (fCnt === 1.U) { // 2 num
         fCnt := 2.U
-        f2 := io.a
+        when (f4 < io.a) {
+          f4 := io.a
+          f3 := f4
+        }.otherwise {
+          f3 := io.a
+        }
         filtResult := 0.U
       }.elsewhen (fCnt === 2.U) { // 3 num
         fCnt := 3.U
-        f3 := io.a
+        when (f4 < io.a) {
+          f2 := f3
+          f3 := f4
+          f4 := io.a
+        }.elsewhen (f3 < io.a) {
+          f2 := f3
+          f3 := io.a
+        }.otherwise {
+          f2 := io.a
+        }
         filtResult := 0.U
       }.elsewhen (fCnt === 3.U) { // 4 num
         fCnt := 4.U
-        f4 := io.a
+        when (f4 < io.a) {
+          f1 := f2
+          f2 := f3
+          f3 := f4
+          f4 := io.a
+        }.elsewhen (f3 < io.a) {
+          f1 := f2
+          f2 := f3
+          f3 := io.a
+        }.elsewhen (f2 < io.a) {
+          f1 := f2
+          f2 := io.a
+        }.otherwise {
+          f1 := io.a
+        }
         filtResult := 0.U
       }.otherwise {
-        // TODO
-        when (io.a > f1 && io.a > f2 && io.a > f3 && io.a > f4) { // > max
-          when (f1 >= f2 && f1 >= f3 && f1 >= f4) { // f1 max
-            f1 := io.a
-            filtResult := fSum - f2 - f3 - f4
-          }.elsewhen (f2 >= f1 && f2 >= f3 && f2 >= f4) { // f2 max
-            f2 := io.a
-            filtResult := fSum - f1 - f3 - f4
-          }.elsewhen (f3 >= f1 && f3 >= f2 && f3 >= f4) { // f3 max
-            f3 := io.a
-            filtResult := fSum - f1 - f2 - f4
-          }.otherwise { // f4 max
-            f4 := io.a
-            filtResult := fSum - f1 - f2 - f3
-          }
-        }.elsewhen (io.a < f1 && io.a < f2 && io.a < f3 && io.a < f4) { // < min
-          when (f1 <= f2 && f1 <= f3 && f1 <= f4) { // f1 min
-            f1 := io.a
-            filtResult := fSum - f2 - f3 - f4
-          }.elsewhen (f2 <= f1 && f2 <= f3 && f2 <= f4) { // f2 min
-            f2 := io.a
-            filtResult := fSum - f1 - f3 - f4
-          }.elsewhen (f3 <= f1 && f3 <= f2 && f3 <= f4) { // f3 min
-            f3 := io.a
-            filtResult := fSum - f1 - f2 - f4
-          }.otherwise { // f4 min
-            f4 := io.a
-            filtResult := fSum - f1 - f2 - f3
-          }
-        }.otherwise { // just add
+        when (io.a > f4) {
+          f3 := f4
+          f4 := io.a
+          filtResult := fSum - f1 - f2 - f4
+        }.elsewhen (io.a > f3) {
+          f3 := io.a 
+          filtResult := fSum - f1 - f2 - f4
+        }.elsewhen (io.a < f1) {
+          f1 := io.a
+          f2 := f1
+          filtResult := fSum - f1 - f3 - f4
+        }.elsewhen (io.a < f2) {
+          f2 := io.a 
+          filtResult := fSum - f1 - f3 - f4
+        }.otherwise {
           filtResult := fSum + io.a - f1 - f2 - f3 - f4
         }
+        // when (io.a > f1 && io.a > f2 && io.a > f3 && io.a > f4) { // > max
+        //   when (f1 >= f2 && f1 >= f3 && f1 >= f4) { // f1 max
+        //     f1 := io.a
+        //     filtResult := fSum - f2 - f3 - f4
+        //   }.elsewhen (f2 >= f1 && f2 >= f3 && f2 >= f4) { // f2 max
+        //     f2 := io.a
+        //     filtResult := fSum - f1 - f3 - f4
+        //   }.elsewhen (f3 >= f1 && f3 >= f2 && f3 >= f4) { // f3 max
+        //     f3 := io.a
+        //     filtResult := fSum - f1 - f2 - f4
+        //   }.otherwise { // f4 max
+        //     f4 := io.a
+        //     filtResult := fSum - f1 - f2 - f3
+        //   }
+        // }.elsewhen (io.a < f1 && io.a < f2 && io.a < f3 && io.a < f4) { // < min
+        //   when (f1 <= f2 && f1 <= f3 && f1 <= f4) { // f1 min
+        //     f1 := io.a
+        //     filtResult := fSum - f2 - f3 - f4
+        //   }.elsewhen (f2 <= f1 && f2 <= f3 && f2 <= f4) { // f2 min
+        //     f2 := io.a
+        //     filtResult := fSum - f1 - f3 - f4
+        //   }.elsewhen (f3 <= f1 && f3 <= f2 && f3 <= f4) { // f3 min
+        //     f3 := io.a
+        //     filtResult := fSum - f1 - f2 - f4
+        //   }.otherwise { // f4 min
+        //     f4 := io.a
+        //     filtResult := fSum - f1 - f2 - f3
+        //   }
+        // }.otherwise { // just add
+        //   filtResult := fSum + io.a - f1 - f2 - f3 - f4
+        // }
       }
     }
   }.otherwise {
