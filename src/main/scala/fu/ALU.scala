@@ -49,9 +49,10 @@ class ALU extends Module with Config with AluOpType {
   val f2 = RegInit(0.U(len.W))
   val f3 = RegInit(0.U(len.W))
   val f4 = RegInit(0.U(len.W))
-  val filtResult = Wire(Bool())
+  val filtResult = Wire(UInt(len.W))
+  val filt = io.valid && io.aluOp === aluFilt.U
 
-  when (io.valid && io.aluOp === aluFilt.U) {
+  when (filt) {
     when (io.rs === 0.U && io.rd === 0.U) {
       fCnt := 0.U
       filtResult := 0.U
